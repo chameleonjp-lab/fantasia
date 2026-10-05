@@ -1,14 +1,14 @@
-export const KEYBOARD_STORAGE_KEY = 'kaisen-keyboard-v1';
-export const KEY_ACTIONS = ['left', 'right', 'up', 'down', 'fire', 'loop', 'accelerate', 'brake', 'bomb', 'torpedo', 'pause'] as const;
+export const KEYBOARD_STORAGE_KEY = 'fantasia-keyboard-v1';
+export const KEY_ACTIONS = ['left', 'right', 'up', 'down', 'fire', 'loop', 'accelerate', 'brake', 'bomb', 'pause'] as const;
 export type KeyAction = typeof KEY_ACTIONS[number];
 export type KeyBindings = Record<KeyAction, string>;
 export const KEY_LABELS: Record<KeyAction, string> = {
   left: '左旋回', right: '右旋回', up: '上昇', down: '下降', fire: '射撃', loop: '宙返り',
-  accelerate: '加速', brake: '減速', bomb: '爆弾', torpedo: '魚雷', pause: '一時停止・再開',
+  accelerate: '加速', brake: '減速', bomb: '爆弾', pause: '一時停止・再開',
 };
 export const DEFAULT_KEY_BINDINGS: Readonly<KeyBindings> = Object.freeze({
   left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown', fire: 'Space', loop: 'KeyL',
-  accelerate: 'KeyW', brake: 'KeyS', bomb: 'KeyZ', torpedo: 'KeyX', pause: 'Escape',
+  accelerate: 'KeyW', brake: 'KeyS', bomb: 'KeyZ', pause: 'Escape',
 });
 
 const NAMED_KEYS: Record<string, string> = {

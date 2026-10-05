@@ -1070,3 +1070,61 @@ p {
 
 #bomb[data-ready="true"] .payload-name { color: #e2ffe7; }
 #bomb-hint { font-size: 8px; line-height: 1.15; color: #eff7ef; }
+
+/* Fantasia-only additions. The pinned K colors, type, buttons and shell remain above. */
+.fantasia-shell .campaign-sites {
+  position: absolute; top: calc(82px + var(--safe-top)); left: 18px; right: 18px;
+  display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px;
+  pointer-events: none; max-width: 760px; margin-inline: auto;
+}
+.campaign-site {
+  min-width: 0; padding: 4px 5px; border: 1px solid #c9e5e52b; border-radius: 3px;
+  background: #062433b8; color: #bed2d0; font-size: 9px; line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+}
+.campaign-site-heading { display: flex; gap: 5px; align-items: baseline; }
+.campaign-site-number { color: #f1e3c4; font-size: 12px; font-weight: 500; }
+.campaign-site-owner { color: #ffb28b; }
+.campaign-site[data-owner="friendly"] .campaign-site-owner { color: #77dacb; }
+.campaign-site[data-owner="neutral"] .campaign-site-owner { color: #e5dcc2; }
+.campaign-site[data-alert="contested"] { border-color: #efd497; }
+.campaign-site[data-alert="depleted"] { border-style: dashed; }
+.campaign-site-progress { height: 2px; margin: 3px 0; background: #aac8bc29; }
+.campaign-site-progress i { display: block; height: 100%; background: #e4c88b; }
+.campaign-site-force, .campaign-site-wave { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.campaign-site-detail { white-space: pre-line; text-align: left; font-size: 12px; line-height: 1.6; padding: 8px 0; border-bottom: 1px solid #c9e5e52b; }
+.campaign-detail { text-align: left; color: #c6dce3; font-size: 12px; }
+.campaign-detail summary { min-height: 44px; padding: 12px 0; cursor: pointer; }
+.campaign-limit { margin-top: 5px; color: #d8d8c5; font-size: 10px; }
+.campaign-limit b { font-weight: 500; font-variant-numeric: tabular-nums; }
+.fantasia-shell .flight-data { top: calc(150px + var(--safe-top)); }
+.fantasia-shell #warning { top: auto; bottom: calc(145px + var(--safe-bottom)); max-width: calc(100% - 24px); white-space: normal; text-align: center; }
+.fantasia-shell #announcement { top: auto !important; bottom: calc(124px + var(--safe-bottom)); }
+.respawn-status {
+  position: absolute; left: 50%; top: 58%; transform: translateX(-50%);
+  width: max-content; max-width: calc(100% - 30px); padding: 12px 16px;
+  border: 1px solid #e4c88b80; border-radius: 3px; background: #071e2be6;
+  color: #f3e5c9; text-align: center; font-size: 13px; pointer-events: none;
+}
+@media (max-width: 600px) {
+  .fantasia-shell .campaign-sites { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .fantasia-shell .flight-data { top: calc(200px + var(--safe-top)); }
+}
+@media (max-width: 759px) and (orientation: portrait) {
+  .fantasia-shell #title { font-size: clamp(36px, 10vw, 74px); }
+}
+@media (max-width: 360px) and (orientation: portrait) {
+  .fantasia-shell .campaign-sites { top: calc(116px + var(--safe-top)); left: 12px; right: 12px; }
+  .fantasia-shell .flight-data { top: calc(233px + var(--safe-top)); }
+  .fantasia-shell #campaign-threat { top: auto; bottom: calc(175px + var(--safe-bottom)); left: 12px; right: auto; width: calc(100% - 145px); text-align: left; }
+}
+@media (orientation: landscape) and (max-height: 600px) {
+  .fantasia-shell .campaign-sites { top: calc(70px + var(--safe-top)); left: 12px; right: 12px; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+  .campaign-site { padding: 2px; font-size: 8px; line-height: 1.15; }
+  .campaign-site-number { font-size: 10px; }
+  .campaign-site-progress { margin: 2px 0; }
+  .fantasia-shell .flight-data { top: calc(123px + var(--safe-top)); }
+  .fantasia-shell #campaign-threat { top: calc(150px + var(--safe-top)); right: 12px; width: 180px; }
+  .fantasia-shell #announcement { top: calc(118px + var(--safe-top)) !important; bottom: auto; left: auto; right: 12px; transform: none; width: 180px; font-size: 10px; text-align: right; }
+  .fantasia-shell #warning { bottom: calc(88px + var(--safe-bottom)); font-size: 10px; }
+}

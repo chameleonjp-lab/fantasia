@@ -1,13 +1,14 @@
 {
-  "name": "kaisen",
+  "name": "fantasia",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc --noEmit && vite build",
-    "test": "node --import tsx --test tests/*.test.ts",
-    "test:browser": "playwright test"
+    "test": "node scripts/test-fantasia.mjs",
+    "test:browser": "playwright test fantasia.spec.ts --project=chromium",
+    "test:legacy": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
     "three": "0.186.1"

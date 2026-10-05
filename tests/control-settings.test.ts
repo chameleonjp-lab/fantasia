@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ControlSettings, DEFAULT_LAYOUT, controlBounds, controlDisplaySize, persistControlSettings, migratePayloadDefault, previewLabelStyle, previewDimensions } from '../src/control-settings';
-import { DEFAULT_KEY_BINDINGS, KEYBOARD_STORAGE_KEY, KeyboardSettings } from '../src/keyboard-settings';
+import { ControlSettings, CONTROL_NAMES, DEFAULT_LAYOUT, MODE_CONTROLS, controlBounds, controlDisplaySize, persistControlSettings, migratePayloadDefault, previewLabelStyle, previewDimensions } from '../src/control-settings';
+import { DEFAULT_KEY_BINDINGS, KEYBOARD_STORAGE_KEY, KEY_ACTIONS, KeyboardSettings } from '../src/keyboard-settings';
 
 function storageFixture() {
   const values = new Map<string, string>();
@@ -22,7 +22,7 @@ test('the complete position preview fits its scroll region while preserving the 
 });
 
 test('only exact legacy payload defaults move to the lower edge without mutating custom saved placements', () => {
-  for (const [name,x] of [['bomb',.39],['torpedo',.58]] as const) {
+  for (const [name,x] of [['bomb',.39]] as const) {
     const old={x,y:.72,size:56,opacity:.88}, copy={...old};
     assert.deepEqual(migratePayloadDefault(name,old),DEFAULT_LAYOUT[name]); assert.deepEqual(old,copy);
     const custom={...old,x:x+.01};assert.deepEqual(migratePayloadDefault(name,custom),custom);
@@ -54,9 +54,19 @@ test('saving from an older tab preserves a future settings format', () => {
   const storage = storageFixture();
   const future = JSON.stringify({ version: 2, bindings: { future: 'format' } });
   storage.values.set(KEYBOARD_STORAGE_KEY, future);
-  assert.equal(persistControlSettings([{ key: 'kaisen-controls-v1', value: 'layout' }, { key: KEYBOARD_STORAGE_KEY, value: JSON.stringify({ version: 1, bindings: DEFAULT_KEY_BINDINGS }) }], storage), false);
+  assert.equal(persistControlSettings([{ key: 'fantasia-controls-v1', value: 'layout' }, { key: KEYBOARD_STORAGE_KEY, value: JSON.stringify({ version: 1, bindings: DEFAULT_KEY_BINDINGS }) }], storage), false);
   assert.equal(storage.getItem(KEYBOARD_STORAGE_KEY), future);
-  assert.equal(storage.getItem('kaisen-controls-v1'), null);
+  assert.equal(storage.getItem('fantasia-controls-v1'), null);
+});
+
+test('Fantasia exposes five Normal touch controls, two Easy touch controls, and ten or seven keyboard actions', () => {
+  assert.equal(KEYBOARD_STORAGE_KEY, 'fantasia-keyboard-v1');
+  assert.deepEqual(CONTROL_NAMES, ['fire', 'loop', 'accelerate', 'brake', 'bomb']);
+  assert.deepEqual(MODE_CONTROLS.normal, ['fire', 'loop', 'accelerate', 'brake', 'bomb']);
+  assert.deepEqual(MODE_CONTROLS.easy, ['loop', 'bomb']);
+  assert.equal(Object.keys(DEFAULT_LAYOUT).length, 5);
+  assert.equal(KEY_ACTIONS.length, 10);
+  assert.equal(KEY_ACTIONS.filter(action => !['fire', 'accelerate', 'brake'].includes(action)).length, 7);
 });
 
 function dialogFixture() {
@@ -86,16 +96,18 @@ test('save applies both drafts only after successful persistence; cancel restore
   const storage = storageFixture(); Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: storage });
   try {
     const { editor, keyboard, dialog } = dialogFixture();
-    editor.draft.normal.bomb.x = .2; editor.keyDraft.bomb = 'KeyB';
+    editor.draft.normal.bomb.x = .2; editor.draft.easy.loop.x = .2; editor.keyDraft.bomb = 'KeyB';
     assert.equal(keyboard.code('bomb'), 'KeyZ');
     editor.save();
     assert.equal(dialog.returnValue, 'save');
     assert.equal(keyboard.code('bomb'), 'KeyB');
     assert.equal(JSON.parse(storage.getItem(KEYBOARD_STORAGE_KEY)!).bindings.bomb, 'KeyB');
-    assert.equal(JSON.parse(storage.getItem('kaisen-controls-v1')!).controls.bomb.x, .2);
-    editor.draft.normal.bomb.x = .7; editor.keyDraft.bomb = 'KeyC'; editor.capturing = 'bomb';
+    assert.equal(JSON.parse(storage.getItem('fantasia-controls-v1')!).controls.bomb.x, .2);
+    assert.equal(JSON.parse(storage.getItem('fantasia-controls-easy-v1')!).controls.loop.x, .2);
+    assert.equal(storage.getItem('kaisen-controls-v1'), null); assert.equal(storage.getItem('kaisen-keyboard-v1'), null);
+    editor.draft.normal.bomb.x = .7; editor.draft.easy.loop.x = .7; editor.keyDraft.bomb = 'KeyC'; editor.capturing = 'bomb';
     editor.onClosed();
-    assert.equal(editor.draft.normal.bomb.x, .2); assert.equal(editor.keyDraft.bomb, 'KeyB');
+    assert.equal(editor.draft.normal.bomb.x, .2); assert.equal(editor.draft.easy.loop.x, .2); assert.equal(editor.keyDraft.bomb, 'KeyB');
     assert.equal(editor.capturing, null); assert.equal(keyboard.code('bomb'), 'KeyB');
   } finally { if (original) Object.defineProperty(globalThis, 'localStorage', original); else Reflect.deleteProperty(globalThis, 'localStorage'); }
 });
@@ -156,6 +168,6 @@ test('default touch controls keep safe edges and payloads separate in portrait a
         assert.ok(Math.abs(rect.x - peer.x) >= (rect.size + peer.size) / 2 || Math.abs(rect.y - peer.y) >= (rect.size + peer.size) / 2, `${width}×${height}: ${name} must not overlap ${other}`);
       }
     }
-    assert.ok(rects.bomb.y > height * .8 && rects.torpedo.y > height * .8, 'payloads stay near the lower edge');
+    assert.ok(rects.bomb.y > height * .8, 'the bomb stays near the lower edge');
   }
 });

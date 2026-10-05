@@ -1,15 +1,14 @@
 import type { FlightInput } from './types';
 import { DEFAULT_KEY_BINDINGS, KeyboardSettings, keyboardEventHasShortcutModifier, type KeyAction } from './keyboard-settings';
 
-export type FlightControlButtons = {
+export type FantasiaControlButtons = {
   fire: HTMLButtonElement;
   loop: HTMLButtonElement;
   accelerate: HTMLButtonElement;
   brake: HTMLButtonElement;
-  bomb?: HTMLButtonElement;
-  torpedo?: HTMLButtonElement;
+  bomb: HTMLButtonElement;
 };
-export type KaisenControlButtons = FlightControlButtons & { bomb: HTMLButtonElement; torpedo: HTMLButtonElement };
+export type FlightControlButtons = FantasiaControlButtons;
 
 type ControlName = keyof FlightControlButtons;
 export type FlightMode = 'normal' | 'easy';
@@ -27,7 +26,7 @@ export class FlightControls {
   private steerPointerType: string | null = null;
   private readonly buttonPointerTypes = new Map<number, string>();
   private readonly holds: Record<ControlName, Set<number>> = {
-    fire: new Set(), loop: new Set(), accelerate: new Set(), brake: new Set(), bomb: new Set(), torpedo: new Set(),
+    fire: new Set(), loop: new Set(), accelerate: new Set(), brake: new Set(), bomb: new Set(),
   };
   private readonly controlNames: ControlName[];
   private readonly keys = new Set<string>();
@@ -47,7 +46,7 @@ export class FlightControls {
 
   constructor(
     private readonly surface: HTMLElement,
-    private readonly buttons: FlightControlButtons,
+    private readonly buttons: FantasiaControlButtons,
     private readonly active: () => boolean,
     private readonly keyboard = new KeyboardSettings(),
   ) {
@@ -115,7 +114,7 @@ export class FlightControls {
     const accelerate = normal && (pressed('accelerate') || keyHeld('accelerate') || this.clickBursts.has('accelerate'));
     const brake = normal && (pressed('brake') || keyHeld('brake') || this.clickBursts.has('brake'));
     const loop = this.loopEdge;
-    const bomb = this.clickBursts.has('bomb'), torpedo = this.clickBursts.has('torpedo');
+    const bomb = this.clickBursts.has('bomb');
 
     this.loopEdge = false;
     this.clickBursts.clear();
@@ -123,7 +122,7 @@ export class FlightControls {
       turn: Math.max(-1, Math.min(1, turn)),
       climb: Math.max(-1, Math.min(1, climb)),
       fire,
-      loop, bomb, torpedo,
+      loop, bomb,
       accelerate,
       brake,
       steeringRevision: this.steeringRevision,
@@ -242,7 +241,7 @@ export class FlightControls {
 
   private beginButton(name: ControlName, button: HTMLButtonElement, event: PointerEvent): void {
     if (!this.active() || (event.pointerType === 'mouse' && event.button !== 0)) return;
-    if (this.mode === 'easy' && name !== 'loop' && name !== 'bomb' && name !== 'torpedo') return;
+    if (this.mode === 'easy' && name !== 'loop' && name !== 'bomb') return;
     if (name === 'loop' && button.getAttribute('aria-disabled') === 'true') return;
     if (event.isPrimary) this.retireSameTypePointer(event.pointerType);
     event.preventDefault();
@@ -259,7 +258,7 @@ export class FlightControls {
     this.buttonPointerTypes?.delete(event.pointerId);
     if (completed && this.active() && button.getAttribute('aria-disabled') !== 'true') {
       if (name === 'loop') this.loopEdge = true;
-      if (name === 'bomb' || name === 'torpedo') this.clickBursts.add(name);
+      if (name === 'bomb') this.clickBursts.add(name);
     }
     if (this.holds[name].size === 0) {
       button.classList.remove('is-pressed');
@@ -268,7 +267,7 @@ export class FlightControls {
   }
 
   private activateOnce(name: ControlName): void {
-    if (this.mode === 'easy' && name !== 'loop' && name !== 'bomb' && name !== 'torpedo') return;
+    if (this.mode === 'easy' && name !== 'loop' && name !== 'bomb') return;
     if (name === 'loop') {
       if (this.buttons.loop.getAttribute('aria-disabled') !== 'true') this.loopEdge = true;
     } else {
@@ -289,8 +288,7 @@ export class FlightControls {
     const action = this.keyboard.action(event.code);
     const allowed = action && action !== 'pause'
       && (this.mode === 'normal' || !NORMAL_ACTIONS.has(action))
-      && (action !== 'bomb' || Boolean(this.buttons.bomb))
-      && (action !== 'torpedo' || Boolean(this.buttons.torpedo));
+      && (action !== 'bomb' || Boolean(this.buttons.bomb));
     if (!this.active() || event.isComposing || !allowed || this.isTypingOrActivating(event.target)) return;
     if (event.repeat && !this.keys.has(event.code)) return;
     event.preventDefault();
@@ -298,7 +296,7 @@ export class FlightControls {
     const wasDown = this.keys.has(event.code);
     this.keys.add(event.code);
     if (!wasDown && !event.repeat) {
-      if (action === 'bomb' || action === 'torpedo') this.clickBursts.add(action);
+      if (action === 'bomb') this.clickBursts.add(action);
       if (action === 'loop' && this.buttons.loop.getAttribute('aria-disabled') !== 'true') this.loopEdge = true;
     }
   }

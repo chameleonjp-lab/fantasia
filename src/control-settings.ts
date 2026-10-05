@@ -1,12 +1,12 @@
 // Adapted from faitofuraito@025cad4930b487628675a0e20a88323aae0fac89 src/control-settings.ts. See docs/PROVENANCE.md.
-import type { KaisenControlButtons } from './input';
+import type { FantasiaControlButtons } from './input';
 import { containDialogTabFocus } from './dialog-focus';
 import {
   KeyboardSettings, ControlInputPresentation, DEFAULT_KEY_BINDINGS, KEY_ACTIONS, KEY_LABELS, KEYBOARD_STORAGE_KEY,
   captureKey, keyConflict, keyLabel, preferredControlInput, type KeyAction, type KeyBindings,
 } from './keyboard-settings';
 
-type ControlName = keyof KaisenControlButtons;
+type ControlName = keyof FantasiaControlButtons;
 type GameMode = 'normal' | 'easy';
 export type ControlPlacement = { x: number; y: number; size: number; opacity: number };
 type ControlLayout = Record<ControlName, ControlPlacement>;
@@ -14,14 +14,14 @@ type ModeLayouts = Record<GameMode, ControlLayout>;
 type Insets = { top: number; right: number; bottom: number; left: number };
 
 const STORAGE_KEYS: Record<GameMode, string> = {
-  normal: 'kaisen-controls-v1',
-  easy: 'kaisen-controls-easy-v1',
+  normal: 'fantasia-controls-v1',
+  easy: 'fantasia-controls-easy-v1',
 };
 const MODES: GameMode[] = ['normal', 'easy'];
-const CONTROL_NAMES: ControlName[] = ['fire', 'loop', 'accelerate', 'brake', 'bomb', 'torpedo'];
-const MODE_CONTROLS: Record<GameMode, ControlName[]> = {
+export const CONTROL_NAMES: readonly ControlName[] = ['fire', 'loop', 'accelerate', 'brake', 'bomb'];
+export const MODE_CONTROLS: Readonly<Record<GameMode, readonly ControlName[]>> = {
   normal: CONTROL_NAMES,
-  easy: ['loop', 'bomb', 'torpedo'],
+  easy: ['loop', 'bomb'],
 };
 export const DEFAULT_LAYOUT: ControlLayout = {
   fire: { x: 0.83, y: 0.84, size: 96, opacity: 0.9 },
@@ -29,9 +29,8 @@ export const DEFAULT_LAYOUT: ControlLayout = {
   accelerate: { x: 0.17, y: 0.84, size: 76, opacity: 0.82 },
   brake: { x: 0.17, y: 0.66, size: 76, opacity: 0.82 },
   bomb: { x: 0.39, y: 0.94, size: 52, opacity: 0.88 },
-  torpedo: { x: 0.59, y: 0.94, size: 52, opacity: 0.88 },
 };
-const CONTROL_LABELS: Record<ControlName, string> = { fire: '射撃', loop: '宙返り', accelerate: '加速', brake: '減速', bomb: '爆弾', torpedo: '魚雷' };
+const CONTROL_LABELS: Record<ControlName, string> = { fire: '射撃', loop: '宙返り', accelerate: '加速', brake: '減速', bomb: '爆弾' };
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 const copyLayout = (layout: ControlLayout): ControlLayout => Object.fromEntries(
@@ -99,8 +98,8 @@ function readNumber(value: unknown, fallback: number, min: number, max: number):
 
 /** Upgrade only the exact formerly shipped payload default; custom placements remain intact. */
 export function migratePayloadDefault(name: ControlName, placement: ControlPlacement): ControlPlacement {
-  const oldX = name === 'bomb' ? .39 : name === 'torpedo' ? .58 : null;
-  return oldX !== null && placement.x === oldX && placement.y === .72 && placement.size === 56 && placement.opacity === .88
+  const isOldBombDefault = name === 'bomb' && placement.x === .39 && placement.y === .72 && placement.size === 56 && placement.opacity === .88;
+  return isOldBombDefault
     ? { ...DEFAULT_LAYOUT[name] } : { ...placement };
 }
 
@@ -165,7 +164,7 @@ export class ControlSettings {
     return this.dialog.open;
   }
 
-  constructor(private readonly buttons: KaisenControlButtons, private readonly keyboard = new KeyboardSettings(), private readonly inputPresentation?: ControlInputPresentation) {
+  constructor(private readonly buttons: FantasiaControlButtons, private readonly keyboard = new KeyboardSettings(), private readonly inputPresentation?: ControlInputPresentation) {
     this.keyDraft = keyboard.bindings;
     this.app = document.getElementById('app') ?? document.body;
     this.saved = { normal: loadLayout('normal'), easy: loadLayout('easy') };
@@ -268,7 +267,7 @@ export class ControlSettings {
           <select id="control-target" class="control-target">
             <option value="fire">射撃</option><option value="loop">宙返り</option>
             <option value="accelerate">加速</option><option value="brake">減速</option>
-            <option value="bomb">爆弾</option><option value="torpedo">魚雷</option>
+            <option value="bomb">爆弾</option>
           </select>
           <div class="control-settings-grid">
             <label class="setting-range" for="control-x"><span>横位置 <b id="control-x-value"></b></span><input id="control-x" type="range" min="5" max="95" step="1" aria-label="横位置"></label>

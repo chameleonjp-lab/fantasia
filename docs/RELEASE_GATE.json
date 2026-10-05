@@ -1,0 +1,88 @@
+{
+  "ready": false,
+  "candidateCommit": null,
+  "physicalPhoneVerified": false,
+  "independentReview": "pending",
+  "acceptance": {
+    "F-01": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-02": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-03": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-04": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-05": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-06": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-07": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-08": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-09": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-10": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-11": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-12": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-13": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-14": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-15": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-16": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-17": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-18": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-19": {
+      "status": "pending",
+      "evidence": []
+    },
+    "F-20": {
+      "status": "pending",
+      "evidence": []
+    }
+  }
+}

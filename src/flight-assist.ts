@@ -36,6 +36,9 @@ export interface FlightAssistResult {
   hasVisibleTarget: boolean;
 }
 
+/** Campaign adapters may tune stationary ground tracking without changing pilot priority. */
+export type FlightAssistTarget = CombatTarget & { trackingStrength?: number };
+
 function clamp(value: number, low: number, high: number): number {
   return Math.max(low, Math.min(high, value));
 }
@@ -44,8 +47,8 @@ function normalizedAspect(aspect: number | undefined): number {
   return Number.isFinite(aspect) && (aspect ?? 0) > 0 ? aspect! : 393 / 852;
 }
 
-function closestVisibleTarget(player: Aircraft, enemies: readonly CombatTarget[], aspect: number, mode: GameMode) {
-  let closest: { enemy: CombatTarget; projection: ReturnType<typeof projectFlightTarget> } | null = null;
+function closestVisibleTarget(player: Aircraft, enemies: readonly FlightAssistTarget[], aspect: number, mode: GameMode) {
+  let closest: { enemy: FlightAssistTarget; projection: ReturnType<typeof projectFlightTarget> } | null = null;
   for (const enemy of enemies) {
     if (enemy.health <= 0) continue;
     const projection = projectFlightTarget(player, targetAimPoint(enemy), aspect, mode);
@@ -62,7 +65,7 @@ function closestVisibleTarget(player: Aircraft, enemies: readonly CombatTarget[]
  */
 export function getFlightAssist(
   player: Aircraft,
-  enemies: readonly CombatTarget[],
+  enemies: readonly FlightAssistTarget[],
   input: FlightInput,
   mode: GameMode,
 ): FlightAssistResult {
@@ -93,7 +96,9 @@ export function getFlightAssist(
   const shortEdgeY = projection.y * Math.max(1, 1 / aspect);
   const screenRadius = Math.hypot(shortEdgeX, shortEdgeY) / 2;
   const manualWeight = clamp(Math.max(Math.abs(manualTurn), Math.abs(manualClimb)) / 0.35, 0, 1);
-  const targetStrength = target.enemy.kind === 'ship' ? EASY_SHIP_TRACKING_STRENGTH : 1;
+  const targetStrength = Number.isFinite(target.enemy.trackingStrength)
+    ? clamp(target.enemy.trackingStrength!, 0, 1)
+    : target.enemy.kind === 'ship' ? EASY_SHIP_TRACKING_STRENGTH : 1;
   const assistFade = clamp((screenRadius - EASY_AIM_RADIUS) / (EASY_AIM_RADIUS * 2), 0, 1) * (1 - manualWeight) * targetStrength;
   if (assistFade <= 0) {
     return { turn: manualTurn, climb: manualClimb, responseMultiplier, hasVisibleTarget: true };

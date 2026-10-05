@@ -1,0 +1,34 @@
+{
+  "repository": "chameleonjp-lab/kaisen",
+  "commit": "3d751051dc6212482a129e8da596ddd349b2f9f5",
+  "browser": "Chromium 149.0.7827.55 (Playwright 1.61.1)",
+  "os": "Debian GNU/Linux 13 x86_64",
+  "renderer": "ANGLE SwiftShader (software)",
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "browserDpr": 1,
+  "internalDpr": 1,
+  "textScale": 1,
+  "font": "system-ui, -apple-system, Hiragino Kaku Gothic ProN, Noto Sans JP, sans-serif",
+  "screens": [
+    "home",
+    "normal",
+    "pause",
+    "touch-settings",
+    "keyboard-settings"
+  ],
+  "missingScreens": [
+    "easy",
+    "victory",
+    "defeat"
+  ],
+  "notes": [
+    "Images are actual browser captures",
+    "Partial baseline only; not F-05/F-06 acceptance",
+    "Normal capture after regular start and radio selection",
+    "No actor HP/owner writes used",
+    "No hero 4 pose pairs"
+  ]
+}

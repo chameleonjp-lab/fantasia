@@ -40,7 +40,9 @@ test('input presentation cannot move a pressed target before click commits its a
 });
 
 test('keyboard persistence restores complete distinct keys and rejects invalid or partial records', () => {
-  const bindings = { ...DEFAULT_KEY_BINDINGS, fire: 'KeyF', bomb: 'Numpad1', torpedo: 'IntlYen', pause: 'KeyP' };
+  const bindings = { ...DEFAULT_KEY_BINDINGS, fire: 'KeyF', bomb: 'Numpad1', pause: 'KeyP' };
+  assert.equal(KEY_ACTIONS.length, 10);
+  assert.equal((KEY_ACTIONS as readonly string[]).includes('torpedo'), false);
   assert.equal(validKeyBindings(bindings), true);
   assert.deepEqual(parseKeyBindings(JSON.stringify({ version: 1, bindings })), bindings);
   for (const value of [null, 'bad json', '{}', '[]', JSON.stringify({ version: 2, bindings }), JSON.stringify({ version: 1, bindings: { fire: 'KeyF' } }),
@@ -90,6 +92,9 @@ test('committed bindings are isolated copies and pause respects reserved chords 
   assert.match(settings.describe('normal'), /Space 射撃/);
   assert.doesNotMatch(settings.describe('easy'), /Space 射撃/);
   assert.match(settings.describe('easy'), /P 一時停止・再開/);
+  assert.equal(settings.describe('normal').split(' · ').length, 10);
+  assert.equal(settings.describe('easy').split(' · ').length, 7);
+  assert.equal(settings.action('KeyX'), undefined, 'the removed torpedo key is not a default action');
   unsubscribe(); settings.apply({ ...DEFAULT_KEY_BINDINGS }); assert.equal(changed, 1);
 });
 
@@ -110,13 +115,13 @@ test('custom flight keys cover every action, release on remap/blur and never lea
   const originals = ['window', 'document', 'HTMLElement', 'localStorage'].map(name => [name, Object.getOwnPropertyDescriptor(globalThis, name)] as const);
   const win = Object.assign(new EventTarget(), { visualViewport: new EventTarget() });
   const doc = Object.assign(new EventTarget(), { hidden: false, getElementById: () => new ElementStub() });
-  const bindings = { left: 'KeyA', right: 'KeyD', up: 'KeyI', down: 'KeyK', fire: 'KeyF', loop: 'KeyJ', accelerate: 'KeyE', brake: 'KeyQ', bomb: 'Digit1', torpedo: 'Numpad2', pause: 'KeyP' };
+  const bindings = { left: 'KeyA', right: 'KeyD', up: 'KeyI', down: 'KeyK', fire: 'KeyF', loop: 'KeyJ', accelerate: 'KeyE', brake: 'KeyQ', bomb: 'Digit1', pause: 'KeyP' };
   Object.defineProperty(globalThis, 'window', { configurable: true, value: win });
   Object.defineProperty(globalThis, 'document', { configurable: true, value: doc });
   Object.defineProperty(globalThis, 'HTMLElement', { configurable: true, value: ElementStub });
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { getItem: (name: string) => name === KEYBOARD_STORAGE_KEY ? JSON.stringify({ version: 1, bindings }) : null } });
   const settings = new KeyboardSettings();
-  const buttons = { fire: new ElementStub(), loop: new ElementStub(), accelerate: new ElementStub(), brake: new ElementStub(), bomb: new ElementStub(), torpedo: new ElementStub() };
+  const buttons = { fire: new ElementStub(), loop: new ElementStub(), accelerate: new ElementStub(), brake: new ElementStub(), bomb: new ElementStub() };
   let active = true;
   const controls = new FlightControls(new ElementStub() as any, buttons as any, () => active, settings);
   const down = (code: string, extras = {}) => win.dispatchEvent(key(code, extras));
@@ -126,7 +131,7 @@ test('custom flight keys cover every action, release on remap/blur and never lea
       down(code); assert.equal(controls.sample()[property], expected);
       up(code); assert.equal(controls.sample()[property], typeof expected === 'number' ? 0 : false);
     }
-    for (const [code, property] of [['KeyJ', 'loop'], ['Digit1', 'bomb'], ['Numpad2', 'torpedo']] as const) {
+    for (const [code, property] of [['KeyJ', 'loop'], ['Digit1', 'bomb']] as const) {
       down(code); assert.equal(controls.sample()[property], true);
       down(code); down(code, { repeat: true }); assert.equal(controls.sample()[property], false);
       up(code); down(code); assert.equal(controls.sample()[property], true); up(code);

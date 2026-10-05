@@ -26,7 +26,7 @@ for (const path of files) {
   );
 }
 const html = readFileSync(join(root, "index.html"), "utf8");
-assert(html.includes("<title>カイセン</title>"), "Expected Kaisen entry point");
+assert(html.includes("<title>ファンタジア</title>"), "Expected Fantasia entry point");
 const assets = [...html.matchAll(/(?:src|href)="(\.\/assets\/[^"]+)"/g)].map(
   (match) => match[1].slice(2),
 );
@@ -36,12 +36,12 @@ assert(!/(?:src|href)="\/(?!\/)/.test(html), "Root-relative URLs break the Pages
 for (const path of assets) assert(files.includes(path), `Missing public asset: ${path}`);
 assert(files.includes("third-party-notices.txt"), "Missing third-party notices");
 for (const path of files.filter((path) => path.endsWith(".js"))) {
-  assert(!readFileSync(join(root, path), "utf8").includes("__kaisenReadState"),
+  assert(!readFileSync(join(root, path), "utf8").includes("__fantasiaReadState"),
     "Development observation hook must not be published");
 }
 const hashes = Object.fromEntries(files.map((path) => [
   path, createHash("sha256").update(readFileSync(join(root, path))).digest("hex"),
 ]));
-const manifest = { repository: "chameleonjp-lab/kaisen", commit, files: hashes };
+const manifest = { repository: "chameleonjp-lab/fantasia", commit, files: hashes };
 writeFileSync(join(root, "deployment.json"), JSON.stringify(manifest, null, 2) + "\n");
 console.log(JSON.stringify(manifest, null, 2));

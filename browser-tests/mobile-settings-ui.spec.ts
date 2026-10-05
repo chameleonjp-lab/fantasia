@@ -31,6 +31,11 @@ for (const viewport of [{ width: 393, height: 648 }, { width: 568, height: 320 }
     await page.locator('#home-controls').tap(); await expect(page.locator('#control-settings')).toBeVisible();
     await expect(page.locator('#control-editor-touch')).toHaveAttribute('aria-pressed', 'true');
     await page.locator('#control-mode').selectOption('normal');
+    await expect(page.locator('#control-target option:not([hidden])')).toHaveCount(5);
+    await page.locator('#control-mode').selectOption('easy');
+    await expect(page.locator('#control-target option:not([hidden])')).toHaveCount(2);
+    await expect(page.locator('.preview-control:not([hidden])')).toHaveCount(2);
+    await page.locator('#control-mode').selectOption('normal');
     await page.locator('#control-target').selectOption('bomb');
     const styles = await page.locator('#control-mode').evaluate(element => ({ color: getComputedStyle(element).color, fill: getComputedStyle(element).webkitTextFillColor }));
     expect(styles.color).toBe('rgb(237, 242, 233)'); expect(styles.fill).toBe('rgb(237, 242, 233)');
@@ -43,9 +48,10 @@ for (const viewport of [{ width: 393, height: 648 }, { width: 568, height: 320 }
     const previewBox=await page.locator('#control-preview').boundingBox();
     const scrollerBox=await page.locator('.settings-main').boundingBox();
     expect(previewBox!.height).toBeLessThanOrEqual(scrollerBox!.height);
-    for(const name of ['bomb','torpedo'])await expect(page.locator(`.preview-control[data-control="${name}"]`)).toBeInViewport();
+    await expect(page.locator('.preview-control:not([hidden])')).toHaveCount(5);
+    await expect(page.locator('.preview-control[data-control="bomb"]')).toBeInViewport();
     const labels = await page.locator('.preview-control').allTextContents();
-    expect(labels).toEqual(expect.arrayContaining(['爆弾','魚雷'])); expect(labels.join('')).not.toContain('残り');
+    expect(labels).toEqual(expect.arrayContaining(['爆弾'])); expect(labels.join('')).not.toContain('残り');
     const fits = await page.locator('.preview-control:not([hidden]) > span').evaluateAll(elements => elements.map(element => { const r=element.getBoundingClientRect(), preview=element.closest('#control-preview')!.getBoundingClientRect(); return { name: element.textContent, fits: r.left>=preview.left && r.right<=preview.right, whiteSpace: getComputedStyle(element).whiteSpace }; }));
     for (const item of fits) { expect(item.fits, `${item.name} fits the miniature control`).toBe(true); expect(item.whiteSpace).toBe('nowrap'); }
     await mkdir('test-results/evidence', { recursive: true });
@@ -63,6 +69,7 @@ test.describe('desktop keyboard editor', () => {
   test('keys can be changed, conflicts cancelled, restored after reload and described without phone instructions', async ({ page, browserName }) => {
     await page.goto('/'); await page.locator('#home-controls').click();
     await expect(page.locator('#control-editor-keyboard')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('[data-key-action]')).toHaveCount(10);
     await page.locator('[data-key-action="fire"]').click(); await page.keyboard.press('KeyL');
     await expect(page.locator('#keyboard-capture-note')).toContainText('宙返り');
     await page.keyboard.press('Escape'); await expect(page.locator('#control-settings')).toBeVisible();
