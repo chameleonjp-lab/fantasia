@@ -16,3 +16,9 @@
 - P8: 最終remote head・CI・公開artifact・URL実動の照合が未確認。
 
 実装レビューの完了を、全ゲームの受入合格や公開完了として扱わない。後続のブラウザテスト修正は本レビューで合格したruntimeソースを変更していないことを別途確認する。
+
+## 証跡・試験の追補レビュー
+
+実装役と独立して後続差分を再読し、runtime/public/index/依存/型・Vite設定はfe7e039と同一と確認した。CIの4viewport JSONはすべてpaused、393×852 PNGもPAUSED overlay。有効なlive画面証拠は0件。画像とJSONを保存してからplaying・overlay非表示を必須にする試験修正は妥当。起動helperの復帰文言とskip順序のP2試験不具合は修正確認済み。visibleのままのheadless tabをskipとする扱いは実visibilitychangeの代用をしない。
+
+公開判定はblockedのまま。この追補は差分レビューであり、修正後の全ブラウザsuite合格を証明しない。ready:false、F条件partial/blocked、実機未検証を再確認した。

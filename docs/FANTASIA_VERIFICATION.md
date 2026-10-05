@@ -2,6 +2,8 @@
 
 公開判定は **未合格**。実装を保存し、未実行・失敗を残す。`RELEASE_GATE.json` の `ready` は false のままとし、Pages の公開操作は行わない。これは計画書 P7/P8 の品質条件による停止であり、公開の追加承認待ちではない。
 
+計画書P7のゲート: 「全必須行の証拠が揃う。未達のスマホ実機をエミュレーション結果で埋めない。」今回の明示的な公開依頼を承認として扱ったうえで、この未達条件を公開合格に置き換えない。
+
 作業中に main へ入った PR #3（`4d217d839875c3e7ddc066add284c66089418926`）の速度レバー追補・READMEを保持した。追補が「先行実装PRに無断で変更を混ぜない」と指定しているため、本候補は従来のNormal5タッチ操作を実装したまま。レバー・v2保存移行・共通fixture35件の製品接続は別途未完で、F-03/F-04の追加公開条件として扱う。
 
 ## 実装範囲
@@ -25,6 +27,10 @@
 同条件の新画像は `evidence/candidate-chromium/`。1440×900、DPR1、Chromium149、Debian13、文字100%。home/pause/実タッチ設定/キーボード設定を取得した。Normalは開始直後の0.3667秒gapで停止し、`normal-blocked.png` として別記（Normal合格画像ではない）。`complete:false`、runtime hashは撮影中不変。旧 `touch-settings.png` が実はキーボード設定だった誤記を、元画像を `keyboard-from-touch-entry.png` に保存して実Kのタッチタブを撮り直して訂正した。起動失敗の最初の試行も `candidate/metadata.json` に保存。
 
 エージェント目視では共通設定パネルの配置・色・文字サイズが一致。CDP実フォントは両作品ともtitle=Noto Serif CJK JP、tab=Noto Sans CJK JP、timer=Noto Sans Mono CJK JPでサイズが一致した。homeは題名・世界・戦役集計・記録表示の許可差分がある。新homeのfooterは初期cropより下になりscrollが必要で、全200%到達性は合格未確認。これは人による全画像比較の承認ではなく、4姿勢・Easy・勝敗画像も未取得。
+
+GitHub CI run [37258940524](https://github.com/chameleonjp-lab/fantasia/actions/runs/37258940524) はunit/build成功、browser4件成功・4件失敗で全体failure。取得したartifactを実際に確認すると、成功した4viewportのPNGはすべてframe停止overlayで、JSONのphaseもpausedだった。DOMの配置計測は成立しても操作視界の合格ではないため、これらを無効なlive画像として保存し、撮影後のphaseとoverlay不在を試験の必須条件へ追加した。`evidence/ci-initial/` はこの問題の実証で、F-07合格証拠ではない。タブ切替でdocument自体がvisibleのままのheadless環境は、実visibilitychangeを捏造せず別skipとして扱う。
+
+後続CI run37259471127も6失敗・3成功・1skipで全体failure。frame停止と、描画復帰文言・重複キーの捕捉継続表示に対する試験の期待値不具合を確認した。期待値はKの実挙動に合わせて修正。最終の設定単独ブラウザ試験は1/1成功（7.0秒）で、タッチ配置保存/破棄、キーボード再割当、重複拒否とEscape復帰、専用storage保存を実UIで確認した。これは飛行・全suiteの合格とは区別する。
 
 戦役の回転対称性を安定させるため、actor/projectile/lockedAim座標を各方面の回転前座標で1µmへ量子化する。接触距離を大きく緩める処理ではなく、同じ位相の計算で生じる丸め差を固定する。1800tickの全7方面 actor位置・HP/攻撃状態/弾属性/前線状態を両モードで比較する検査を追加した。弾位置・actor速度・補充周期後・操縦入力の回転比較は未完。地形描画は解析的高さ問い合わせに対する三角形内の表示近似で、実測最大差約0.83cm。これらは許容誤差を記録した実装判断で、全視覚条件の合格宣言ではない。
 

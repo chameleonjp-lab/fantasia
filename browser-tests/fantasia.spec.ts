@@ -43,10 +43,10 @@ async function start(page: Page, mode: 'easy' | 'normal') {
     // hidden-page, and logic-error pauses remain test failures.
     expect(afterStart.pauseReasons).toEqual(['render']);
     expect(afterStart.fatalLogicError).toBeFalsy();
-    await expect(page.locator('#pause-reason')).toHaveText('描画が復帰しました。操作して再開できます');
     if (afterStart.renderStatus === 'stalled' && await page.locator('#resume').isDisabled()) {
       test.skip(true, 'Headless Chromium renderer remained stalled; the app correctly withheld flight resume.');
     }
+    await expect(page.locator('#pause-reason')).toContainText('描画が復帰しました。操作して再開できます');
     await expect(page.locator('#resume')).toBeEnabled();
     await page.locator('#resume').click();
     await expect.poll(async () => {
@@ -84,12 +84,18 @@ async function tapLiveControl(page: Page, selector: string) {
 async function saveEvidence(page: Page, name: string, note: string) {
   await mkdir('test-results/evidence', { recursive: true });
   await page.screenshot({ path: `test-results/evidence/${name}.png` });
+  const observed = await state(page);
   await writeFile(`test-results/evidence/${name}.json`, JSON.stringify({
     environment: 'Playwright Chromium viewport emulation; not physical-device coverage',
     note,
     viewport: page.viewportSize(),
-    state: await state(page),
+    liveFlightConfirmed: observed?.phase === 'playing',
+    state: observed,
   }, null, 2));
+  // Preserve a blocked attempt, but never pass a live-layout test on boxes
+  // hidden behind the safety-pause overlay.
+  expect(observed?.phase, 'Screenshot must show live flight rather than a safety stop').toBe('playing');
+  await expect(page.locator('#pause-screen')).toBeHidden();
 }
 
 async function siteLayout(page: Page) {
@@ -229,7 +235,7 @@ test('settings tabs save committed changes, discard drafts, and reject duplicate
   await page.locator('[data-key-action="left"]').click();
   await page.keyboard.press('f');
   await expect(page.locator('#keyboard-capture-note')).toContainText('射撃');
-  await expect(page.locator('[data-key-action="left"]')).toHaveText('←');
+  await expect(page.locator('[data-key-action="left"]')).toHaveText('キーを押す…');
   await page.keyboard.press('Escape');
   await expect(page.locator('[data-key-action="left"]')).toHaveText('←');
   await page.locator('#control-save').click();
