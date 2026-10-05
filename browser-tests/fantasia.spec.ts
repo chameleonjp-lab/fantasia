@@ -91,11 +91,67 @@ async function saveEvidence(page: Page, name: string, note: string) {
     viewport: page.viewportSize(),
     liveFlightConfirmed: observed?.phase === 'playing',
     state: observed,
+    hud: await readHudGeometry(page),
   }, null, 2));
   // Preserve a blocked attempt, but never pass a live-layout test on boxes
   // hidden behind the safety-pause overlay.
   expect(observed?.phase, 'Screenshot must show live flight rather than a safety stop').toBe('playing');
   await expect(page.locator('#pause-screen')).toBeHidden();
+}
+
+type Rect = { x: number; y: number; width: number; height: number };
+async function readHudGeometry(page: Page) {
+  return page.evaluate(() => {
+    const read = (window as any).__fantasiaReadState;
+    const observed = typeof read === 'function' ? read(false) : null;
+    const canvas = document.querySelector('#flight')!.getBoundingClientRect();
+    const rect = (node: Element) => {
+      const r = node.getBoundingClientRect();
+      return { x: r.x - canvas.x, y: r.y - canvas.y, width: r.width, height: r.height };
+    };
+    const visible = (node: Element) => !node.closest('[hidden]') && node.getClientRects().length > 0
+      && getComputedStyle(node).visibility !== 'hidden' && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
+    const selectors = '.hud-top, #campaign-sites .campaign-site[data-site], .flight-data, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip, #hud button';
+    const obstacles = Array.from(document.querySelectorAll<HTMLElement>(selectors)).filter(visible)
+      .map(node => ({ id: node.id || node.className, ...rect(node) }));
+    const threat = document.querySelector('#campaign-threat')!;
+    return { phase: observed?.phase, pauseReasons: observed?.pauseReasons, renderStatus: observed?.renderStatus,
+      deviceScaleFactor: devicePixelRatio, layout: observed?.render?.hudLayout, obstacles,
+      threat: visible(threat) ? rect(threat) : null };
+  });
+}
+async function expectHudSafeLayout(page: Page, name: string) {
+  const hud = await readHudGeometry(page);
+  await mkdir('test-results/evidence', { recursive: true });
+  await page.screenshot({ path: `test-results/evidence/${name}-hud.png` });
+  await writeFile(`test-results/evidence/${name}-hud.json`, JSON.stringify(hud, null, 2));
+  // Record blocked geometry and safety-stop evidence before asserting either.
+  expect(hud.phase, 'HUD acceptance requires live flight').toBe('playing');
+  await expect(page.locator('#pause-screen')).toBeHidden();
+  expect(hud.layout?.status, 'Full-size HUD placement must not be blocked').toBe('placed');
+  const { radar, bounds } = hud.layout;
+  expect(radar.radius).toBe(page.viewportSize()!.width < 360 ? 42 : 49);
+  expect(radar.rect.width).toBe(radar.radius * 2 + 2);
+  expect(radar.rect.height).toBe(radar.radius * 2 + 18);
+  const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && a.x + a.width > b.x
+    && a.y < b.y + b.height && a.y + a.height > b.y;
+  const inBounds = (r: Rect) => {
+    expect(r.x).toBeGreaterThanOrEqual(bounds.x - .5); expect(r.y).toBeGreaterThanOrEqual(bounds.y - .5);
+    expect(r.x + r.width).toBeLessThanOrEqual(bounds.x + bounds.width + .5);
+    expect(r.y + r.height).toBeLessThanOrEqual(bounds.y + bounds.height + .5);
+  };
+  inBounds(radar.rect);
+  const sight = hud.layout.obstacles.find((o: { id: string }) => o.id === 'aim-and-reload-ring');
+  expect(sight).toBeTruthy();
+  for (const obstacle of [...hud.obstacles, sight]) {
+    expect(overlap(radar.rect, obstacle), `radar circle/caption must avoid ${obstacle.id}`).toBe(false);
+    if (hud.threat) expect(overlap(hud.threat, obstacle), `threat must avoid ${obstacle.id}`).toBe(false);
+  }
+  if (hud.threat) {
+    inBounds(hud.threat); expect(overlap(radar.rect, hud.threat), 'radar and threat do not overlap').toBe(false);
+    expect(Math.abs(hud.threat.x - hud.layout.threat.rect.x)).toBeLessThan(.75);
+    expect(Math.abs(hud.threat.y - hud.layout.threat.rect.y)).toBeLessThan(.75);
+  }
 }
 
 async function siteLayout(page: Page) {
@@ -321,6 +377,7 @@ for (const viewport of [
     await ready(page, viewport);
     await start(page, 'easy');
     await expectSevenSiteLayout(page, viewport);
+    await expectHudSafeLayout(page, `fantasia-easy-${viewport.width}x${viewport.height}`);
     await saveEvidence(page, `fantasia-sites-${viewport.width}x${viewport.height}`,
       'Live Easy campaign, all seven site indicators visible; captured at the CSS viewport shown above.');
   });
@@ -392,7 +449,43 @@ test.describe('desktop enlarged-text reachability', () => {
     const siteFontSize = await page.locator('#campaign-sites .campaign-site-owner').first()
       .evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
     expect(siteFontSize).toBeGreaterThanOrEqual(14);
+    await expectHudSafeLayout(page, 'fantasia-desktop-text-200');
     await saveEvidence(page, 'fantasia-sites-desktop-text-200',
       'Desktop CSS text runs were doubled to 200% before layout checks; text and controls remained in the live page.');
+  });
+});
+
+// Additional coverage preserves the existing start/skip/safety-stop contract.
+for (const viewport of [
+  { width: 320, height: 568 }, { width: 393, height: 852 },
+  { width: 568, height: 320 }, { width: 852, height: 393 }, { width: 1440, height: 900 },
+]) {
+  test(`Normal full-size radar and notification avoid DOM HUD at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+    await ready(page, viewport);
+    await start(page, 'normal');
+    await expectSevenSiteLayout(page, viewport);
+    await expectHudSafeLayout(page, `fantasia-normal-${viewport.width}x${viewport.height}`);
+  });
+}
+test.describe('DPR2 HUD geometry', () => {
+  test.use({ deviceScaleFactor: 2, viewport: { width: 393, height: 852 } });
+  test('rotation keeps CSS pixel reservations and saved control settings intact', async ({ page }) => {
+    await ready(page);
+    const before = await page.evaluate(() => ['fantasia-controls-v1', 'fantasia-controls-easy-v1', 'fantasia-keyboard-v1'].map(key => localStorage.getItem(key)));
+    await start(page, 'easy');
+    await expectHudSafeLayout(page, 'fantasia-dpr2-initial-393x852');
+    for (const viewport of [{ width: 852, height: 393 }, { width: 393, height: 852 }]) {
+      await page.setViewportSize(viewport);
+      // Rotation intentionally pauses the app. Resume through the existing UI;
+      // do not accept or silently clear a separate frame/render safety stop.
+      await expect.poll(async () => (await state(page))?.phase).toBe('paused');
+      expect((await state(page))?.pauseReasons).toEqual(['resize']);
+      await expect(page.locator('#resume')).toBeEnabled();
+      await page.locator('#resume').click();
+      await expect.poll(async () => (await state(page))?.phase).toBe('playing');
+      await expectSevenSiteLayout(page, viewport);
+      await expectHudSafeLayout(page, `fantasia-dpr2-${viewport.width}x${viewport.height}`);
+    }
+    expect(await page.evaluate(() => ['fantasia-controls-v1', 'fantasia-controls-easy-v1', 'fantasia-keyboard-v1'].map(key => localStorage.getItem(key)))).toEqual(before);
   });
 });

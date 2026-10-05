@@ -1128,3 +1128,9 @@ p {
   .fantasia-shell #announcement { top: calc(118px + var(--safe-top)) !important; bottom: auto; left: auto; right: 12px; transform: none; width: 180px; font-size: 10px; text-align: right; }
   .fantasia-shell #warning { bottom: calc(88px + var(--safe-bottom)); font-size: 10px; }
 }
+
+/* Measured Fantasia notification lane: full-size text, no independent bottom anchor. */
+.fantasia-shell #campaign-threat[style*="--campaign-threat-top"] {
+  left: var(--campaign-threat-left); top: var(--campaign-threat-top);
+  right: auto; bottom: auto;
+}

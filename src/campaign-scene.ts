@@ -16,6 +16,7 @@ import { aimRadius, AIM_COLORS } from './aim-indicator';
 import { FLIGHT_FOV, getFlightCameraPose, projectFlightTarget } from './flight-view';
 import { projectGunSight } from './gun-sight';
 import { RenderQueue } from './render-queue';
+import { createCampaignHudLayout, type CampaignHudLayout } from './campaign-hud-layout';
 import type { Aircraft, Bullet, Team } from './types';
 import type { CampaignActor, CampaignState, Vec } from './campaign-types';
 import { heightAt, radialPosition, route, sweepSphere, TERRAIN_OBSTACLES } from './campaign-terrain';
@@ -251,6 +252,7 @@ export class CampaignScene {
   readonly camera = new PerspectiveCamera(FLIGHT_FOV, 1, .5, 22000);
   private readonly scene = new Scene();
   private readonly renderQueue: RenderQueue;
+  private readonly hudLayout: CampaignHudLayout;
   private readonly aircraftFactory = new AircraftFactory();
   private readonly aircraftBatches = new AircraftBatchFactory();
   private readonly aircraftTracers = new AircraftTracers();
@@ -311,6 +313,7 @@ export class CampaignScene {
     this.hero = this.aircraftBatches.optimize(this.aircraftFactory.create('hero'), 'hero');
     this.scene.add(this.hero.root, this.aircraftTracers.root);
     this.ctx = overlay?.getContext('2d') ?? null;
+    this.hudLayout = createCampaignHudLayout(canvas);
 
     const solid = this.material(new MeshStandardMaterial({ vertexColors: true, roughness: .84, metalness: .06 }));
     for (const geometry of terrainChunks(createCampaignTerrainGeometry())) this.scene.add(new Mesh(this.geometry(geometry), solid));
@@ -413,7 +416,7 @@ export class CampaignScene {
   resize() {
     if (this.disposed) return;
     const bounds = this.canvas.getBoundingClientRect(); if (bounds.width <= 0 || bounds.height <= 0) return;
-    this.width = bounds.width; this.height = bounds.height;
+    this.width = bounds.width; this.height = bounds.height; this.hudLayout.invalidate();
     this.renderer.setSize(bounds.width, bounds.height, false);
     this.camera.aspect = bounds.width / bounds.height; this.camera.updateProjectionMatrix();
     if (this.overlay) { this.overlay.width = Math.round(bounds.width); this.overlay.height = Math.round(bounds.height); }
@@ -623,6 +626,9 @@ export class CampaignScene {
     c.shadowBlur = 0; c.clearRect(0, 0, w, h); if (!this.overlayVisible) return;
     const sight = mode === 'normal' ? this.gunSight(player) : { x: w / 2, y: h / 2 };
     const radius = aimRadius(mode, w, h);
+    // Reserve the actual sight, crosshair and reload-ring fringe without changing them.
+    const sightExtent = radius + 10;
+    this.hudLayout.update({ x: sight.x - sightExtent, y: sight.y - sightExtent, width: sightExtent * 2, height: sightExtent * 2 });
     let indicator: keyof typeof AIM_COLORS = 'clear';
     for (const actor of state.actors) {
       if (actor.hp <= 0) continue;
@@ -741,7 +747,8 @@ export class CampaignScene {
   }
   private drawRadar(state: CampaignState, player: Aircraft) {
     const c = this.ctx!, r = this.width < 360 ? 42 : 49;
-    const x = this.width - r - 18, y = Math.min(this.height * .33, 180), range = 2400;
+    const layout = this.hudLayout.diagnostics();
+    const x = layout.radar?.center.x ?? this.width - r - 18, y = layout.radar?.center.y ?? Math.min(this.height * .33, 180), range = 2400;
     const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
     const point = (position: Vec) => {
       const dx = position.x - player.position.x, dz = position.z - player.position.z;
@@ -778,11 +785,11 @@ export class CampaignScene {
       textures: this.renderer.info.memory.textures, particles: this.particles.length,
       ground: [...this.ground.values()].reduce((n, mesh) => n + mesh.count, 0), dragons: this.dragonBodies.count,
       sites: this.siteVisuals.size, width: this.width, height: this.height, pixelRatio: this.renderer.getPixelRatio(),
-      aircraftTracers: this.aircraftTracers.diagnostics() };
+      aircraftTracers: this.aircraftTracers.diagnostics(), hudLayout: this.hudLayout.diagnostics() };
   }
   dispose() {
     if (this.disposed) return; this.disposed = true;
-    this.renderQueue.dispose(); this.scene.remove(this.hero.root); this.aircraftBatches.dispose(); this.aircraftTracers.dispose(); this.aircraftFactory.dispose();
+    this.hudLayout.dispose(); this.renderQueue.dispose(); this.scene.remove(this.hero.root); this.aircraftBatches.dispose(); this.aircraftTracers.dispose(); this.aircraftFactory.dispose();
     this.scene.traverse(object => { if (object instanceof InstancedMesh) object.dispose(); });
     for (const geometry of this.geometries) geometry.dispose(); for (const material of this.materials) material.dispose();
     this.geometries.clear(); this.materials.clear(); this.ground.clear(); this.projectileBodies.clear(); this.siteVisuals.clear(); this.particles = [];
