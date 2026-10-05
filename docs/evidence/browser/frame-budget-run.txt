@@ -1,0 +1,71 @@
+
+Running 1 test using 1 worker
+
+(node:14800) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✘  1 browser-tests/fantasia.spec.ts:275:3 › the first touch loop release after keyboard-default input reaches exactly one live tick (10.8s)
+Testing stopped early after 1 maximum allowed failures.
+
+
+  1) browser-tests/fantasia.spec.ts:275:3 › the first touch loop release after keyboard-default input reaches exactly one live tick 
+
+    TimeoutError: locator.tap: Timeout 2500ms exceeded.
+    Call log:
+      - waiting for locator('#loop')
+        - locator resolved to <button id="loop" class="loop-button" aria-pressed="false" data-flight-control="true">…</button>
+      - attempting tap action
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <div class="panel">…</div> from <section role="dialog" id="pause-screen" aria-modal="true" class="screen modal-screen" aria-labelledby="pause-title">…</section> subtree intercepts pointer events
+        - retrying tap action
+        - waiting 20ms
+        2 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <div class="panel">…</div> from <section role="dialog" id="pause-screen" aria-modal="true" class="screen modal-screen" aria-labelledby="pause-title">…</section> subtree intercepts pointer events
+        - retrying tap action
+          - waiting 100ms
+        3 × waiting for element to be visible, enabled and stable
+          - element is visible, enabled and stable
+          - scrolling into view if needed
+          - done scrolling
+          - <div class="panel">…</div> from <section role="dialog" id="pause-screen" aria-modal="true" class="screen modal-screen" aria-labelledby="pause-title">…</section> subtree intercepts pointer events
+        - retrying tap action
+          - waiting 500ms
+
+
+      71 | async function tapLiveControl(page: Page, selector: string) {
+      72 |   try {
+    > 73 |     await page.locator(selector).tap({ timeout: 2500 });
+         |                                  ^
+      74 |   } catch (error) {
+      75 |     const current = await state(page);
+      76 |     if (current?.phase === 'paused' && current.pauseReasons?.includes('render')
+        at tapLiveControl (/workspace/fantasia/browser-tests/fantasia.spec.ts:73:34)
+        at /workspace/fantasia/browser-tests/fantasia.spec.ts:288:11
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/fantasia-the-first-touch-l-54697-aches-exactly-one-live-tick/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/fantasia-the-first-touch-l-54697-aches-exactly-one-live-tick/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/fantasia-the-first-touch-l-54697-aches-exactly-one-live-tick/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/fantasia-the-first-touch-l-54697-aches-exactly-one-live-tick/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    browser-tests/fantasia.spec.ts:275:3 › the first touch loop release after keyboard-default input reaches exactly one live tick 
+  1 error was not a part of any test, see above for details
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice

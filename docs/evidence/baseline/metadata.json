@@ -16,8 +16,8 @@
     "home",
     "normal",
     "pause",
-    "touch-settings",
-    "keyboard-settings"
+    "keyboard-settings",
+    "touch-settings"
   ],
   "missingScreens": [
     "easy",
@@ -29,6 +29,1128 @@
     "Partial baseline only; not F-05/F-06 acceptance",
     "Normal capture after regular start and radio selection",
     "No actor HP/owner writes used",
-    "No hero 4 pose pairs"
-  ]
+    "No hero 4 pose pairs",
+    "Mislabeled touch entry archived as keyboard-from-touch-entry.png; true touch editor recaptured via normal Start, manual Pause, settings, and touch tab."
+  ],
+  "screenFileCorrections": [
+    {
+      "from": "touch-settings.png",
+      "to": "keyboard-from-touch-entry.png",
+      "sha256": "a99a220a5526f6b87b73c2dec54231c67eeba48c672424bf1cffa52e65cd8627",
+      "reason": "Visual inspection found keyboard editor selected, with title キーボードの設定; the original file was mislabeled."
+    }
+  ],
+  "recaptures": {
+    "touch-settings": {
+      "file": "touch-settings.png",
+      "before": {
+        "phase": "paused",
+        "screen": "paused",
+        "mode": "normal",
+        "selectedMode": "normal",
+        "graphicsReady": true,
+        "tick": 52,
+        "elapsed": 0.8666666666666667,
+        "pauseReasons": [
+          "manual"
+        ],
+        "lastInterruption": null,
+        "renderStatus": "pending",
+        "render": {
+          "queue": {
+            "status": "pending",
+            "failure": null,
+            "pendingMs": 17.5,
+            "lastCompletedPendingMs": 601,
+            "completedFrameIntervalMs": 603.6000000000931,
+            "submittedCount": 8,
+            "completedCount": 7,
+            "skippedCount": 33
+          },
+          "calls": 178,
+          "triangles": 230968,
+          "geometries": 50,
+          "textures": 4,
+          "particles": 2,
+          "navalFlashes": 4,
+          "planes": 10,
+          "ships": 4,
+          "width": 1440,
+          "height": 900,
+          "pixelRatio": 1,
+          "aircraftTracers": {
+            "segments": 6,
+            "capacity": 2048,
+            "corePx": 1.5,
+            "outlinePx": 2.5,
+            "tailSeconds": 0.045,
+            "depthTest": true,
+            "resolution": [
+              1440,
+              900
+            ]
+          }
+        },
+        "settingsOpen": true,
+        "rulesOpen": false,
+        "player": {
+          "kind": "aircraft",
+          "id": 1,
+          "team": "friendly",
+          "role": "player",
+          "position": {
+            "x": 0,
+            "y": 220,
+            "z": 144.66666666666617
+          },
+          "previous": {
+            "x": 0,
+            "y": 220,
+            "z": 146.49999999999952
+          },
+          "quaternion": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "yaw": 0,
+          "pitch": 0,
+          "bank": 0,
+          "speed": 110,
+          "health": 80,
+          "maxHealth": 80,
+          "mg": 288,
+          "cannon": 96,
+          "reloadTicksRemaining": 0,
+          "generation": "initial",
+          "fireClock": 0,
+          "cannonClock": 0,
+          "bombs": 2,
+          "torpedoes": 1,
+          "bombReloadTicks": 0,
+          "torpedoReloadTicks": 0,
+          "payloadCooldown": 0,
+          "aiBomb": false,
+          "loopProgress": 0,
+          "loopCooldown": 0,
+          "mode": "pursue",
+          "age": 0.8666666666666677,
+          "targetId": null,
+          "aiPhase": "approach",
+          "aiPhaseTime": 0,
+          "aiWaypoint": {
+            "x": 0,
+            "y": 220,
+            "z": 240
+          },
+          "aiTurn": 0,
+          "aiClimb": 0,
+          "aiFire": false
+        },
+        "actorCounts": {},
+        "inputPresentation": "keyboard",
+        "controlsInput": {
+          "turn": 0,
+          "climb": 0,
+          "steerPointer": null,
+          "heldPointers": {
+            "fire": [],
+            "loop": [],
+            "accelerate": [],
+            "brake": [],
+            "bomb": [],
+            "torpedo": []
+          },
+          "keys": []
+        },
+        "settings": {
+          "editor": "touch",
+          "mode": "normal",
+          "target": "fire",
+          "keys": [
+            {
+              "action": "left",
+              "key": "←"
+            },
+            {
+              "action": "right",
+              "key": "→"
+            },
+            {
+              "action": "up",
+              "key": "↑"
+            },
+            {
+              "action": "down",
+              "key": "↓"
+            },
+            {
+              "action": "fire",
+              "key": "Space"
+            },
+            {
+              "action": "loop",
+              "key": "L"
+            },
+            {
+              "action": "accelerate",
+              "key": "W"
+            },
+            {
+              "action": "brake",
+              "key": "S"
+            },
+            {
+              "action": "bomb",
+              "key": "Z"
+            },
+            {
+              "action": "torpedo",
+              "key": "X"
+            },
+            {
+              "action": "pause",
+              "key": "Esc"
+            }
+          ]
+        },
+        "storage": {
+          "fantasia-controls-v1": null,
+          "fantasia-controls-easy-v1": null,
+          "fantasia-keyboard-v1": null,
+          "kaisen-controls-v1": null,
+          "kaisen-controls-easy-v1": null,
+          "kaisen-keyboard-v1": null
+        }
+      },
+      "after": {
+        "phase": "paused",
+        "screen": "paused",
+        "mode": "normal",
+        "selectedMode": "normal",
+        "graphicsReady": true,
+        "tick": 52,
+        "elapsed": 0.8666666666666667,
+        "pauseReasons": [
+          "manual"
+        ],
+        "lastInterruption": null,
+        "renderStatus": "pending",
+        "render": {
+          "queue": {
+            "status": "pending",
+            "failure": null,
+            "pendingMs": 356.30000000004657,
+            "lastCompletedPendingMs": 588.6999999999534,
+            "completedFrameIntervalMs": 591.1999999999534,
+            "submittedCount": 9,
+            "completedCount": 8,
+            "skippedCount": 39
+          },
+          "calls": 178,
+          "triangles": 230968,
+          "geometries": 50,
+          "textures": 4,
+          "particles": 2,
+          "navalFlashes": 4,
+          "planes": 10,
+          "ships": 4,
+          "width": 1440,
+          "height": 900,
+          "pixelRatio": 1,
+          "aircraftTracers": {
+            "segments": 6,
+            "capacity": 2048,
+            "corePx": 1.5,
+            "outlinePx": 2.5,
+            "tailSeconds": 0.045,
+            "depthTest": true,
+            "resolution": [
+              1440,
+              900
+            ]
+          }
+        },
+        "settingsOpen": true,
+        "rulesOpen": false,
+        "player": {
+          "kind": "aircraft",
+          "id": 1,
+          "team": "friendly",
+          "role": "player",
+          "position": {
+            "x": 0,
+            "y": 220,
+            "z": 144.66666666666617
+          },
+          "previous": {
+            "x": 0,
+            "y": 220,
+            "z": 146.49999999999952
+          },
+          "quaternion": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "yaw": 0,
+          "pitch": 0,
+          "bank": 0,
+          "speed": 110,
+          "health": 80,
+          "maxHealth": 80,
+          "mg": 288,
+          "cannon": 96,
+          "reloadTicksRemaining": 0,
+          "generation": "initial",
+          "fireClock": 0,
+          "cannonClock": 0,
+          "bombs": 2,
+          "torpedoes": 1,
+          "bombReloadTicks": 0,
+          "torpedoReloadTicks": 0,
+          "payloadCooldown": 0,
+          "aiBomb": false,
+          "loopProgress": 0,
+          "loopCooldown": 0,
+          "mode": "pursue",
+          "age": 0.8666666666666677,
+          "targetId": null,
+          "aiPhase": "approach",
+          "aiPhaseTime": 0,
+          "aiWaypoint": {
+            "x": 0,
+            "y": 220,
+            "z": 240
+          },
+          "aiTurn": 0,
+          "aiClimb": 0,
+          "aiFire": false
+        },
+        "actorCounts": {},
+        "inputPresentation": "keyboard",
+        "controlsInput": {
+          "turn": 0,
+          "climb": 0,
+          "steerPointer": null,
+          "heldPointers": {
+            "fire": [],
+            "loop": [],
+            "accelerate": [],
+            "brake": [],
+            "bomb": [],
+            "torpedo": []
+          },
+          "keys": []
+        },
+        "settings": {
+          "editor": "touch",
+          "mode": "normal",
+          "target": "fire",
+          "keys": [
+            {
+              "action": "left",
+              "key": "←"
+            },
+            {
+              "action": "right",
+              "key": "→"
+            },
+            {
+              "action": "up",
+              "key": "↑"
+            },
+            {
+              "action": "down",
+              "key": "↓"
+            },
+            {
+              "action": "fire",
+              "key": "Space"
+            },
+            {
+              "action": "loop",
+              "key": "L"
+            },
+            {
+              "action": "accelerate",
+              "key": "W"
+            },
+            {
+              "action": "brake",
+              "key": "S"
+            },
+            {
+              "action": "bomb",
+              "key": "Z"
+            },
+            {
+              "action": "torpedo",
+              "key": "X"
+            },
+            {
+              "action": "pause",
+              "key": "Esc"
+            }
+          ]
+        },
+        "storage": {
+          "fantasia-controls-v1": null,
+          "fantasia-controls-easy-v1": null,
+          "fantasia-keyboard-v1": null,
+          "kaisen-controls-v1": null,
+          "kaisen-controls-easy-v1": null,
+          "kaisen-keyboard-v1": null
+        }
+      },
+      "capturedAt": "2026-10-05T03:23:32.659Z",
+      "sha256": "4627f260e19db1a1faea39e986c009d3b83a89bc86e7af08c3470cd95ad4537b",
+      "fonts": {
+        "computed": {
+          "html": {
+            "family": "system-ui, -apple-system, \"Hiragino Kaku Gothic ProN\", \"Noto Sans JP\", sans-serif",
+            "size": "16px",
+            "weight": "400",
+            "lineHeight": "normal",
+            "visible": true
+          },
+          "body": {
+            "family": "system-ui, -apple-system, \"Hiragino Kaku Gothic ProN\", \"Noto Sans JP\", sans-serif",
+            "size": "16px",
+            "weight": "400",
+            "lineHeight": "normal",
+            "visible": true
+          },
+          "#title": {
+            "family": "\"Hiragino Mincho ProN\", \"Yu Mincho\", serif",
+            "size": "86px",
+            "weight": "500",
+            "lineHeight": "normal",
+            "visible": false
+          },
+          "#timer": {
+            "family": "ui-monospace, SFMono-Regular, Consolas, monospace",
+            "size": "27px",
+            "weight": "400",
+            "lineHeight": "normal",
+            "visible": true
+          },
+          "#pause-title": {
+            "family": "\"Hiragino Mincho ProN\", \"Yu Mincho\", serif",
+            "size": "30px",
+            "weight": "500",
+            "lineHeight": "normal",
+            "visible": true
+          },
+          "#control-settings-title": {
+            "family": "\"Hiragino Mincho ProN\", serif",
+            "size": "16.8px",
+            "weight": "500",
+            "lineHeight": "normal",
+            "visible": true
+          },
+          "#control-editor-touch": {
+            "family": "system-ui, -apple-system, \"Hiragino Kaku Gothic ProN\", \"Noto Sans JP\", sans-serif",
+            "size": "13.6px",
+            "weight": "400",
+            "lineHeight": "normal",
+            "visible": true
+          },
+          "#control-editor-keyboard": {
+            "family": "system-ui, -apple-system, \"Hiragino Kaku Gothic ProN\", \"Noto Sans JP\", sans-serif",
+            "size": "13.6px",
+            "weight": "400",
+            "lineHeight": "normal",
+            "visible": true
+          }
+        },
+        "platform": {
+          "html": [],
+          "body": [],
+          "#title": [],
+          "#timer": [
+            {
+              "familyName": "Noto Sans Mono CJK JP",
+              "postScriptName": "NotoSansMonoCJKjp-Regular",
+              "isCustomFont": false,
+              "glyphCount": 8
+            }
+          ],
+          "#pause-title": [
+            {
+              "familyName": "Noto Serif CJK JP",
+              "postScriptName": "NotoSerifCJKjp-Regular",
+              "isCustomFont": false,
+              "glyphCount": 4
+            }
+          ],
+          "#control-settings-title": [
+            {
+              "familyName": "Noto Serif CJK JP",
+              "postScriptName": "NotoSerifCJKjp-Regular",
+              "isCustomFont": false,
+              "glyphCount": 9
+            }
+          ],
+          "#control-editor-touch": [
+            {
+              "familyName": "Noto Sans CJK JP",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": false,
+              "glyphCount": 5
+            }
+          ],
+          "#control-editor-keyboard": [
+            {
+              "familyName": "Noto Sans CJK JP",
+              "postScriptName": "NotoSansCJKjp-Regular",
+              "isCustomFont": false,
+              "glyphCount": 5
+            }
+          ]
+        },
+        "method": "CDP CSS.getPlatformFontsForNode; familyName and glyphCount describe fonts actually used"
+      },
+      "display": {
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "browserDpr": 1,
+        "textScale": 1,
+        "rootFontSize": "16px",
+        "visualViewportScale": 1,
+        "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/149.0.0.0 Safari/537.36",
+        "renderer": {
+          "vendor": "WebKit",
+          "renderer": "WebKit WebGL",
+          "unmaskedVendor": "Google Inc. (Google)",
+          "unmaskedRenderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+        }
+      },
+      "source": {
+        "commit": "3d751051dc6212482a129e8da596ddd349b2f9f5",
+        "fileHashes": {
+          "index.html": "723edcad8e1b8b060ad010a7610c90a0339a075d0e7e3653886f45e2a995e5b4",
+          "package-lock.json": "5e4f59eb5c1288a252c663a8126a4b49991834bb9b1ced4b9d1cf90d724e2d78",
+          "package.json": "519ce0e8332c9800e5ede2a1311a9a0890e078daff4bc557b69be18e312d0277",
+          "src/ai.ts": "8d6050f92f08b55b053430c706c46ca37683a65901e20a86dcf9fc2242da59c2",
+          "src/aim-indicator.ts": "2f2e129e0ffbe41462577f1dc10a137b037f5cb1b280ab1ee50c182b8c155140",
+          "src/aircraft-batch.ts": "cd69fdcd03507faffca251b311f253f4ccd10aa0bb11fbfc767626a4960c5428",
+          "src/aircraft-damage.ts": "b0a71f4b39aa1adab948ea3f08d99f0ed60e30deb5087992c8f748c9a5fade83",
+          "src/aircraft-tracers.ts": "fb6cd860fcabe4f541b75ae167a6fb4b83f063e195f99ef272c4aa8559a1b4b7",
+          "src/aircraft.ts": "1a9c18f93e5a48869882b2aa2946cdeb352dc4a8acd76b4fd9beade8ded621d5",
+          "src/ally-announcements.ts": "7b267a199a71fd993f0b92ace235eeeb175265544e2b204daad76de5c9aeb6d6",
+          "src/ammunition.ts": "a8cafceea6d20183f7257c2a4036d36a92feba830d5050d98fb9c9a6d5271370",
+          "src/atmosphere.ts": "e6b9c95f0685bb2732926e72730c96712251813a2c6c6faa150a21793c2c1f7a",
+          "src/audio.ts": "3396f7b46c42d331ccf2270c77bee5ad2037167064dca4c7710fc444bf0514e8",
+          "src/bomb-blast.ts": "76cadd55191c9d08aba199b97325a9c6f439081495d83578febafe7db45c3ee0",
+          "src/bomb-guide.ts": "9b069f4ccda5a478adf67c7c42aa982a59b13d2e7820179d88415ee1485c762b",
+          "src/control-settings.css": "c04d27c450da70f85a3c843bb5e7fd0905d455f1e9cf16b66609adf605fe8f4e",
+          "src/control-settings.ts": "161ed08ffcaf8393c2160a21140e4a45f9f3e37be206128202a6efe0d603fa4f",
+          "src/dialog-focus.ts": "86d631a4d618558e1ca671004c12ccc1fbdfe75516e6c5d04f962acd2c5e1996",
+          "src/flight-assist.ts": "49b671ad892fc3a0b350e84ce15e5c9fd659aaca71c2483272aefcae4f856486",
+          "src/flight-view.ts": "1f9b7e040c2270de5838f24bad93c7ac1c75c7827ba3c1b58591ef6271a20363",
+          "src/flight.ts": "8fe62d521bc2cfa11b0ab8cb3c0609c54a3d80355eff15a72257eea1aa4770a5",
+          "src/gun-sight.ts": "436c9e7c6a6864513489de6d8172d85d97bd1bf685b60678890f848a9acd2b71",
+          "src/input.ts": "2d41824bdbda40c0341f922f7c1d737b4b28018f49a9ec29bb5570280be9aea9",
+          "src/keyboard-settings.ts": "bcbde97cdbbf0556536c2f0732b4ff5add7876559cc38704fbdf758995d45854",
+          "src/main.ts": "b970e7a37ecb2fcd4a2b48215c152d559729bf6931ee67dbd8705b92186e2851",
+          "src/mission-hud.ts": "447038d88df50b70a674790e38ad8b37ad97df4c99aba3d38c3dc9bf2d9d1126",
+          "src/mission.ts": "8ea4aa79ee850d8849d4c2141b246654f5d970f445dd3593a2061e401e327922",
+          "src/naval-damage.ts": "af122931da2ccaf520894528d5e0663372f713bac4362fcf6ca5175e5c658084",
+          "src/naval.ts": "b02e758791bfddd6ebc06b643b25d0c209392fe3426cc900cfb02fd631396d83",
+          "src/ocean.ts": "0f2263700d5b9c5516e81d77fd4e2b6341c94a257b6edb2893f8d41ddbb574d0",
+          "src/ordnance-view.ts": "13301f6bddf0df587fbcdb4f1684e2089f45a3fcca1120559a1cc22bb099645b",
+          "src/ordnance.ts": "524410fc8a90978fde49f2f8341cb39617509b2fc7ff765792c1e37e43aa86c7",
+          "src/render-queue.ts": "8ec4611984beb7168ead1a7e758faf399b0cc0b73939502352be984ab35648f7",
+          "src/rules-guide.ts": "a03abf506bfed4d38d3310d2ea5d33fedaea35f6b78502cf2c68516a705f717c",
+          "src/scene.ts": "3644a30ba9062581bb046e1821d446692963c2f26964f649dc6de1cc5f1e072b",
+          "src/scoring.ts": "542a3860fcb6558a76d497559d08d925eb140626e5b2354f99a250e0d8d8fca3",
+          "src/sea-contact.ts": "887f47926e3a2305672a5e2b9901403d402a8fc352383f01a74bf03380bc2612",
+          "src/ship-motion.ts": "add5748015717beb0a4a08f6f388e5a7030f679837e455b5854346ea75108dc8",
+          "src/ship-wreck.ts": "ae76873890da33d69504ef240e1cf6441f46ae0420802e4c4d5e005c67630ee3",
+          "src/ships.ts": "78c25b5de6fd1ced806589f3378ba5a27a0741e58e28d7823d564a72ab9d95c1",
+          "src/simulation.ts": "b17bde2dac51a0278d1a09757c9609e134c4b023f965e0811e6839dc00f3abf3",
+          "src/style.css": "444c78dc16d8d512fe0e528b062bde34f8c8e6c410e86e0ebf3d7542fceecbd8",
+          "src/types.ts": "84ac0a3bf79cbe8b2230a6062b99b2317c154251cdb3238e88fdea644c2b8f1f",
+          "tsconfig.json": "f57e51a36f5117844a944b784bf81573bd92714599d8511a2b6e95ac86ef2cfa",
+          "vite.config.ts": "13c3c6f6f0f70aea9ed954d50dfba335d1425569c4b722cd18c7ac295c9e9c45"
+        },
+        "sourceTreeSha256": "045dd984b2135d02e5e65d8f1c04fa6f569b059479f1bf7eda38717518d4f39a",
+        "runtimeDirtyFiles": []
+      },
+      "actions": [
+        {
+          "action": "select-normal-radio",
+          "state": {
+            "phase": "ready",
+            "screen": "home",
+            "mode": "normal",
+            "selectedMode": "normal",
+            "graphicsReady": true,
+            "tick": 0,
+            "elapsed": 0,
+            "pauseReasons": [],
+            "lastInterruption": null,
+            "renderStatus": "pending",
+            "render": {
+              "queue": {
+                "status": "pending",
+                "failure": null,
+                "pendingMs": 45.199999999953434,
+                "lastCompletedPendingMs": 822.6999999999534,
+                "completedFrameIntervalMs": null,
+                "submittedCount": 2,
+                "completedCount": 1,
+                "skippedCount": 8
+              },
+              "calls": 176,
+              "triangles": 230896,
+              "geometries": 40,
+              "textures": 4,
+              "particles": 0,
+              "navalFlashes": 0,
+              "planes": 10,
+              "ships": 4,
+              "width": 1440,
+              "height": 900,
+              "pixelRatio": 1,
+              "aircraftTracers": {
+                "segments": 0,
+                "capacity": 2048,
+                "corePx": 1.5,
+                "outlinePx": 2.5,
+                "tailSeconds": 0.045,
+                "depthTest": true,
+                "resolution": [
+                  1440,
+                  900
+                ]
+              }
+            },
+            "settingsOpen": false,
+            "rulesOpen": false,
+            "player": {
+              "kind": "aircraft",
+              "id": 1,
+              "team": "friendly",
+              "role": "player",
+              "position": {
+                "x": 0,
+                "y": 220,
+                "z": 240
+              },
+              "previous": {
+                "x": 0,
+                "y": 220,
+                "z": 240
+              },
+              "quaternion": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "yaw": 0,
+              "pitch": 0,
+              "bank": 0,
+              "speed": 110,
+              "health": 80,
+              "maxHealth": 80,
+              "mg": 288,
+              "cannon": 96,
+              "reloadTicksRemaining": 0,
+              "generation": "initial",
+              "fireClock": 0,
+              "cannonClock": 0,
+              "bombs": 2,
+              "torpedoes": 1,
+              "bombReloadTicks": 0,
+              "torpedoReloadTicks": 0,
+              "payloadCooldown": 0,
+              "aiBomb": false,
+              "loopProgress": 0,
+              "loopCooldown": 0,
+              "mode": "pursue",
+              "age": 0,
+              "targetId": null,
+              "aiPhase": "approach",
+              "aiPhaseTime": 0,
+              "aiWaypoint": {
+                "x": 0,
+                "y": 220,
+                "z": 240
+              },
+              "aiTurn": 0,
+              "aiClimb": 0,
+              "aiFire": false
+            },
+            "actorCounts": {},
+            "inputPresentation": "keyboard",
+            "controlsInput": {
+              "turn": 0,
+              "climb": 0,
+              "steerPointer": null,
+              "heldPointers": {
+                "fire": [],
+                "loop": [],
+                "accelerate": [],
+                "brake": [],
+                "bomb": [],
+                "torpedo": []
+              },
+              "keys": []
+            },
+            "settings": {
+              "editor": "touch",
+              "mode": "normal",
+              "target": "fire",
+              "keys": [
+                {
+                  "action": "left",
+                  "key": ""
+                },
+                {
+                  "action": "right",
+                  "key": ""
+                },
+                {
+                  "action": "up",
+                  "key": ""
+                },
+                {
+                  "action": "down",
+                  "key": ""
+                },
+                {
+                  "action": "fire",
+                  "key": ""
+                },
+                {
+                  "action": "loop",
+                  "key": ""
+                },
+                {
+                  "action": "accelerate",
+                  "key": ""
+                },
+                {
+                  "action": "brake",
+                  "key": ""
+                },
+                {
+                  "action": "bomb",
+                  "key": ""
+                },
+                {
+                  "action": "torpedo",
+                  "key": ""
+                },
+                {
+                  "action": "pause",
+                  "key": ""
+                }
+              ]
+            },
+            "storage": {
+              "fantasia-controls-v1": null,
+              "fantasia-controls-easy-v1": null,
+              "fantasia-keyboard-v1": null,
+              "kaisen-controls-v1": null,
+              "kaisen-controls-easy-v1": null,
+              "kaisen-keyboard-v1": null
+            }
+          }
+        },
+        {
+          "action": "start-normal",
+          "at": "2026-10-05T03:23:29.830Z"
+        },
+        {
+          "action": "select-real-touch-editor"
+        },
+        {
+          "action": "capture-attempt",
+          "name": "touch-settings",
+          "attempt": 1,
+          "file": "touch-settings-attempt-1.png",
+          "before": {
+            "phase": "paused",
+            "screen": "paused",
+            "mode": "normal",
+            "selectedMode": "normal",
+            "graphicsReady": true,
+            "tick": 52,
+            "elapsed": 0.8666666666666667,
+            "pauseReasons": [
+              "manual"
+            ],
+            "lastInterruption": null,
+            "renderStatus": "pending",
+            "render": {
+              "queue": {
+                "status": "pending",
+                "failure": null,
+                "pendingMs": 17.5,
+                "lastCompletedPendingMs": 601,
+                "completedFrameIntervalMs": 603.6000000000931,
+                "submittedCount": 8,
+                "completedCount": 7,
+                "skippedCount": 33
+              },
+              "calls": 178,
+              "triangles": 230968,
+              "geometries": 50,
+              "textures": 4,
+              "particles": 2,
+              "navalFlashes": 4,
+              "planes": 10,
+              "ships": 4,
+              "width": 1440,
+              "height": 900,
+              "pixelRatio": 1,
+              "aircraftTracers": {
+                "segments": 6,
+                "capacity": 2048,
+                "corePx": 1.5,
+                "outlinePx": 2.5,
+                "tailSeconds": 0.045,
+                "depthTest": true,
+                "resolution": [
+                  1440,
+                  900
+                ]
+              }
+            },
+            "settingsOpen": true,
+            "rulesOpen": false,
+            "player": {
+              "kind": "aircraft",
+              "id": 1,
+              "team": "friendly",
+              "role": "player",
+              "position": {
+                "x": 0,
+                "y": 220,
+                "z": 144.66666666666617
+              },
+              "previous": {
+                "x": 0,
+                "y": 220,
+                "z": 146.49999999999952
+              },
+              "quaternion": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "yaw": 0,
+              "pitch": 0,
+              "bank": 0,
+              "speed": 110,
+              "health": 80,
+              "maxHealth": 80,
+              "mg": 288,
+              "cannon": 96,
+              "reloadTicksRemaining": 0,
+              "generation": "initial",
+              "fireClock": 0,
+              "cannonClock": 0,
+              "bombs": 2,
+              "torpedoes": 1,
+              "bombReloadTicks": 0,
+              "torpedoReloadTicks": 0,
+              "payloadCooldown": 0,
+              "aiBomb": false,
+              "loopProgress": 0,
+              "loopCooldown": 0,
+              "mode": "pursue",
+              "age": 0.8666666666666677,
+              "targetId": null,
+              "aiPhase": "approach",
+              "aiPhaseTime": 0,
+              "aiWaypoint": {
+                "x": 0,
+                "y": 220,
+                "z": 240
+              },
+              "aiTurn": 0,
+              "aiClimb": 0,
+              "aiFire": false
+            },
+            "actorCounts": {},
+            "inputPresentation": "keyboard",
+            "controlsInput": {
+              "turn": 0,
+              "climb": 0,
+              "steerPointer": null,
+              "heldPointers": {
+                "fire": [],
+                "loop": [],
+                "accelerate": [],
+                "brake": [],
+                "bomb": [],
+                "torpedo": []
+              },
+              "keys": []
+            },
+            "settings": {
+              "editor": "touch",
+              "mode": "normal",
+              "target": "fire",
+              "keys": [
+                {
+                  "action": "left",
+                  "key": "←"
+                },
+                {
+                  "action": "right",
+                  "key": "→"
+                },
+                {
+                  "action": "up",
+                  "key": "↑"
+                },
+                {
+                  "action": "down",
+                  "key": "↓"
+                },
+                {
+                  "action": "fire",
+                  "key": "Space"
+                },
+                {
+                  "action": "loop",
+                  "key": "L"
+                },
+                {
+                  "action": "accelerate",
+                  "key": "W"
+                },
+                {
+                  "action": "brake",
+                  "key": "S"
+                },
+                {
+                  "action": "bomb",
+                  "key": "Z"
+                },
+                {
+                  "action": "torpedo",
+                  "key": "X"
+                },
+                {
+                  "action": "pause",
+                  "key": "Esc"
+                }
+              ]
+            },
+            "storage": {
+              "fantasia-controls-v1": null,
+              "fantasia-controls-easy-v1": null,
+              "fantasia-keyboard-v1": null,
+              "kaisen-controls-v1": null,
+              "kaisen-controls-easy-v1": null,
+              "kaisen-keyboard-v1": null
+            }
+          },
+          "after": {
+            "phase": "paused",
+            "screen": "paused",
+            "mode": "normal",
+            "selectedMode": "normal",
+            "graphicsReady": true,
+            "tick": 52,
+            "elapsed": 0.8666666666666667,
+            "pauseReasons": [
+              "manual"
+            ],
+            "lastInterruption": null,
+            "renderStatus": "pending",
+            "render": {
+              "queue": {
+                "status": "pending",
+                "failure": null,
+                "pendingMs": 356.30000000004657,
+                "lastCompletedPendingMs": 588.6999999999534,
+                "completedFrameIntervalMs": 591.1999999999534,
+                "submittedCount": 9,
+                "completedCount": 8,
+                "skippedCount": 39
+              },
+              "calls": 178,
+              "triangles": 230968,
+              "geometries": 50,
+              "textures": 4,
+              "particles": 2,
+              "navalFlashes": 4,
+              "planes": 10,
+              "ships": 4,
+              "width": 1440,
+              "height": 900,
+              "pixelRatio": 1,
+              "aircraftTracers": {
+                "segments": 6,
+                "capacity": 2048,
+                "corePx": 1.5,
+                "outlinePx": 2.5,
+                "tailSeconds": 0.045,
+                "depthTest": true,
+                "resolution": [
+                  1440,
+                  900
+                ]
+              }
+            },
+            "settingsOpen": true,
+            "rulesOpen": false,
+            "player": {
+              "kind": "aircraft",
+              "id": 1,
+              "team": "friendly",
+              "role": "player",
+              "position": {
+                "x": 0,
+                "y": 220,
+                "z": 144.66666666666617
+              },
+              "previous": {
+                "x": 0,
+                "y": 220,
+                "z": 146.49999999999952
+              },
+              "quaternion": [
+                0,
+                0,
+                0,
+                1
+              ],
+              "yaw": 0,
+              "pitch": 0,
+              "bank": 0,
+              "speed": 110,
+              "health": 80,
+              "maxHealth": 80,
+              "mg": 288,
+              "cannon": 96,
+              "reloadTicksRemaining": 0,
+              "generation": "initial",
+              "fireClock": 0,
+              "cannonClock": 0,
+              "bombs": 2,
+              "torpedoes": 1,
+              "bombReloadTicks": 0,
+              "torpedoReloadTicks": 0,
+              "payloadCooldown": 0,
+              "aiBomb": false,
+              "loopProgress": 0,
+              "loopCooldown": 0,
+              "mode": "pursue",
+              "age": 0.8666666666666677,
+              "targetId": null,
+              "aiPhase": "approach",
+              "aiPhaseTime": 0,
+              "aiWaypoint": {
+                "x": 0,
+                "y": 220,
+                "z": 240
+              },
+              "aiTurn": 0,
+              "aiClimb": 0,
+              "aiFire": false
+            },
+            "actorCounts": {},
+            "inputPresentation": "keyboard",
+            "controlsInput": {
+              "turn": 0,
+              "climb": 0,
+              "steerPointer": null,
+              "heldPointers": {
+                "fire": [],
+                "loop": [],
+                "accelerate": [],
+                "brake": [],
+                "bomb": [],
+                "torpedo": []
+              },
+              "keys": []
+            },
+            "settings": {
+              "editor": "touch",
+              "mode": "normal",
+              "target": "fire",
+              "keys": [
+                {
+                  "action": "left",
+                  "key": "←"
+                },
+                {
+                  "action": "right",
+                  "key": "→"
+                },
+                {
+                  "action": "up",
+                  "key": "↑"
+                },
+                {
+                  "action": "down",
+                  "key": "↓"
+                },
+                {
+                  "action": "fire",
+                  "key": "Space"
+                },
+                {
+                  "action": "loop",
+                  "key": "L"
+                },
+                {
+                  "action": "accelerate",
+                  "key": "W"
+                },
+                {
+                  "action": "brake",
+                  "key": "S"
+                },
+                {
+                  "action": "bomb",
+                  "key": "Z"
+                },
+                {
+                  "action": "torpedo",
+                  "key": "X"
+                },
+                {
+                  "action": "pause",
+                  "key": "Esc"
+                }
+              ]
+            },
+            "storage": {
+              "fantasia-controls-v1": null,
+              "fantasia-controls-easy-v1": null,
+              "fantasia-keyboard-v1": null,
+              "kaisen-controls-v1": null,
+              "kaisen-controls-easy-v1": null,
+              "kaisen-keyboard-v1": null
+            }
+          },
+          "capturedAt": "2026-10-05T03:23:32.659Z",
+          "sha256": "4627f260e19db1a1faea39e986c009d3b83a89bc86e7af08c3470cd95ad4537b"
+        }
+      ],
+      "browser": "Chromium 149.0.7827.55 (Playwright 1.61.1)",
+      "os": "Debian GNU/Linux 13 x86_64",
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "browserDpr": 1,
+      "textScale": 1
+    }
+  }
 }

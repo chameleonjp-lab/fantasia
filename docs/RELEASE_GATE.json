@@ -1,88 +1,129 @@
 {
   "ready": false,
-  "candidateCommit": null,
+  "candidateCommit": "fe7e03935dd4ff4c59a14a6f35511f50aaf7e9e2",
   "physicalPhoneVerified": false,
-  "independentReview": "pending",
+  "independentReview": "blocked",
   "acceptance": {
     "F-01": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-02": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-03": {
-      "status": "pending",
-      "evidence": []
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-04": {
-      "status": "pending",
-      "evidence": []
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-05": {
-      "status": "pending",
-      "evidence": []
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-06": {
-      "status": "pending",
-      "evidence": []
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-07": {
-      "status": "pending",
-      "evidence": []
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-08": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-09": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-10": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-11": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-12": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-13": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-14": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-15": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-16": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-17": {
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-18": {
-      "status": "pending",
-      "evidence": []
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-19": {
-      "status": "pending",
-      "evidence": []
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     },
     "F-20": {
-      "status": "pending",
-      "evidence": []
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
     }
-  }
+  },
+  "reviewEvidence": "docs/INDEPENDENT_REVIEW.md"
 }

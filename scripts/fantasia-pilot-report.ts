@@ -286,20 +286,10 @@ async function runPilot(mode: Mode, seed: number, policy: Policy, maxTicks: numb
     inputs.push({ ...input });
     hash.update(JSON.stringify(input)); hash.update('\n');
 
-    const classesBefore = new Map(campaign.state.actors.map(actor => [actor.id, actor.kind]));
     campaign.step(worldInput);
     flight.sync(campaign.state);
     wallFrames++;
     maxProjectiles = Math.max(maxProjectiles, campaign.state.projectiles.length);
-    for (const event of campaign.state.events) {
-      if (event.kind === 'kill' && event.targetRef) {
-        const actorKind = classesBefore.get(event.targetRef.id);
-        if (actorKind === 'turret' || actorKind === 'dragon' || actorKind === 'ground') {
-          // Count only the legal simulation event. No target HP or site owner
-          // is edited by the pilot or report layer.
-        }
-      }
-    }
     makeTimelineSample(campaign.state, timeline);
   }
 
@@ -400,7 +390,7 @@ function parseArgs(args: string[]): Options {
   if (!Number.isInteger(maxTicks) || maxTicks < 1 || maxTicks > CAMPAIGN_LIMIT_TICKS) throw new Error(`--max-ticks must be 1..${CAMPAIGN_LIMIT_TICKS}`);
   return {
     seeds: readInt('seeds', 10, 100), startSeed, modes, policies, maxTicks,
-    outDir: resolve(map.get('out') ?? 'test-results/evidence/fantasia-pilot'),
+    outDir: resolve(map.get('out') ?? '/tmp/fantasia-pilot-report'),
     replay: map.get('replay') !== 'false',
   };
 }
