@@ -1,0 +1,43 @@
+{
+  "environment": {
+    "runtime": "v24.19.0",
+    "platform": "linux",
+    "arch": "x64"
+  },
+  "fixture": "synthetic 470 actors, 448 bow shooters, 14 dragons, 7 turrets, 1 player; high HP; all lanes active; stationary benchmark player",
+  "simulationOnly": true,
+  "physicalDesktop": false,
+  "physicalPhone": false,
+  "durationSimSeconds": 120,
+  "minimumActors": 470,
+  "maxProjectiles": 510,
+  "shots": 36883,
+  "millisecondsPerTick": {
+    "median": 2.831608000000415,
+    "p95": 5.947709000000032,
+    "p99": 26.553523000000496,
+    "max": 112.383659
+  },
+  "stateHash": "d8b298f9",
+  "logicalRestartChecks": [
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true,
+    true
+  ],
+  "limitations": [
+    "No WebGL frame timings",
+    "No physical-device qualification",
+    "No 20 minute WebGL soak",
+    "No browser listener/texture/memory leak assertion",
+    "Not a normal gameplay victory"
+  ],
+  "candidateCommit": "fe7e03935dd4ff4c59a14a6f35511f50aaf7e9e2",
+  "measurementContext": "Managed cloud VM; concurrent browser/pilot processes; not qualified physical hardware"
+}

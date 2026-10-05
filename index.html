@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#071e2b" />
+    <meta
+      name="description"
+      content="ゼロシリーズ・ファンタジア。剣と魔法の世界で7軍を空から支援し、7つの陣地の同時占領を目指すブラウザゲーム。"
+    />
+    <title>ファンタジア</title>
+  </head>
+  <body>
+    <main id="app" class="fantasia-shell" data-screen="home" data-mode="easy">
+      <canvas id="flight" tabindex="0" aria-label="7方面の地上軍を支援する航空戦闘画面"></canvas>
+      <canvas id="markers" aria-hidden="true"></canvas>
+      <div class="vignette" aria-hidden="true"></div>
+      <section id="home" class="screen home-screen" aria-labelledby="title">
+        <div class="brand-line">
+          <span class="brand-mark">F</span
+          ><span>ZERO SERIES / TIME ATTACK</span
+          ><span class="version">7陣地占領戦</span>
+        </div>
+        <div class="home-copy">
+          <p class="eyebrow">剣と魔法の世界を、空から支える</p>
+          <h1 id="title">ファンタジア</h1>
+          <p class="intro">
+            同時に進む7軍に、突破口を。<br />7つの旗を、味方でそろえるまでの時間を競う。
+          </p>
+        </div>
+        <div class="briefing">
+          <div class="mission-data">
+            <div>
+              <span>味方地上軍</span><strong>7<small>軍</small></strong
+              ><em>剣・弓・魔法・騎馬</em>
+            </div>
+            <div>
+              <span>占領目標</span><strong>7<small>陣地</small></strong
+              ><em>全旗の同時所有で勝利</em>
+            </div>
+            <div>
+              <span>魔法砲台</span><strong>7<small>基</small></strong
+              ><em>敵兵・竜は継続補填</em>
+            </div>
+          </div>
+          <fieldset class="mode-picker">
+            <legend>操作モード</legend>
+            <label><input type="radio" name="game-mode" value="easy" checked /><span>イージー</span></label>
+            <label><input type="radio" name="game-mode" value="normal" /><span>ノーマル</span></label>
+          </fieldset>
+          <button id="start" class="primary" disabled>
+            画面を準備しています
+          </button>
+          <p class="controls-guide"><span id="input-guide">画面をドラッグして操縦</span><br /><span id="mode-guide">照準円内へ自動射撃 · 弾道を見て少し先を狙う</span></p>
+          <p id="friendly-fire-guide" class="controls-guide" hidden>誤射は味方兵を傷つけます：損傷1HPにつき−2点 · 撃破はさらに−100点</p>
+          <p id="best-record" class="keyboard-guide">この端末の最速記録 —</p>
+          <div class="home-actions"><button id="home-rules" class="secondary">ルールと操作方法</button><button id="home-controls" class="text-button">操作設定</button></div>
+          <p id="keyboard-guide" class="keyboard-guide" hidden></p>
+          <p id="startup-error" class="error" role="alert" hidden></p>
+          <button id="reload" class="secondary" hidden>再読み込み</button>
+        </div>
+        <footer class="home-footer">
+          <span>FANTASIA / 7陣地占領戦</span
+          ><button id="home-sound" class="text-button" aria-pressed="false">
+            音をオンにする
+          </button>
+        </footer>
+      </section>
+      <section id="hud" aria-label="飛行中の情報" hidden>
+        <div class="hud-top">
+          <div class="time-block">
+            <span>作戦経過 · <b id="hud-mode">イージー</b></span><strong id="timer">00:00.00</strong>
+          </div>
+          <div class="targets" aria-label="陣地占領数と残機">
+            <div class="target-tally"><span>味方の旗</span><b id="enemy-count">0</b><small id="enemy-total">/ 7陣地</small></div>
+            <div class="hud-actions">
+              <button id="game-sound" class="icon-button sound-button" aria-label="音をオンにする" aria-pressed="false">音 OFF</button>
+              <button id="pause" class="icon-button" aria-label="一時停止">Ⅱ</button>
+            </div>
+            <div class="target-tally"><span>残機</span><b id="lives-count">3</b><small>現在機を含む</small></div>
+          </div>
+        </div>
+        <div id="campaign-sites" class="campaign-sites" role="list" aria-label="7陣地の戦況"></div>
+        <div class="flight-data">
+          <div class="health-label">
+            機体 <b id="health">100</b><small>%</small>
+          </div>
+          <div class="health-track"><i id="health-bar"></i></div>
+          <div class="instrument">
+            <span id="altitude">300m</span><span id="speed">396km/h</span>
+          </div>
+          <div class="wingmen">味方兵 <span id="allies-count">168</span> · 予備 <span id="reserves-count">336</span></div>
+          <div class="campaign-limit">期限まで <b id="remaining-time">20:00</b></div>
+          <div class="score-readout">スコア <b id="score">0</b></div>
+          <div class="ammo" aria-label="残弾数">機銃 <b id="mg-ammo">288</b> · 機関砲 <b id="cannon-ammo">96</b></div>
+        </div>
+        <div id="campaign-threat" class="ally-announcements" role="status" aria-live="polite" aria-atomic="true"></div>
+        <p id="payload-status" class="payload-status"></p>
+        <p id="reload-status" class="reload-status" hidden></p>
+        <p id="warning" class="warning" role="status" hidden>
+          低空注意 · 機首を上げて
+        </p>
+        <button id="bomb" class="flight-button payload-button" aria-label="爆弾を投下"><span class="payload-name">爆弾</span><small id="bomb-ammo">残り2発</small><small id="bomb-hint">有効圏外</small></button>
+        <div id="respawn-status" class="respawn-status" role="status" hidden></div>
+        <p id="flight-tip" class="flight-tip">触れた位置からドラッグして操縦</p>
+        <div class="bottom-controls">
+          <button id="loop" class="loop-button">
+            <span aria-hidden="true">↻</span><b>宙返り</b
+            ><small id="loop-status">すぐ使える</small>
+          </button>
+        </div>
+        <div id="normal-controls" hidden>
+          <button id="fire" class="flight-button fire-button" aria-label="射撃（長押し）">射撃</button>
+          <button id="accelerate" class="flight-button throttle-button" aria-label="加速（長押し）">加速</button>
+          <button id="brake" class="flight-button throttle-button" aria-label="減速（長押し）">減速</button>
+        </div>
+      </section>
+      <section
+        id="pause-screen"
+        class="screen modal-screen"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pause-title"
+        hidden
+      >
+        <div class="panel">
+          <p class="eyebrow">PAUSED</p>
+          <h2 id="pause-title">一時停止</h2>
+          <p id="pause-reason">タイムの計測も止まっています</p>
+          <details class="campaign-detail"><summary>7方面の戦況を見る</summary><div id="pause-site-details"></div></details>
+          <button id="pause-reload" class="primary" hidden>再読み込み</button>
+          <button id="resume" class="primary">飛行を再開</button
+          ><button id="pause-restart" class="secondary">はじめから出撃</button
+          ><button id="pause-home" class="text-button">ホームへ戻る</button>
+          <button id="pause-rules" class="secondary">ルールと操作方法</button>
+          <button id="pause-controls" class="secondary">操作設定</button>
+        </div>
+      </section>
+      <section
+        id="result"
+        class="screen modal-screen"
+        aria-labelledby="result-title"
+        hidden
+      >
+        <div class="panel result-panel">
+          <p id="result-kicker" class="eyebrow">MISSION REPORT</p>
+          <h2 id="result-title">作戦終了</h2>
+          <p id="result-mode" class="mode-label">イージー</p>
+          <p id="result-reason"></p>
+          <div class="result-time">
+            <span id="result-time-label">経過時間</span
+            ><strong id="result-time">00:00.00</strong>
+          </div>
+          <p class="result-score-total">最終スコア <strong id="result-score">0</strong></p>
+          <section class="score-breakdown" aria-labelledby="score-breakdown-title">
+            <h3 id="score-breakdown-title">スコアの内訳</h3>
+            <dl id="score-breakdown">
+              <div><dt>陣地の初占領</dt><dd id="result-score-captures">0</dd></div>
+              <div><dt>魔法砲台の破壊</dt><dd id="result-score-turrets">0</dd></div>
+              <div><dt>クリアボーナス</dt><dd id="result-score-clear">0</dd></div>
+              <div><dt>速さボーナス</dt><dd id="result-score-speed">0</dd></div>
+              <div><dt>味方への損傷減点</dt><dd id="result-score-friendlyDamagePenalty">0</dd></div>
+              <div><dt>味方兵の撃破減点</dt><dd id="result-score-friendlyKillPenalty">0</dd></div>
+              <div><dt>自機の喪失減点</dt><dd id="result-score-selfLossPenalty">0</dd></div>
+            </dl>
+            <p id="score-scope-note">陣地の初占領と砲台の破壊に加点。敵兵・竜・増援の撃破、旗の奪還を繰り返しても加点されません。スコアは最大26,100点です。</p>
+            <p id="result-score-version"></p>
+          </section>
+          <p id="friendly-fire-result"></p>
+          <dl class="result-stats">
+            <div>
+              <dt>作戦時間 / 復活加算</dt>
+              <dd id="result-active-time">00:00.00 / +00:00.00</dd>
+            </div>
+            <div>
+              <dt>味方所有の陣地</dt>
+              <dd id="result-sites">0 / 7</dd>
+            </div>
+            <div>
+              <dt>生存兵 / 予備兵</dt>
+              <dd id="result-forces">168 / 336</dd>
+            </div>
+            <div><dt>自機喪失 / 残機</dt><dd id="result-lives">0 / 3</dd></div>
+            <div><dt>敵の撃破 / 味方の損失</dt><dd id="result-kills">0 / 0</dd></div>
+            <div><dt>一時停止</dt><dd id="result-pauses">0回</dd></div>
+          </dl>
+          <button id="retry" class="primary">もう一度出撃</button
+          ><button id="result-home" class="secondary">ホームへ戻る</button>
+          <button id="result-controls" class="text-button">操作設定</button>
+          <p id="record-status" class="result-note" role="status"></p>
+          <button id="record-session-only" class="text-button" hidden>今回の記録をこのタブだけで残す</button>
+          <p class="result-note">記録はこの端末に保存されます。オンライン送信は行いません。</p>
+        </div>
+      </section>
+      <div
+        id="announcement"
+        class="announcement"
+        role="status"
+        aria-live="polite"
+      ></div>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

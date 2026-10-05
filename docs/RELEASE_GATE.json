@@ -1,0 +1,129 @@
+{
+  "ready": false,
+  "candidateCommit": "fe7e03935dd4ff4c59a14a6f35511f50aaf7e9e2",
+  "physicalPhoneVerified": false,
+  "independentReview": "blocked",
+  "acceptance": {
+    "F-01": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-02": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-03": {
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-04": {
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-05": {
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-06": {
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-07": {
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-08": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-09": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-10": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-11": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-12": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-13": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-14": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-15": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-16": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-17": {
+      "status": "partial",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-18": {
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-19": {
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    },
+    "F-20": {
+      "status": "blocked",
+      "evidence": [
+        "docs/FANTASIA_VERIFICATION.md"
+      ]
+    }
+  },
+  "reviewEvidence": "docs/INDEPENDENT_REVIEW.md"
+}

@@ -1,0 +1,131 @@
+{
+  "repository": "chameleonjp-lab/fantasia",
+  "generatedAt": "2026-10-05T03:22:50.458Z",
+  "source": {
+    "commit": "fe7e03935dd4ff4c59a14a6f35511f50aaf7e9e2",
+    "fileHashes": {
+      "index.html": "5e3e3d9a3fc6729e3c8adf45c7e88a12b0cc2f24b387f9dc51b814e6211f7a4b",
+      "package-lock.json": "d90bf89a8089247f91ef00f54d3be68fc57011587e6c7a5803bad47659663584",
+      "package.json": "653ff7670b7bc8d69eb1a1a7d6d51849b291b7c4db9ad577b535a2f3f968c220",
+      "src/ai.ts": "8d6050f92f08b55b053430c706c46ca37683a65901e20a86dcf9fc2242da59c2",
+      "src/aim-indicator.ts": "2f2e129e0ffbe41462577f1dc10a137b037f5cb1b280ab1ee50c182b8c155140",
+      "src/aircraft-batch.ts": "cd69fdcd03507faffca251b311f253f4ccd10aa0bb11fbfc767626a4960c5428",
+      "src/aircraft-damage.ts": "b0a71f4b39aa1adab948ea3f08d99f0ed60e30deb5087992c8f748c9a5fade83",
+      "src/aircraft-tracers.ts": "fb6cd860fcabe4f541b75ae167a6fb4b83f063e195f99ef272c4aa8559a1b4b7",
+      "src/aircraft.ts": "1a9c18f93e5a48869882b2aa2946cdeb352dc4a8acd76b4fd9beade8ded621d5",
+      "src/ally-announcements.ts": "7b267a199a71fd993f0b92ace235eeeb175265544e2b204daad76de5c9aeb6d6",
+      "src/ammunition.ts": "a8cafceea6d20183f7257c2a4036d36a92feba830d5050d98fb9c9a6d5271370",
+      "src/atmosphere.ts": "e6b9c95f0685bb2732926e72730c96712251813a2c6c6faa150a21793c2c1f7a",
+      "src/audio.ts": "3396f7b46c42d331ccf2270c77bee5ad2037167064dca4c7710fc444bf0514e8",
+      "src/bomb-blast.ts": "76cadd55191c9d08aba199b97325a9c6f439081495d83578febafe7db45c3ee0",
+      "src/bomb-guide.ts": "9b069f4ccda5a478adf67c7c42aa982a59b13d2e7820179d88415ee1485c762b",
+      "src/campaign-airframe.ts": "babe7396aaf68952a8fb2fcfec205322d9bb527bb0f88c6b6de377e113869c6e",
+      "src/campaign-combat.ts": "73096e76fd9286a8e5cbf3c3177e75d36ad5ba285453663da17a16fa6b99fa7e",
+      "src/campaign-config.ts": "70ca3041ca8c79985802b4eea4e3d18cc93edfe7fc8b075b9914c183be4edcf3",
+      "src/campaign-flight.ts": "92e9d3649edb731c0cdba754c152fdeca155df28bccb490d20918a20d2b9238f",
+      "src/campaign-hud.ts": "91b7a1ce55e07721f0c39618b6b473ee448aba378648fd6b30c6c4d7e8588594",
+      "src/campaign-logistics.ts": "55178e11661a3d1fe9bb267d219970b57ef0c398b0eb73efd9b2244aee97bf25",
+      "src/campaign-records.ts": "cdae1b8470d7a2002e6341e5e0f258ba74b1a445984a2e0aa49a2fc6247b71e2",
+      "src/campaign-scene.ts": "4578c61c8aae10833485336175fbe9c934d0f926603d1765f2271e446a46e3b4",
+      "src/campaign-terrain.ts": "fe80fd5c7e39725080c3a1df8d744a3761947e356c84717a4777f5e958a5063d",
+      "src/campaign-types.ts": "34f30278db5f119945a5916ccf641198fa18109215e01dbf655a6f7e2c6a6596",
+      "src/campaign.ts": "c95d527f8e8839830038d9a34220b87c2af7edd92e3aef88ee5c55d76ed5b74e",
+      "src/control-settings.css": "c04d27c450da70f85a3c843bb5e7fd0905d455f1e9cf16b66609adf605fe8f4e",
+      "src/control-settings.ts": "add7eb0ce1d868a75255174b3cb31587b599dbfb9e59ef478c25f57a0764c54f",
+      "src/dialog-focus.ts": "86d631a4d618558e1ca671004c12ccc1fbdfe75516e6c5d04f962acd2c5e1996",
+      "src/flight-assist.ts": "ca7b6983aedf7a767bf71617a90218c11ca0b4c35a1e08ac57259ca080b846ad",
+      "src/flight-view.ts": "1f9b7e040c2270de5838f24bad93c7ac1c75c7827ba3c1b58591ef6271a20363",
+      "src/flight.ts": "8fe62d521bc2cfa11b0ab8cb3c0609c54a3d80355eff15a72257eea1aa4770a5",
+      "src/gun-sight.ts": "436c9e7c6a6864513489de6d8172d85d97bd1bf685b60678890f848a9acd2b71",
+      "src/input.ts": "cd8108e2d5be6f3c301d5a323df0e80c954ac57df4cd424f9afb64859e589b96",
+      "src/keyboard-settings.ts": "7feadb487155680c46744b6af272d75b987d7301fc0c4d8ff661c2b7343adaab",
+      "src/main.ts": "720fbce34fa948f1d32114a2ec087225f455da92d92c5d7046f58ffd1f586b8a",
+      "src/mission-hud.ts": "447038d88df50b70a674790e38ad8b37ad97df4c99aba3d38c3dc9bf2d9d1126",
+      "src/mission.ts": "8ea4aa79ee850d8849d4c2141b246654f5d970f445dd3593a2061e401e327922",
+      "src/naval-damage.ts": "af122931da2ccaf520894528d5e0663372f713bac4362fcf6ca5175e5c658084",
+      "src/naval.ts": "b02e758791bfddd6ebc06b643b25d0c209392fe3426cc900cfb02fd631396d83",
+      "src/ocean.ts": "0f2263700d5b9c5516e81d77fd4e2b6341c94a257b6edb2893f8d41ddbb574d0",
+      "src/ordnance-view.ts": "13301f6bddf0df587fbcdb4f1684e2089f45a3fcca1120559a1cc22bb099645b",
+      "src/ordnance.ts": "524410fc8a90978fde49f2f8341cb39617509b2fc7ff765792c1e37e43aa86c7",
+      "src/render-queue.ts": "8ec4611984beb7168ead1a7e758faf399b0cc0b73939502352be984ab35648f7",
+      "src/rules-guide.ts": "a5e847f077a39de1842b216e22ddd2efd348e8c53aa76b14968f3dbf8df967de",
+      "src/scene.ts": "3644a30ba9062581bb046e1821d446692963c2f26964f649dc6de1cc5f1e072b",
+      "src/scoring.ts": "542a3860fcb6558a76d497559d08d925eb140626e5b2354f99a250e0d8d8fca3",
+      "src/sea-contact.ts": "887f47926e3a2305672a5e2b9901403d402a8fc352383f01a74bf03380bc2612",
+      "src/ship-motion.ts": "add5748015717beb0a4a08f6f388e5a7030f679837e455b5854346ea75108dc8",
+      "src/ship-wreck.ts": "ae76873890da33d69504ef240e1cf6441f46ae0420802e4c4d5e005c67630ee3",
+      "src/ships.ts": "78c25b5de6fd1ced806589f3378ba5a27a0741e58e28d7823d564a72ab9d95c1",
+      "src/simulation.ts": "b17bde2dac51a0278d1a09757c9609e134c4b023f965e0811e6839dc00f3abf3",
+      "src/style.css": "aae0f9c74aa4d862bb09b9f099fcd5dac30aafd22d6bc3ed6d45edfddfe5d817",
+      "src/types.ts": "84ac0a3bf79cbe8b2230a6062b99b2317c154251cdb3238e88fdea644c2b8f1f",
+      "tsconfig.json": "f57e51a36f5117844a944b784bf81573bd92714599d8511a2b6e95ac86ef2cfa",
+      "vite.config.ts": "13c3c6f6f0f70aea9ed954d50dfba335d1425569c4b722cd18c7ac295c9e9c45"
+    },
+    "sourceTreeSha256": "20828dcb903b53665acc096a6911322836eaa18391644c0e315ac5dee11beed0",
+    "runtimeDirtyFiles": []
+  },
+  "commit": "fe7e03935dd4ff4c59a14a6f35511f50aaf7e9e2",
+  "sourceTreeSha256": "20828dcb903b53665acc096a6911322836eaa18391644c0e315ac5dee11beed0",
+  "os": "Debian GNU/Linux 13 x86_64",
+  "osDetails": {
+    "platform": "linux",
+    "kernelRelease": "6.18.44",
+    "architecture": "x64"
+  },
+  "viewport": {
+    "width": 1440,
+    "height": 900
+  },
+  "browserDpr": 1,
+  "textScale": 1,
+  "launch": {
+    "executable": "/home/agent/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome",
+    "args": [
+      "--use-gl=angle",
+      "--use-angle=swiftshader",
+      "--enable-unsafe-swiftshader"
+    ],
+    "headless": true
+  },
+  "url": "http://127.0.0.1:4176",
+  "baselineUrl": "http://127.0.0.1:4177",
+  "baseline": {
+    "repository": "chameleonjp-lab/kaisen",
+    "commit": "3d751051dc6212482a129e8da596ddd349b2f9f5",
+    "browser": "Chromium 149.0.7827.55 (Playwright 1.61.1)",
+    "os": "Debian GNU/Linux 13 x86_64",
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "browserDpr": 1,
+    "textScale": 1
+  },
+  "screens": {},
+  "actions": [],
+  "console": [],
+  "complete": false,
+  "captureBudgetSeconds": 60,
+  "missingScreens": [
+    "easy",
+    "victory",
+    "defeat",
+    "home",
+    "normal",
+    "pause",
+    "touch-settings",
+    "keyboard-settings"
+  ],
+  "notes": [
+    "Actual Chromium screenshots from legal UI actions; read-only observation hook only.",
+    "Partial five-state visual evidence; not F-05 or F-06 acceptance. No victory injection, four aircraft poses, 200% text, or physical phone claim.",
+    "Initial local storage is empty because every run uses a fresh browser context.",
+    "Normal capture waits for at least 15 simulation ticks; actual before/after state is recorded rather than forced to a baseline timestamp.",
+    "A recoverable render pause may be resumed through the real Resume button; all other automatic pauses fail capture."
+  ],
+  "failure": {
+    "name": "Error",
+    "message": "browserType.launch: Failed to launch chromium because executable doesn't exist at /home/agent/.cache/ms-playwright/chromium-1228/chrome-linux64/chrome"
+  },
+  "finishedAt": "2026-10-05T03:22:50.468Z"
+}

@@ -1,0 +1,66 @@
+
+Running 8 tests using 1 worker
+
+(node:9516) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  1 [chromium] › browser-tests/fantasia.spec.ts:112:1 › home starts both modes, pauses the live campaign, restarts it, and returns home (13.4s)
+  ✘  2 [chromium] › browser-tests/fantasia.spec.ts:140:1 › settings tabs save committed changes, discard drafts, and reject duplicate keys (1.0m)
+Testing stopped early after 1 maximum allowed failures.
+
+
+  1) [chromium] › browser-tests/fantasia.spec.ts:140:1 › settings tabs save committed changes, discard drafts, and reject duplicate keys 
+
+    Test timeout of 60000ms exceeded.
+
+    Error: locator.selectOption: Test timeout of 60000ms exceeded.
+    Call log:
+      - waiting for locator('#control-mode')
+        - locator resolved to <select id="control-mode" class="control-target">…</select>
+      - attempting select option action
+        2 × waiting for element to be visible and enabled
+          - element is not visible
+        - retrying select option action
+        - waiting 20ms
+        2 × waiting for element to be visible and enabled
+          - element is not visible
+        - retrying select option action
+          - waiting 100ms
+        114 × waiting for element to be visible and enabled
+            - element is not visible
+          - retrying select option action
+            - waiting 500ms
+
+
+      145 |
+      146 | test('settings tabs save committed changes, discard drafts, and reject duplicate keys', async ({ page }) => {
+    > 147 |   await ready(page);
+          |                     ^
+      148 |   await page.evaluate(() => {
+      149 |     for (const key of ['fantasia-controls-v1', 'fantasia-controls-easy-v1', 'fantasia-keyboard-v1']) localStorage.removeItem(key);
+      150 |   });
+        at /workspace/fantasia/browser-tests/fantasia.spec.ts:147:39
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › browser-tests/fantasia.spec.ts:140:1 › settings tabs save committed changes, discard drafts, and reject duplicate keys 
+  6 did not run
+  1 passed (1.3m)
+  1 error was not a part of any test, see above for details
+npm notice
+npm notice New major version of npm available! 11.9.0 -> 12.2.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v12.2.0
+npm notice To update run: npm install -g npm@12.2.0
+npm notice

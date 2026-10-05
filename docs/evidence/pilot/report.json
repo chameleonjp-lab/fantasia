@@ -1,0 +1,315 @@
+{
+  "title": "Fantasia physical FlightInput campaign pilot and deterministic replay report",
+  "environment": "Headless pure Campaign.step() runs with the K CampaignFlightController; this is not browser/F19 proof or physical-device evidence.",
+  "method": {
+    "authority": "Every world tick is advanced once by Campaign.step() after CampaignFlightController integrates one bounded K aircraft motion step.",
+    "inputs": "The pilot emits ordinary FlightInput turn/climb/fire/loop/bomb/throttle values. Bombs are one-tick releases and use the actual terrain predictor.",
+    "mutation": "The policy reads state and never assigns actor HP, site ownership, captures, player position, velocity, or projectile hits. Campaign methods own all world state changes.",
+    "replay": "The exact consumed FlightInput stream and 3-second respawn boundaries are replayed in a fresh seeded Campaign and compared by SHA-256 input hash and canonical campaignStateHash.",
+    "wallTime": "Respawn wait is 180 virtual frames with no campaign step; resumeRespawn() is the authoritative game transition.",
+    "targetPolicy": "Clear accessible site turrets, protect contested frontline bodies or nearby dragons according to the selected policy, then continue against live enemy actors until a terminal result or tick limit.",
+    "feasibility": "A victory, if achieved, is produced by physical flight, campaign projectiles, ground combat, and seven real capture progressions. No victory state is injected."
+  },
+  "tacticalAlternatives": [
+    {
+      "policy": "turret-sweep",
+      "status": "run",
+      "behavior": "Finish the nearest living magic turret before turning to the next site; afterward clear active fronts, then dragons and remaining ground threats."
+    },
+    {
+      "policy": "frontline-support",
+      "status": "available",
+      "behavior": "Interrupt the turret sweep when enemy ground bodies contest a site already reached by friendly ground forces."
+    },
+    {
+      "policy": "dragon-sweep",
+      "status": "available",
+      "behavior": "Prioritize a dragon within 1.8 km of the aircraft, then resume the nearest turret and active-front route."
+    }
+  ],
+  "configuration": {
+    "seeds": 1,
+    "startSeed": 20261005,
+    "modes": [
+      "easy"
+    ],
+    "policies": [
+      "turret-sweep"
+    ],
+    "maxTicks": 15000,
+    "replay": true,
+    "runs": 1
+  },
+  "runs": [
+    {
+      "mode": "easy",
+      "seed": 20261005,
+      "policy": "turret-sweep",
+      "outcome": "limit",
+      "terminal": false,
+      "reason": "reached pilot tick limit without a terminal verdict",
+      "activeTicks": 15000,
+      "wallFrames": 15000,
+      "recordTicks": 15000,
+      "activeSeconds": 250,
+      "recordSeconds": 250,
+      "capturedSites": 1,
+      "owners": [
+        "enemy",
+        "enemy",
+        "enemy",
+        "friendly",
+        "enemy",
+        "enemy",
+        "enemy"
+      ],
+      "turretIdsDestroyed": [
+        200
+      ],
+      "initialTurretsRemaining": 6,
+      "initialDragonsRemaining": 7,
+      "friendlyGround": 24,
+      "enemyGround": 194,
+      "friendlyLosses": 462,
+      "enemyKills": 222,
+      "selfLosses": 0,
+      "livesRemaining": 3,
+      "player": {
+        "hp": 100,
+        "generation": 1,
+        "position": {
+          "x": -712.7671386467462,
+          "y": 184.38264620178438,
+          "z": -683.9420647869732
+        }
+      },
+      "score": null,
+      "replay": {
+        "status": "running",
+        "activeTicks": 15000,
+        "wallFrames": 15000,
+        "stateHash": "e52ee611",
+        "inputHash": "3642d4d2b071068d7ce3e849c6a98b01f1846f7e012e3d9a54807b498bb7fe82",
+        "inputCount": 15000,
+        "respawns": 0,
+        "matches": true
+      },
+      "inputHash": "3642d4d2b071068d7ce3e849c6a98b01f1846f7e012e3d9a54807b498bb7fe82",
+      "stateHash": "e52ee611",
+      "inputCount": 15000,
+      "respawns": [],
+      "maxIntegratedTranslationMetres": 1.836281535198182,
+      "maxProjectiles": 87,
+      "projectilesWithinSpecifiedPool": true,
+      "tacticInputCounts": {
+        "targetChanges": 2,
+        "turretTicks": 10896,
+        "dragonTicks": 0,
+        "groundTicks": 0,
+        "evadeTicks": 4104,
+        "fireCommands": 359,
+        "bombCommands": 2
+      },
+      "timeline": [
+        {
+          "tick": 0,
+          "owners": "EEEEEEE",
+          "turrets": 7,
+          "friendly": 168,
+          "enemy": 168
+        },
+        {
+          "tick": 600,
+          "owners": "EEEEEEE",
+          "turrets": 7,
+          "friendly": 161,
+          "enemy": 168
+        },
+        {
+          "tick": 1200,
+          "owners": "EEEEEEE",
+          "turrets": 7,
+          "friendly": 156,
+          "enemy": 145
+        },
+        {
+          "tick": 1800,
+          "owners": "EEEEEEE",
+          "turrets": 7,
+          "friendly": 137,
+          "enemy": 144
+        },
+        {
+          "tick": 2400,
+          "owners": "EEEEEEE",
+          "turrets": 6,
+          "friendly": 106,
+          "enemy": 118
+        },
+        {
+          "tick": 3000,
+          "owners": "EEENEEE",
+          "turrets": 6,
+          "friendly": 65,
+          "enemy": 142
+        },
+        {
+          "tick": 3600,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 47,
+          "enemy": 133
+        },
+        {
+          "tick": 4200,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 84,
+          "enemy": 122
+        },
+        {
+          "tick": 4800,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 71,
+          "enemy": 119
+        },
+        {
+          "tick": 5400,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 59,
+          "enemy": 105
+        },
+        {
+          "tick": 6000,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 98,
+          "enemy": 151
+        },
+        {
+          "tick": 6600,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 80,
+          "enemy": 139
+        },
+        {
+          "tick": 7200,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 58,
+          "enemy": 135
+        },
+        {
+          "tick": 7800,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 94,
+          "enemy": 135
+        },
+        {
+          "tick": 8400,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 71,
+          "enemy": 188
+        },
+        {
+          "tick": 9000,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 55,
+          "enemy": 181
+        },
+        {
+          "tick": 9600,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 89,
+          "enemy": 179
+        },
+        {
+          "tick": 10200,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 72,
+          "enemy": 162
+        },
+        {
+          "tick": 10800,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 56,
+          "enemy": 159
+        },
+        {
+          "tick": 11400,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 93,
+          "enemy": 195
+        },
+        {
+          "tick": 12000,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 65,
+          "enemy": 181
+        },
+        {
+          "tick": 12600,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 46,
+          "enemy": 179
+        },
+        {
+          "tick": 13200,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 58,
+          "enemy": 175
+        },
+        {
+          "tick": 13800,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 42,
+          "enemy": 201
+        },
+        {
+          "tick": 14400,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 22,
+          "enemy": 198
+        },
+        {
+          "tick": 15000,
+          "owners": "EEEFEEE",
+          "turrets": 6,
+          "friendly": 24,
+          "enemy": 194
+        }
+      ],
+      "pilotLimitTicks": 15000,
+      "inputTrace": "easy-turret-sweep-0020261005-3642d4d2b071.inputs.json.gz"
+    }
+  ],
+  "artifactDirectory": "docs/evidence/pilot",
+  "totals": [
+    {
+      "mode": "easy",
+      "policy": "turret-sweep",
+      "runs": 1,
+      "victories": 0,
+      "defeats": 0,
+      "tickLimits": 1,
+      "averageCapturedSites": 1,
+      "deterministicReplays": 1
+    }
+  ],
+  "sourceContext": "Captured during final integration before browser regression commit; not final-head F19 qualification"
+}

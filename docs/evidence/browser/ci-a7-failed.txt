@@ -1,0 +1,258 @@
+verify	Run npm run test:browser	﻿2026-10-05T03:27:54.8290852Z ##[group]Run npm run test:browser
+verify	Run npm run test:browser	2026-10-05T03:27:54.8291189Z [36;1mnpm run test:browser[0m
+verify	Run npm run test:browser	2026-10-05T03:27:54.8355273Z shell: /usr/bin/bash -e {0}
+verify	Run npm run test:browser	2026-10-05T03:27:54.8355544Z ##[endgroup]
+verify	Run npm run test:browser	2026-10-05T03:27:54.9369810Z 
+verify	Run npm run test:browser	2026-10-05T03:27:54.9370530Z > fantasia@0.1.0 test:browser
+verify	Run npm run test:browser	2026-10-05T03:27:54.9371112Z > playwright test fantasia.spec.ts --project=chromium
+verify	Run npm run test:browser	2026-10-05T03:27:54.9371438Z 
+verify	Run npm run test:browser	2026-10-05T03:27:56.5265112Z 
+verify	Run npm run test:browser	2026-10-05T03:27:56.5265947Z Running 10 tests using 1 worker
+verify	Run npm run test:browser	2026-10-05T03:27:56.5290409Z 
+verify	Run npm run test:browser	2026-10-05T03:28:10.2516631Z   ✘   1 [chromium] › browser-tests/fantasia.spec.ts:158:1 › home starts both modes, pauses the live campaign, restarts it, and returns home (10.2s)
+verify	Run npm run test:browser	2026-10-05T03:28:37.2051722Z   ✘   2 [chromium] › browser-tests/fantasia.spec.ts:186:1 › settings tabs save committed changes, discard drafts, and reject duplicate keys (24.4s)
+verify	Run npm run test:browser	2026-10-05T03:28:47.9875281Z   -   3 [chromium] › browser-tests/fantasia.spec.ts:241:1 › a hidden game stays paused until the player returns and restarts deliberately
+verify	Run npm run test:browser	2026-10-05T03:28:59.4898309Z   ✓   4 [chromium] › browser-tests/fantasia.spec.ts:282:3 › the first touch bomb release after keyboard-default input reaches exactly one live tick (11.5s)
+verify	Run npm run test:browser	2026-10-05T03:29:09.3775389Z   ✘   5 [chromium] › browser-tests/fantasia.spec.ts:282:3 › the first touch loop release after keyboard-default input reaches exactly one live tick (8.5s)
+verify	Run npm run test:browser	2026-10-05T03:29:21.0497723Z   ✓   6 [chromium] › browser-tests/fantasia.spec.ts:314:3 › all seven campaign sites fit around the aiming area at 320x568 (11.1s)
+verify	Run npm run test:browser	2026-10-05T03:29:31.1202402Z   ✘   7 [chromium] › browser-tests/fantasia.spec.ts:314:3 › all seven campaign sites fit around the aiming area at 568x320 (9.0s)
+verify	Run npm run test:browser	2026-10-05T03:29:42.2290205Z   ✓   8 [chromium] › browser-tests/fantasia.spec.ts:314:3 › all seven campaign sites fit around the aiming area at 393x852 (10.5s)
+verify	Run npm run test:browser	2026-10-05T03:29:52.7072189Z   ✘   9 [chromium] › browser-tests/fantasia.spec.ts:314:3 › all seven campaign sites fit around the aiming area at 852x393 (8.7s)
+verify	Run npm run test:browser	2026-10-05T03:30:26.8427176Z   ✘  10 [chromium] › browser-tests/fantasia.spec.ts:326:3 › desktop enlarged-text reachability › settings and all seven site indicators remain usable with actual text rendered at 200% (30.3s)
+verify	Run npm run test:browser	2026-10-05T03:30:26.8953691Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9015855Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9017815Z   1) [chromium] › browser-tests/fantasia.spec.ts:158:1 › home starts both modes, pauses the live campaign, restarts it, and returns home 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9018836Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9019248Z     Error: expect(received).toEqual(expected) // deep equality
+verify	Run npm run test:browser	2026-10-05T03:30:26.9019730Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9019913Z     - Expected  - 1
+verify	Run npm run test:browser	2026-10-05T03:30:26.9020325Z     + Received  + 1
+verify	Run npm run test:browser	2026-10-05T03:30:26.9020577Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9020738Z       Array [
+verify	Run npm run test:browser	2026-10-05T03:30:26.9021121Z     -   "render",
+verify	Run npm run test:browser	2026-10-05T03:30:26.9021406Z     +   "frame",
+verify	Run npm run test:browser	2026-10-05T03:30:26.9021634Z       ]
+verify	Run npm run test:browser	2026-10-05T03:30:26.9021880Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9022361Z       42 |     // Honor its safe stop and require an explicit player resume; frame-gap,
+verify	Run npm run test:browser	2026-10-05T03:30:26.9023367Z       43 |     // hidden-page, and logic-error pauses remain test failures.
+verify	Run npm run test:browser	2026-10-05T03:30:26.9024550Z     > 44 |     expect(afterStart.pauseReasons).toEqual(['render']);
+verify	Run npm run test:browser	2026-10-05T03:30:26.9025278Z          |                                     ^
+verify	Run npm run test:browser	2026-10-05T03:30:26.9025981Z       45 |     expect(afterStart.fatalLogicError).toBeFalsy();
+verify	Run npm run test:browser	2026-10-05T03:30:26.9027281Z       46 |     await expect(page.locator('#pause-reason')).toHaveText('描画が復帰しました。操作して再開できます');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9028429Z       47 |     if (afterStart.renderStatus === 'stalled' && await page.locator('#resume').isDisabled()) {
+verify	Run npm run test:browser	2026-10-05T03:30:26.9029274Z         at start (/home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:44:37)
+verify	Run npm run test:browser	2026-10-05T03:30:26.9030022Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:165:5
+verify	Run npm run test:browser	2026-10-05T03:30:26.9030437Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9030952Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9032357Z     test-results/fantasia-home-starts-both--b962d-estarts-it-and-returns-home-chromium/test-failed-1.png
+verify	Run npm run test:browser	2026-10-05T03:30:26.9033433Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9033789Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9034682Z     Error Context: test-results/fantasia-home-starts-both--b962d-estarts-it-and-returns-home-chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:30:26.9035216Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9035642Z     attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9036370Z     test-results/fantasia-home-starts-both--b962d-estarts-it-and-returns-home-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9036885Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:30:26.9036996Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9037495Z         npx playwright show-trace test-results/fantasia-home-starts-both--b962d-estarts-it-and-returns-home-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9038341Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9038722Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9039004Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9039591Z   2) [chromium] › browser-tests/fantasia.spec.ts:186:1 › settings tabs save committed changes, discard drafts, and reject duplicate keys 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9040113Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9040287Z     Error: expect(locator).toHaveText(expected) failed
+verify	Run npm run test:browser	2026-10-05T03:30:26.9040517Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9040676Z     Locator:  locator('[data-key-action="left"]')
+verify	Run npm run test:browser	2026-10-05T03:30:26.9041005Z     Expected: "←"
+verify	Run npm run test:browser	2026-10-05T03:30:26.9041258Z     Received: "キーを押す…"
+verify	Run npm run test:browser	2026-10-05T03:30:26.9041477Z     Timeout:  15000ms
+verify	Run npm run test:browser	2026-10-05T03:30:26.9041607Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9041685Z     Call log:
+verify	Run npm run test:browser	2026-10-05T03:30:26.9041941Z       - Expect "toHaveText" with timeout 15000ms
+verify	Run npm run test:browser	2026-10-05T03:30:26.9042315Z       - waiting for locator('[data-key-action="left"]')
+verify	Run npm run test:browser	2026-10-05T03:30:26.9043286Z         34 × locator resolved to <button type="button" aria-pressed="true" data-key-action="left" aria-label="左旋回：←。変更する">キーを押す…</button>
+verify	Run npm run test:browser	2026-10-05T03:30:26.9044630Z            - unexpected value "キーを押す…"
+verify	Run npm run test:browser	2026-10-05T03:30:26.9044844Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9044851Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9044997Z       230 |   await page.keyboard.press('f');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9045578Z       231 |   await expect(page.locator('#keyboard-capture-note')).toContainText('射撃');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9046233Z     > 232 |   await expect(page.locator('[data-key-action="left"]')).toHaveText('←');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9046904Z           |                                                          ^
+verify	Run npm run test:browser	2026-10-05T03:30:26.9047569Z       233 |   await page.keyboard.press('Escape');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9048441Z       234 |   await expect(page.locator('[data-key-action="left"]')).toHaveText('←');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9049087Z       235 |   await page.locator('#control-save').click();
+verify	Run npm run test:browser	2026-10-05T03:30:26.9049606Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:232:58
+verify	Run npm run test:browser	2026-10-05T03:30:26.9049927Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9050634Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9051776Z     test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/test-failed-1.png
+verify	Run npm run test:browser	2026-10-05T03:30:26.9053008Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9053298Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9053781Z     Error Context: test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:30:26.9054577Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9054990Z     attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9055723Z     test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9056243Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:30:26.9056558Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9057293Z         npx playwright show-trace test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9058539Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9058971Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9059438Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9060697Z   3) [chromium] › browser-tests/fantasia.spec.ts:282:3 › the first touch loop release after keyboard-default input reaches exactly one live tick 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9061811Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9062251Z     Error: expect(received).toEqual(expected) // deep equality
+verify	Run npm run test:browser	2026-10-05T03:30:26.9062733Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9062895Z     - Expected  - 1
+verify	Run npm run test:browser	2026-10-05T03:30:26.9063236Z     + Received  + 1
+verify	Run npm run test:browser	2026-10-05T03:30:26.9063435Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9063561Z       Array [
+verify	Run npm run test:browser	2026-10-05T03:30:26.9064139Z     -   "render",
+verify	Run npm run test:browser	2026-10-05T03:30:26.9064468Z     +   "frame",
+verify	Run npm run test:browser	2026-10-05T03:30:26.9064774Z       ]
+verify	Run npm run test:browser	2026-10-05T03:30:26.9064957Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9065391Z       42 |     // Honor its safe stop and require an explicit player resume; frame-gap,
+verify	Run npm run test:browser	2026-10-05T03:30:26.9066278Z       43 |     // hidden-page, and logic-error pauses remain test failures.
+verify	Run npm run test:browser	2026-10-05T03:30:26.9067044Z     > 44 |     expect(afterStart.pauseReasons).toEqual(['render']);
+verify	Run npm run test:browser	2026-10-05T03:30:26.9067695Z          |                                     ^
+verify	Run npm run test:browser	2026-10-05T03:30:26.9068303Z       45 |     expect(afterStart.fatalLogicError).toBeFalsy();
+verify	Run npm run test:browser	2026-10-05T03:30:26.9069375Z       46 |     await expect(page.locator('#pause-reason')).toHaveText('描画が復帰しました。操作して再開できます');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9070484Z       47 |     if (afterStart.renderStatus === 'stalled' && await page.locator('#resume').isDisabled()) {
+verify	Run npm run test:browser	2026-10-05T03:30:26.9071611Z         at start (/home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:44:37)
+verify	Run npm run test:browser	2026-10-05T03:30:26.9072624Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:286:5
+verify	Run npm run test:browser	2026-10-05T03:30:26.9073151Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9073834Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9075286Z     test-results/fantasia-the-first-touch-l-54697-aches-exactly-one-live-tick-chromium/test-failed-1.png
+verify	Run npm run test:browser	2026-10-05T03:30:26.9076655Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9077123Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9077954Z     Error Context: test-results/fantasia-the-first-touch-l-54697-aches-exactly-one-live-tick-chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:30:26.9078814Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9079480Z     attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9080684Z     test-results/fantasia-the-first-touch-l-54697-aches-exactly-one-live-tick-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9081505Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:30:26.9081671Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9082495Z         npx playwright show-trace test-results/fantasia-the-first-touch-l-54697-aches-exactly-one-live-tick-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9083398Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9084329Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9085106Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9086030Z   4) [chromium] › browser-tests/fantasia.spec.ts:314:3 › all seven campaign sites fit around the aiming area at 568x320 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9086798Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9087138Z     Error: expect(received).toEqual(expected) // deep equality
+verify	Run npm run test:browser	2026-10-05T03:30:26.9087566Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9087713Z     - Expected  - 1
+verify	Run npm run test:browser	2026-10-05T03:30:26.9088058Z     + Received  + 1
+verify	Run npm run test:browser	2026-10-05T03:30:26.9088273Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9088405Z       Array [
+verify	Run npm run test:browser	2026-10-05T03:30:26.9088727Z     -   "render",
+verify	Run npm run test:browser	2026-10-05T03:30:26.9089059Z     +   "frame",
+verify	Run npm run test:browser	2026-10-05T03:30:26.9089371Z       ]
+verify	Run npm run test:browser	2026-10-05T03:30:26.9089538Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9089979Z       42 |     // Honor its safe stop and require an explicit player resume; frame-gap,
+verify	Run npm run test:browser	2026-10-05T03:30:26.9091079Z       43 |     // hidden-page, and logic-error pauses remain test failures.
+verify	Run npm run test:browser	2026-10-05T03:30:26.9091878Z     > 44 |     expect(afterStart.pauseReasons).toEqual(['render']);
+verify	Run npm run test:browser	2026-10-05T03:30:26.9092561Z          |                                     ^
+verify	Run npm run test:browser	2026-10-05T03:30:26.9093203Z       45 |     expect(afterStart.fatalLogicError).toBeFalsy();
+verify	Run npm run test:browser	2026-10-05T03:30:26.9094524Z       46 |     await expect(page.locator('#pause-reason')).toHaveText('描画が復帰しました。操作して再開できます');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9095753Z       47 |     if (afterStart.renderStatus === 'stalled' && await page.locator('#resume').isDisabled()) {
+verify	Run npm run test:browser	2026-10-05T03:30:26.9096916Z         at start (/home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:44:37)
+verify	Run npm run test:browser	2026-10-05T03:30:26.9097995Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:316:5
+verify	Run npm run test:browser	2026-10-05T03:30:26.9098561Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9099293Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9100651Z     test-results/fantasia-all-seven-campaig-ac55c--the-aiming-area-at-568x320-chromium/test-failed-1.png
+verify	Run npm run test:browser	2026-10-05T03:30:26.9102014Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9102480Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9103280Z     Error Context: test-results/fantasia-all-seven-campaig-ac55c--the-aiming-area-at-568x320-chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:30:26.9104411Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9105082Z     attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9106298Z     test-results/fantasia-all-seven-campaig-ac55c--the-aiming-area-at-568x320-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9107157Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:30:26.9107334Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9108178Z         npx playwright show-trace test-results/fantasia-all-seven-campaig-ac55c--the-aiming-area-at-568x320-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9109068Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9109643Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9110119Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9110944Z   5) [chromium] › browser-tests/fantasia.spec.ts:314:3 › all seven campaign sites fit around the aiming area at 852x393 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9111905Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9112228Z     Error: expect(received).toEqual(expected) // deep equality
+verify	Run npm run test:browser	2026-10-05T03:30:26.9112629Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9112771Z     - Expected  - 1
+verify	Run npm run test:browser	2026-10-05T03:30:26.9113100Z     + Received  + 1
+verify	Run npm run test:browser	2026-10-05T03:30:26.9113300Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9113417Z       Array [
+verify	Run npm run test:browser	2026-10-05T03:30:26.9113716Z     -   "render",
+verify	Run npm run test:browser	2026-10-05T03:30:26.9114214Z     +   "frame",
+verify	Run npm run test:browser	2026-10-05T03:30:26.9114515Z       ]
+verify	Run npm run test:browser	2026-10-05T03:30:26.9114679Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9115095Z       42 |     // Honor its safe stop and require an explicit player resume; frame-gap,
+verify	Run npm run test:browser	2026-10-05T03:30:26.9115976Z       43 |     // hidden-page, and logic-error pauses remain test failures.
+verify	Run npm run test:browser	2026-10-05T03:30:26.9116825Z     > 44 |     expect(afterStart.pauseReasons).toEqual(['render']);
+verify	Run npm run test:browser	2026-10-05T03:30:26.9117676Z          |                                     ^
+verify	Run npm run test:browser	2026-10-05T03:30:26.9118323Z       45 |     expect(afterStart.fatalLogicError).toBeFalsy();
+verify	Run npm run test:browser	2026-10-05T03:30:26.9119412Z       46 |     await expect(page.locator('#pause-reason')).toHaveText('描画が復帰しました。操作して再開できます');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9120488Z       47 |     if (afterStart.renderStatus === 'stalled' && await page.locator('#resume').isDisabled()) {
+verify	Run npm run test:browser	2026-10-05T03:30:26.9121602Z         at start (/home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:44:37)
+verify	Run npm run test:browser	2026-10-05T03:30:26.9122691Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:316:5
+verify	Run npm run test:browser	2026-10-05T03:30:26.9123256Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9124096Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9125388Z     test-results/fantasia-all-seven-campaig-f9b86--the-aiming-area-at-852x393-chromium/test-failed-1.png
+verify	Run npm run test:browser	2026-10-05T03:30:26.9126848Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9127367Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9128252Z     Error Context: test-results/fantasia-all-seven-campaig-f9b86--the-aiming-area-at-852x393-chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:30:26.9129173Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9129881Z     attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9131229Z     test-results/fantasia-all-seven-campaig-f9b86--the-aiming-area-at-852x393-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9132080Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:30:26.9132258Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9133141Z         npx playwright show-trace test-results/fantasia-all-seven-campaig-f9b86--the-aiming-area-at-852x393-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9134281Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9134913Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9135422Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9136842Z   6) [chromium] › browser-tests/fantasia.spec.ts:326:3 › desktop enlarged-text reachability › settings and all seven site indicators remain usable with actual text rendered at 200% 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9138383Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9138660Z     Error: expect(locator).toHaveText(expected) failed
+verify	Run npm run test:browser	2026-10-05T03:30:26.9139035Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9139240Z     Locator:  locator('#pause-reason')
+verify	Run npm run test:browser	2026-10-05T03:30:26.9139820Z     Expected: "描画が復帰しました。操作して再開できます"
+verify	Run npm run test:browser	2026-10-05T03:30:26.9140455Z     Received: "描画が復帰しました。操作して再開できます。この出撃は最速記録には保存しません"
+verify	Run npm run test:browser	2026-10-05T03:30:26.9140938Z     Timeout:  15000ms
+verify	Run npm run test:browser	2026-10-05T03:30:26.9141162Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9141293Z     Call log:
+verify	Run npm run test:browser	2026-10-05T03:30:26.9141734Z       - Expect "toHaveText" with timeout 15000ms
+verify	Run npm run test:browser	2026-10-05T03:30:26.9142323Z       - waiting for locator('#pause-reason')
+verify	Run npm run test:browser	2026-10-05T03:30:26.9143466Z         7 × locator resolved to <p id="pause-reason">描画の完了を待っています。復帰後に再開できます</p>
+verify	Run npm run test:browser	2026-10-05T03:30:26.9144688Z           - unexpected value "描画の完了を待っています。復帰後に再開できます"
+verify	Run npm run test:browser	2026-10-05T03:30:26.9145858Z         27 × locator resolved to <p id="pause-reason">描画が復帰しました。操作して再開できます。この出撃は最速記録には保存しません</p>
+verify	Run npm run test:browser	2026-10-05T03:30:26.9147306Z            - unexpected value "描画が復帰しました。操作して再開できます。この出撃は最速記録には保存しません"
+verify	Run npm run test:browser	2026-10-05T03:30:26.9147800Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9147859Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9148232Z       44 |     expect(afterStart.pauseReasons).toEqual(['render']);
+verify	Run npm run test:browser	2026-10-05T03:30:26.9149131Z       45 |     expect(afterStart.fatalLogicError).toBeFalsy();
+verify	Run npm run test:browser	2026-10-05T03:30:26.9150387Z     > 46 |     await expect(page.locator('#pause-reason')).toHaveText('描画が復帰しました。操作して再開できます');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9151291Z          |                                                 ^
+verify	Run npm run test:browser	2026-10-05T03:30:26.9166657Z       47 |     if (afterStart.renderStatus === 'stalled' && await page.locator('#resume').isDisabled()) {
+verify	Run npm run test:browser	2026-10-05T03:30:26.9168122Z       48 |       test.skip(true, 'Headless Chromium renderer remained stalled; the app correctly withheld flight resume.');
+verify	Run npm run test:browser	2026-10-05T03:30:26.9169013Z       49 |     }
+verify	Run npm run test:browser	2026-10-05T03:30:26.9169754Z         at start (/home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:46:49)
+verify	Run npm run test:browser	2026-10-05T03:30:26.9170867Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:372:5
+verify	Run npm run test:browser	2026-10-05T03:30:26.9171463Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9172243Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9173617Z     test-results/fantasia-desktop-enlarged--9101f-ctual-text-rendered-at-200--chromium/test-failed-1.png
+verify	Run npm run test:browser	2026-10-05T03:30:26.9175201Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9175688Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9176579Z     Error Context: test-results/fantasia-desktop-enlarged--9101f-ctual-text-rendered-at-200--chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:30:26.9177526Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9178246Z     attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9179565Z     test-results/fantasia-desktop-enlarged--9101f-ctual-text-rendered-at-200--chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9180486Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:30:26.9180667Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9181790Z         npx playwright show-trace test-results/fantasia-desktop-enlarged--9101f-ctual-text-rendered-at-200--chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:30:26.9182765Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9183407Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:30:26.9184077Z 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9184287Z   6 failed
+verify	Run npm run test:browser	2026-10-05T03:30:26.9185523Z     [chromium] › browser-tests/fantasia.spec.ts:158:1 › home starts both modes, pauses the live campaign, restarts it, and returns home 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9187381Z     [chromium] › browser-tests/fantasia.spec.ts:186:1 › settings tabs save committed changes, discard drafts, and reject duplicate keys 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9189297Z     [chromium] › browser-tests/fantasia.spec.ts:282:3 › the first touch loop release after keyboard-default input reaches exactly one live tick 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9191310Z     [chromium] › browser-tests/fantasia.spec.ts:314:3 › all seven campaign sites fit around the aiming area at 568x320 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9192909Z     [chromium] › browser-tests/fantasia.spec.ts:314:3 › all seven campaign sites fit around the aiming area at 852x393 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9195198Z     [chromium] › browser-tests/fantasia.spec.ts:326:3 › desktop enlarged-text reachability › settings and all seven site indicators remain usable with actual text rendered at 200% 
+verify	Run npm run test:browser	2026-10-05T03:30:26.9196469Z   1 skipped
+verify	Run npm run test:browser	2026-10-05T03:30:26.9196783Z   3 passed (2.5m)
+verify	Run npm run test:browser	2026-10-05T03:30:26.9314866Z ##[error]Process completed with exit code 1.

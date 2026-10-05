@@ -1,0 +1,138 @@
+import { releaseBomb } from '../src/ordnance';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { Vector3 } from 'three';
+import { createGame, startGame, stepGame, pauseGame, resumeGame } from '../src/simulation';
+import { FIXED_DT, PLAYER_MG_CAPACITY, PLAYER_CANNON_CAPACITY, PLAYER_RELOAD_TICKS, REINFORCEMENT_TICK, MAX_BULLETS } from '../src/mission';
+import type { Bullet, GameState } from '../src/types';
+const neutral = { turn: 0, climb: 0, fire: false, loop: false };
+function isolated(): GameState {
+  const state = createGame(91, 'normal');
+  for (const x of [...state.allies, ...state.enemies, ...state.ships]) x.health = 0;
+  state.ships[0].health = 1000;
+  state.ships[0].position.set(20000, 0, -20000);
+  state.ships[0].previous.copy(state.ships[0].position);
+  state.player.position.set(1000, 500, 1000); state.player.previous.copy(state.player.position);
+  startGame(state); return state;
+}
+function shot(owner: number, team: Bullet['team'], position: Vector3, velocity: Vector3): Bullet {
+  return { id: 99999, owner, team, position, previous: position.clone(), velocity, life: 1, damage: 200, kind: 'cannon' };
+}
+function killable(state: GameState, generation: 'initial' | 'reinforcement', owner = state.player.id) {
+  const enemy = state.enemies[0]; enemy.health = 1; enemy.generation = generation;
+  enemy.position.set(0, 500, -60); enemy.previous.copy(enemy.position);
+  state.bullets.push(shot(owner, 'friendly', new Vector3(0, 500, 0), new Vector3(0, 0, -12000)));
+  return enemy;
+}
+test('emitted twin volleys exactly consume magazines and start one six-second reload', () => {
+  const s = isolated();
+  while (s.player.reloadTicksRemaining === 0 && s.tick < 800) stepGame(s, { ...neutral, fire: true });
+  assert.equal(s.player.reloadTicksRemaining, PLAYER_RELOAD_TICKS);
+  assert.equal(s.player.mg, 0); assert.equal(s.player.cannon, 0);
+  assert.equal(s.stats.shots, PLAYER_MG_CAPACITY + PLAYER_CANNON_CAPACITY);
+  assert.equal(s.events.filter(e => e.type === 'reload-start').length, 1);
+  const end = s.tick + PLAYER_RELOAD_TICKS;
+  for (let i = 0; i < PLAYER_RELOAD_TICKS - 1; i++) stepGame(s, { ...neutral, fire: true });
+  assert.equal(s.player.reloadTicksRemaining, 1); assert.equal(s.stats.shots, 384);
+  stepGame(s, neutral);
+  assert.equal(s.tick, end); assert.equal(s.player.reloadTicksRemaining, 0);
+  assert.equal(s.player.mg, PLAYER_MG_CAPACITY); assert.equal(s.player.cannon, PLAYER_CANNON_CAPACITY);
+  assert.equal(s.events.filter(e => e.type === 'reload-complete').length, 1);
+  stepGame(s, { ...neutral, fire: true }); assert.equal(s.stats.shots, 388);
+});
+test('reload freezes while paused, survives target loss, ends with mission and resets on retry', () => {
+  const s = isolated(); s.player.mg = 2; s.player.cannon = 2;
+  stepGame(s, { ...neutral, fire: true }); assert.equal(s.player.reloadTicksRemaining, 360);
+  pauseGame(s); const before = JSON.stringify(s);
+  for (let i = 0; i < 400; i++) stepGame(s, { ...neutral, fire: true });
+  assert.equal(JSON.stringify(s), before);
+  resumeGame(s); stepGame(s, neutral); assert.equal(s.player.reloadTicksRemaining, 359);
+  s.player.health = 0; stepGame(s, neutral); const ended = JSON.stringify(s);
+  stepGame(s, neutral, .25); assert.equal(JSON.stringify(s), ended);
+  const retry = createGame(); assert.equal(retry.player.reloadTicksRemaining, 0); assert.equal(retry.player.mg, 288);
+});
+test('projectile saturation reserves complete twin volleys without losing ammunition', () => {
+  const s = isolated();
+  s.bullets = Array.from({ length: MAX_BULLETS - 1 }, (_, id) => ({ ...shot(888, 'friendly', new Vector3(8000, 900, 0), new Vector3()), id }));
+  stepGame(s, { ...neutral, fire: true });
+  assert.equal(s.stats.shots, 0); assert.equal(s.player.mg, 288); assert.equal(s.player.cannon, 96);
+  assert.equal(s.player.reloadTicksRemaining, 0);
+});
+test('each 40-second boundary tops up only missing enemies, preserves survivors and keeps five bounded slots', () => {
+  const s = isolated(); const initial = s.enemies[0]; initial.health = 57;
+  initial.position.set(-10000, 500, 0); initial.previous.copy(initial.position);
+  const ids = new Set(s.enemies.map(e => e.id));
+  s.tick = REINFORCEMENT_TICK - 2; s.elapsed = s.tick * FIXED_DT;
+  stepGame(s, neutral); assert.equal(s.reinforcementsSpawned, false);
+  pauseGame(s); stepGame(s, neutral, .25); assert.equal(s.tick, REINFORCEMENT_TICK - 1);
+  resumeGame(s); stepGame(s, neutral);
+  const added = s.enemies.filter(e => e.generation === 'reinforcement');
+  assert.equal(added.length, 4); assert.equal(s.enemies.length, 5); assert.equal(initial.health, 57);
+  assert.ok(added.every(e => !ids.has(e.id) && e.health === 80));
+  assert.equal(s.events.find(e => e.type === 'reinforcement')?.amount, 4);
+  // A full wave at 80 seconds emits no alert and changes no identities.
+  const fullIds = s.enemies.map(e => e.id); s.tick = REINFORCEMENT_TICK * 2 - 1; s.elapsed = s.tick * FIXED_DT;
+  stepGame(s, neutral); assert.deepEqual(s.enemies.map(e => e.id), fullIds);
+  assert.ok(!s.events.some(e => e.type === 'reinforcement'));
+  // The next boundary replenishes the two defeated slots, not five more.
+  s.enemies[1].health = s.enemies[3].health = 0;
+  s.tick = REINFORCEMENT_TICK * 3 - 1; s.elapsed = s.tick * FIXED_DT; stepGame(s, neutral);
+  assert.equal(s.enemies.length, 5); assert.equal(s.enemies.filter(e => e.health > 0).length, 5);
+  assert.equal(s.events.find(e => e.type === 'reinforcement')?.amount, 2);
+  assert.equal(new Set(s.enemies.map(e => e.id)).size, 5);
+  assert.equal(s.enemies[0], initial);
+});
+test('all-clear wins immediately before and on a replenishment boundary; ended missions stay ended', () => {
+  for (const tick of [REINFORCEMENT_TICK - 2, REINFORCEMENT_TICK - 1]) {
+    const s = isolated(); s.tick = tick; s.elapsed = tick * FIXED_DT; s.ships[0].health = 0;
+    stepGame(s, neutral); assert.equal(s.result?.outcome, 'victory'); assert.equal(s.reinforcementsSpawned, false);
+    const before = JSON.stringify(s); stepGame(s, neutral, .25); assert.equal(JSON.stringify(s), before);
+  }
+  assert.equal(createGame().reinforcementsSpawned, false);
+});
+test('only player reinforcement kills heal once, capped at max HP; reinforcement kills award no points', () => {
+  for (const [generation, owner, hp, expected] of [['reinforcement', 1, 50, 65], ['reinforcement', 1, 75, 80], ['initial', 1, 50, 50], ['reinforcement', 2, 50, 50]] as const) {
+    const s = isolated(); s.player.health = hp; killable(s, generation, owner);
+    stepGame(s, neutral); assert.equal(s.player.health, expected);
+    const events = s.events.filter(e => e.type === 'heal');
+    assert.equal(events.length, expected > hp ? 1 : 0);
+    if (events.length) assert.equal(events[0].amount, expected - hp);
+    stepGame(s, neutral); assert.equal(s.player.health, expected);
+    assert.equal(s.stats.score, generation === 'initial' && owner === 1 ? 500 / 80 : 0);
+  }
+});
+test('all damage resolves before healing so a same-tick lethal hit cannot be resurrected', () => {
+  const s = isolated(); s.player.health = 1; const e = killable(s, 'reinforcement');
+  s.bullets.push(shot(e.id, 'enemy', new Vector3(1000, 500, 1060), new Vector3(0, 0, -12000)));
+  stepGame(s, neutral); assert.equal(s.player.health, 0); assert.equal(s.result?.outcome, 'defeat');
+  assert.equal(s.events.filter(e => e.type === 'heal').length, 0);
+});
+test('naval rounds integrate gravity without homing toward later target positions', () => {
+  const s = isolated(); const b = shot(100, 'enemy', new Vector3(4000, 800, 4000), new Vector3(500, 30, -100));
+  b.kind = 'aa'; b.gravity = 9.80665; b.life = 4; s.bullets.push(b);
+  for (let i = 0; i < 60; i++) stepGame(s, { ...neutral, turn: i % 2 ? 1 : -1 });
+  assert.ok(Math.abs(b.position.y - (800 + 30 - 9.80665 / 2)) < 1e-9);
+  assert.ok(Math.abs(b.velocity.y - (30 - 9.80665)) < 1e-9);
+  assert.equal(b.velocity.x, 500); assert.equal(b.velocity.z, -100);
+});
+
+
+test('an allied last hit clears immediately during reload and freezes the unfinished reload', () => {
+  const s = isolated(); s.player.mg = 2; s.player.cannon = 2;
+  stepGame(s, { ...neutral, fire: true });
+  assert.equal(s.player.reloadTicksRemaining, 360);
+  for (let i = 0; i < 20; i++) stepGame(s, neutral);
+  const ship = s.ships[0]; ship.health = 1;
+  ship.position.set(0, 0, 0); ship.previous.copy(ship.position);
+  ship.velocity.set(0,0,0); ship.yaw=0; ship.quaternion.identity(); ship.previousQuaternion.identity();
+  const bomb=releaseBomb(90000,s.allies[0])!; bomb.age=1; bomb.position.set(0,15,100); bomb.previous.copy(bomb.position); bomb.velocity.set(0,-600,0);
+  s.ordnance.push(bomb);
+  stepGame(s, neutral);
+  assert.equal(s.result?.outcome, 'victory'); assert.equal(s.stats.allyShipKills, 1);
+  assert.equal(s.player.reloadTicksRemaining, 339);
+  assert.equal(s.player.mg + s.player.cannon, 0);
+  assert.equal(s.events.filter(e => e.type === 'reload-complete').length, 0);
+  const ended = JSON.stringify(s);
+  for (let i = 0; i < 400; i++) stepGame(s, { ...neutral, fire: true });
+  assert.equal(JSON.stringify(s), ended);
+});

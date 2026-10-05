@@ -1,0 +1,206 @@
+verify	Run npm run test:browser	﻿2026-10-05T03:19:58.3599409Z ##[group]Run npm run test:browser
+verify	Run npm run test:browser	2026-10-05T03:19:58.3599763Z [36;1mnpm run test:browser[0m
+verify	Run npm run test:browser	2026-10-05T03:19:58.3662785Z shell: /usr/bin/bash -e {0}
+verify	Run npm run test:browser	2026-10-05T03:19:58.3663052Z ##[endgroup]
+verify	Run npm run test:browser	2026-10-05T03:19:58.4724305Z 
+verify	Run npm run test:browser	2026-10-05T03:19:58.4724900Z > fantasia@0.1.0 test:browser
+verify	Run npm run test:browser	2026-10-05T03:19:58.4725485Z > playwright test fantasia.spec.ts --project=chromium
+verify	Run npm run test:browser	2026-10-05T03:19:58.4725811Z 
+verify	Run npm run test:browser	2026-10-05T03:20:00.0715375Z 
+verify	Run npm run test:browser	2026-10-05T03:20:00.0716380Z Running 8 tests using 1 worker
+verify	Run npm run test:browser	2026-10-05T03:20:00.0758388Z 
+verify	Run npm run test:browser	2026-10-05T03:21:07.1829045Z   ✘  1 [chromium] › browser-tests/fantasia.spec.ts:112:1 › home starts both modes, pauses the live campaign, restarts it, and returns home (1.0m)
+verify	Run npm run test:browser	2026-10-05T03:22:13.5655004Z   ✘  2 [chromium] › browser-tests/fantasia.spec.ts:140:1 › settings tabs save committed changes, discard drafts, and reject duplicate keys (1.1m)
+verify	Run npm run test:browser	2026-10-05T03:22:38.6222474Z   ✘  3 [chromium] › browser-tests/fantasia.spec.ts:195:1 › a hidden game stays paused until the player returns and restarts deliberately (23.5s)
+verify	Run npm run test:browser	2026-10-05T03:22:49.4540485Z   ✓  4 [chromium] › browser-tests/fantasia.spec.ts:234:3 › all seven campaign sites fit around the aiming area at 320x568 (10.2s)
+verify	Run npm run test:browser	2026-10-05T03:23:00.5490171Z   ✓  5 [chromium] › browser-tests/fantasia.spec.ts:234:3 › all seven campaign sites fit around the aiming area at 568x320 (11.1s)
+verify	Run npm run test:browser	2026-10-05T03:23:11.4616094Z   ✓  6 [chromium] › browser-tests/fantasia.spec.ts:234:3 › all seven campaign sites fit around the aiming area at 393x852 (10.9s)
+verify	Run npm run test:browser	2026-10-05T03:23:23.9559622Z   ✓  7 [chromium] › browser-tests/fantasia.spec.ts:234:3 › all seven campaign sites fit around the aiming area at 852x393 (12.5s)
+verify	Run npm run test:browser	2026-10-05T03:24:35.0994548Z   ✘  8 [chromium] › browser-tests/fantasia.spec.ts:246:3 › desktop enlarged-text reachability › settings and all seven site indicators remain usable with actual text rendered at 200% (1.1m)
+verify	Run npm run test:browser	2026-10-05T03:24:35.1666165Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1726784Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1729415Z   1) [chromium] › browser-tests/fantasia.spec.ts:112:1 › home starts both modes, pauses the live campaign, restarts it, and returns home 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1730947Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1731344Z     Test timeout of 60000ms exceeded.
+verify	Run npm run test:browser	2026-10-05T03:24:35.1731892Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1732447Z     Error: locator.click: Test timeout of 60000ms exceeded.
+verify	Run npm run test:browser	2026-10-05T03:24:35.1733398Z     Call log:
+verify	Run npm run test:browser	2026-10-05T03:24:35.1734084Z       - waiting for locator('#pause')
+verify	Run npm run test:browser	2026-10-05T03:24:35.1735847Z         - locator resolved to <button id="pause" aria-label="一時停止" class="icon-button">Ⅱ</button>
+verify	Run npm run test:browser	2026-10-05T03:24:35.1737221Z       - attempting click action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1738675Z         2 × waiting for element to be visible, enabled and stable
+verify	Run npm run test:browser	2026-10-05T03:24:35.1739566Z           - element is visible, enabled and stable
+verify	Run npm run test:browser	2026-10-05T03:24:35.1740382Z           - scrolling into view if needed
+verify	Run npm run test:browser	2026-10-05T03:24:35.1741053Z           - done scrolling
+verify	Run npm run test:browser	2026-10-05T03:24:35.1743275Z           - <section role="dialog" id="pause-screen" aria-modal="true" class="screen modal-screen" aria-labelledby="pause-title">…</section> intercepts pointer events
+verify	Run npm run test:browser	2026-10-05T03:24:35.1745110Z         - retrying click action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1745697Z         - waiting 20ms
+verify	Run npm run test:browser	2026-10-05T03:24:35.1746607Z         2 × waiting for element to be visible, enabled and stable
+verify	Run npm run test:browser	2026-10-05T03:24:35.1747372Z           - element is visible, enabled and stable
+verify	Run npm run test:browser	2026-10-05T03:24:35.1748152Z           - scrolling into view if needed
+verify	Run npm run test:browser	2026-10-05T03:24:35.1748629Z           - done scrolling
+verify	Run npm run test:browser	2026-10-05T03:24:35.1750154Z           - <section role="dialog" id="pause-screen" aria-modal="true" class="screen modal-screen" aria-labelledby="pause-title">…</section> intercepts pointer events
+verify	Run npm run test:browser	2026-10-05T03:24:35.1751292Z         - retrying click action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1751565Z           - waiting 100ms
+verify	Run npm run test:browser	2026-10-05T03:24:35.1752023Z         84 × waiting for element to be visible, enabled and stable
+verify	Run npm run test:browser	2026-10-05T03:24:35.1752460Z            - element is visible, enabled and stable
+verify	Run npm run test:browser	2026-10-05T03:24:35.1752812Z            - scrolling into view if needed
+verify	Run npm run test:browser	2026-10-05T03:24:35.1753508Z            - done scrolling
+verify	Run npm run test:browser	2026-10-05T03:24:35.1754376Z            - <section role="dialog" id="pause-screen" aria-modal="true" class="screen modal-screen" aria-labelledby="pause-title">…</section> intercepts pointer events
+verify	Run npm run test:browser	2026-10-05T03:24:35.1755106Z          - retrying click action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1755362Z            - waiting 500ms
+verify	Run npm run test:browser	2026-10-05T03:24:35.1755513Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1755521Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1755736Z       121 |     else await expect(page.locator('#fire')).toBeHidden();
+verify	Run npm run test:browser	2026-10-05T03:24:35.1756111Z       122 |
+verify	Run npm run test:browser	2026-10-05T03:24:35.1756385Z     > 123 |     await page.locator('#pause').click();
+verify	Run npm run test:browser	2026-10-05T03:24:35.1756715Z           |                                  ^
+verify	Run npm run test:browser	2026-10-05T03:24:35.1757162Z       124 |     await expect.poll(async () => (await state(page))?.phase).toBe('paused');
+verify	Run npm run test:browser	2026-10-05T03:24:35.1758258Z       125 |     const frozen = await state(page);
+verify	Run npm run test:browser	2026-10-05T03:24:35.1758647Z       126 |     await page.waitForTimeout(250);
+verify	Run npm run test:browser	2026-10-05T03:24:35.1759464Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:123:34
+verify	Run npm run test:browser	2026-10-05T03:24:35.1759922Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1760634Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1761451Z     test-results/fantasia-home-starts-both--b962d-estarts-it-and-returns-home-chromium/test-failed-1.png
+verify	Run npm run test:browser	2026-10-05T03:24:35.1762292Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1762588Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1763080Z     Error Context: test-results/fantasia-home-starts-both--b962d-estarts-it-and-returns-home-chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:24:35.1763600Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1764011Z     attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1765459Z     test-results/fantasia-home-starts-both--b962d-estarts-it-and-returns-home-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:24:35.1766431Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:24:35.1766619Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1767810Z         npx playwright show-trace test-results/fantasia-home-starts-both--b962d-estarts-it-and-returns-home-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:24:35.1768746Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1769228Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1769661Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1770372Z   2) [chromium] › browser-tests/fantasia.spec.ts:140:1 › settings tabs save committed changes, discard drafts, and reject duplicate keys 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1770904Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1771037Z     Test timeout of 60000ms exceeded.
+verify	Run npm run test:browser	2026-10-05T03:24:35.1771217Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1771436Z     Error: locator.selectOption: Test timeout of 60000ms exceeded.
+verify	Run npm run test:browser	2026-10-05T03:24:35.1771788Z     Call log:
+verify	Run npm run test:browser	2026-10-05T03:24:35.1772042Z       - waiting for locator('#control-mode')
+verify	Run npm run test:browser	2026-10-05T03:24:35.1772630Z         - locator resolved to <select id="control-mode" class="control-target">…</select>
+verify	Run npm run test:browser	2026-10-05T03:24:35.1773102Z       - attempting select option action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1773510Z         2 × waiting for element to be visible and enabled
+verify	Run npm run test:browser	2026-10-05T03:24:35.1773855Z           - element is not visible
+verify	Run npm run test:browser	2026-10-05T03:24:35.1774143Z         - retrying select option action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1774410Z         - waiting 20ms
+verify	Run npm run test:browser	2026-10-05T03:24:35.1774749Z         2 × waiting for element to be visible and enabled
+verify	Run npm run test:browser	2026-10-05T03:24:35.1775085Z           - element is not visible
+verify	Run npm run test:browser	2026-10-05T03:24:35.1775363Z         - retrying select option action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1775626Z           - waiting 100ms
+verify	Run npm run test:browser	2026-10-05T03:24:35.1775985Z         113 × waiting for element to be visible and enabled
+verify	Run npm run test:browser	2026-10-05T03:24:35.1776329Z             - element is not visible
+verify	Run npm run test:browser	2026-10-05T03:24:35.1776624Z           - retrying select option action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1776902Z             - waiting 500ms
+verify	Run npm run test:browser	2026-10-05T03:24:35.1777098Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1777104Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1777279Z       145 |   await page.locator('#home-controls').click();
+verify	Run npm run test:browser	2026-10-05T03:24:35.1778372Z       146 |   await expect(page.locator('#control-settings')).toBeVisible();
+verify	Run npm run test:browser	2026-10-05T03:24:35.1778903Z     > 147 |   await page.locator('#control-mode').selectOption('normal');
+verify	Run npm run test:browser	2026-10-05T03:24:35.1779317Z           |                                       ^
+verify	Run npm run test:browser	2026-10-05T03:24:35.1779727Z       148 |   await page.locator('#control-target').selectOption('fire');
+verify	Run npm run test:browser	2026-10-05T03:24:35.1780080Z       149 |
+verify	Run npm run test:browser	2026-10-05T03:24:35.1780444Z       150 |   const beforeX = Number(await page.locator('#control-x').inputValue());
+verify	Run npm run test:browser	2026-10-05T03:24:35.1781037Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:147:39
+verify	Run npm run test:browser	2026-10-05T03:24:35.1781373Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1781802Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1782579Z     test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/test-failed-1.png
+verify	Run npm run test:browser	2026-10-05T03:24:35.1783559Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1783864Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1784337Z     Error Context: test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:24:35.1784967Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1785612Z     attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1786872Z     test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:24:35.1788004Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:24:35.1788186Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1789052Z         npx playwright show-trace test-results/fantasia-settings-tabs-sav-06e2b-s-and-reject-duplicate-keys-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:24:35.1789998Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1790627Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1791143Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1792123Z   3) [chromium] › browser-tests/fantasia.spec.ts:195:1 › a hidden game stays paused until the player returns and restarts deliberately 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1793015Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1793350Z     Error: expect(received).toBe(expected) // Object.is equality
+verify	Run npm run test:browser	2026-10-05T03:24:35.1793796Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1793939Z     Expected: "hidden"
+verify	Run npm run test:browser	2026-10-05T03:24:35.1794310Z     Received: "visible"
+verify	Run npm run test:browser	2026-10-05T03:24:35.1794523Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1794658Z     Call Log:
+verify	Run npm run test:browser	2026-10-05T03:24:35.1795157Z     - Timeout 15000ms exceeded while waiting on the predicate
+verify	Run npm run test:browser	2026-10-05T03:24:35.1795581Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1795811Z       206 |   await other.goto('about:blank');
+verify	Run npm run test:browser	2026-10-05T03:24:35.1796358Z       207 |   await other.bringToFront();
+verify	Run npm run test:browser	2026-10-05T03:24:35.1797294Z     > 208 |   await expect.poll(async () => page.evaluate(() => document.visibilityState)).toBe('hidden');
+verify	Run npm run test:browser	2026-10-05T03:24:35.1798445Z           |                                                                                ^
+verify	Run npm run test:browser	2026-10-05T03:24:35.1799312Z       209 |   await expect.poll(async () => (await state(page))?.phase).toBe('paused');
+verify	Run npm run test:browser	2026-10-05T03:24:35.1800318Z       210 |   const frozen = await state(page);
+verify	Run npm run test:browser	2026-10-05T03:24:35.1800890Z       211 |   await page.waitForTimeout(250);
+verify	Run npm run test:browser	2026-10-05T03:24:35.1801708Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:208:80
+verify	Run npm run test:browser	2026-10-05T03:24:35.1802250Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1802930Z     attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1804167Z     test-results/fantasia-a-hidden-game-sta-227e4-s-and-restarts-deliberately-chromium/test-failed-2.png
+verify	Run npm run test:browser	2026-10-05T03:24:35.1805494Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1805965Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1806623Z     attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1808263Z     test-results/fantasia-a-hidden-game-sta-227e4-s-and-restarts-deliberately-chromium/test-failed-1.png
+verify	Run npm run test:browser	2026-10-05T03:24:35.1809623Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1810081Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1811047Z     Error Context: test-results/fantasia-a-hidden-game-sta-227e4-s-and-restarts-deliberately-chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:24:35.1811900Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1812565Z     attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1813763Z     test-results/fantasia-a-hidden-game-sta-227e4-s-and-restarts-deliberately-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:24:35.1814586Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:24:35.1814754Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1815592Z         npx playwright show-trace test-results/fantasia-a-hidden-game-sta-227e4-s-and-restarts-deliberately-chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:24:35.1816477Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1817064Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1817742Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1819174Z   4) [chromium] › browser-tests/fantasia.spec.ts:246:3 › desktop enlarged-text reachability › settings and all seven site indicators remain usable with actual text rendered at 200% 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1820289Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1820495Z     Test timeout of 60000ms exceeded.
+verify	Run npm run test:browser	2026-10-05T03:24:35.1820802Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1821224Z     Error: locator.scrollIntoViewIfNeeded: Test timeout of 60000ms exceeded.
+verify	Run npm run test:browser	2026-10-05T03:24:35.1821852Z     Call log:
+verify	Run npm run test:browser	2026-10-05T03:24:35.1822231Z       - attempting scroll into view action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1822828Z         2 × waiting for element to be stable
+verify	Run npm run test:browser	2026-10-05T03:24:35.1823342Z           - element is not visible
+verify	Run npm run test:browser	2026-10-05T03:24:35.1823842Z         - retrying scroll into view action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1824300Z         - waiting 20ms
+verify	Run npm run test:browser	2026-10-05T03:24:35.1824866Z         2 × waiting for element to be stable
+verify	Run npm run test:browser	2026-10-05T03:24:35.1825499Z           - element is not visible
+verify	Run npm run test:browser	2026-10-05T03:24:35.1826128Z         - retrying scroll into view action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1827094Z           - waiting 100ms
+verify	Run npm run test:browser	2026-10-05T03:24:35.1827968Z         79 × waiting for element to be stable
+verify	Run npm run test:browser	2026-10-05T03:24:35.1828745Z            - element is not visible
+verify	Run npm run test:browser	2026-10-05T03:24:35.1829398Z          - retrying scroll into view action
+verify	Run npm run test:browser	2026-10-05T03:24:35.1830043Z            - waiting 500ms
+verify	Run npm run test:browser	2026-10-05T03:24:35.1830421Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1830432Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1830614Z       277 |
+verify	Run npm run test:browser	2026-10-05T03:24:35.1831435Z       278 |     for (const id of ['control-x', 'control-y', 'control-size', 'control-opacity']) {
+verify	Run npm run test:browser	2026-10-05T03:24:35.1832504Z     > 279 |       await page.locator(`#${id}`).scrollIntoViewIfNeeded();
+verify	Run npm run test:browser	2026-10-05T03:24:35.1833281Z           |                                    ^
+verify	Run npm run test:browser	2026-10-05T03:24:35.1834320Z       280 |       await expect(page.locator(`#${id}`)).toBeInViewport();
+verify	Run npm run test:browser	2026-10-05T03:24:35.1835073Z       281 |     }
+verify	Run npm run test:browser	2026-10-05T03:24:35.1851402Z       282 |     await expect(page.locator('#control-save')).toBeInViewport();
+verify	Run npm run test:browser	2026-10-05T03:24:35.1852338Z         at /home/runner/work/fantasia/fantasia/browser-tests/fantasia.spec.ts:279:36
+verify	Run npm run test:browser	2026-10-05T03:24:35.1852917Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1853707Z     Error Context: test-results/fantasia-desktop-enlarged--9101f-ctual-text-rendered-at-200--chromium/error-context.md
+verify	Run npm run test:browser	2026-10-05T03:24:35.1854554Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1855285Z     attachment #2: trace (application/zip) ─────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1856507Z     test-results/fantasia-desktop-enlarged--9101f-ctual-text-rendered-at-200--chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:24:35.1857344Z     Usage:
+verify	Run npm run test:browser	2026-10-05T03:24:35.1857712Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1858554Z         npx playwright show-trace test-results/fantasia-desktop-enlarged--9101f-ctual-text-rendered-at-200--chromium/trace.zip
+verify	Run npm run test:browser	2026-10-05T03:24:35.1859421Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1860015Z     ────────────────────────────────────────────────────────────────────────────────────────────────
+verify	Run npm run test:browser	2026-10-05T03:24:35.1860529Z 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1860663Z   4 failed
+verify	Run npm run test:browser	2026-10-05T03:24:35.1861825Z     [chromium] › browser-tests/fantasia.spec.ts:112:1 › home starts both modes, pauses the live campaign, restarts it, and returns home 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1863576Z     [chromium] › browser-tests/fantasia.spec.ts:140:1 › settings tabs save committed changes, discard drafts, and reject duplicate keys 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1865387Z     [chromium] › browser-tests/fantasia.spec.ts:195:1 › a hidden game stays paused until the player returns and restarts deliberately 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1867753Z     [chromium] › browser-tests/fantasia.spec.ts:246:3 › desktop enlarged-text reachability › settings and all seven site indicators remain usable with actual text rendered at 200% 
+verify	Run npm run test:browser	2026-10-05T03:24:35.1869000Z   4 passed (4.6m)
+verify	Run npm run test:browser	2026-10-05T03:24:35.2011140Z ##[error]Process completed with exit code 1.
