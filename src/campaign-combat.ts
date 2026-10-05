@@ -435,6 +435,7 @@ export function commitPlayerFire(state: CampaignState, input: CampaignInput, emi
 export interface BombPrediction { position: Vec; flightTicks: number; blockedBy: number | null; radius: number }
 /** Uses the exact same fixed-step gravity and terrain sweep as live bombs. */
 export function predictBombImpact(position: Vec, velocity: Vec, quaternion?: CampaignPlayer['quaternion'], laneId = 0): BombPrediction | null {
+  if (![position.x, position.y, position.z, velocity.x, velocity.y, velocity.z].every(Number.isFinite)) throw new RangeError('Bomb prediction requires finite pose and velocity');
   let current = quaternion ? addVec(position, rotateVec({ x: 0, y: -.9, z: .4 }, quaternion)) : copyVec(position), speed = copyVec(velocity);
   for (let tick = 1; tick <= 1800; tick++) {
     const next = quantizeLanePosition(addVec(current, scaleVec(speed, CAMPAIGN_DT)), laneId); next.y = Math.round((current.y + speed.y * CAMPAIGN_DT - .5 * 9.81 * CAMPAIGN_DT ** 2) * 1e6) / 1e6; speed.y -= 9.81 * CAMPAIGN_DT;

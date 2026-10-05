@@ -67,6 +67,10 @@ test('one tick advances all seven armies simultaneously; scene-free snapshots ar
   assert.equal(before.activeTicks, 0); assert.ok(Object.isFrozen(before.player.position));
   assert.throws(() => { before.player.hp = 0; }, TypeError);
   assert.throws(() => run.step({ playerPosition: { x: NaN, y: 10, z: 0 } }), /finite/);
+  const unchanged = campaignStateHash(run.state);
+  assert.throws(() => run.step({ playerQuaternion: { x: NaN, y: 0, z: 0, w: 1 } }), /quaternion/);
+  assert.throws(() => run.step({ shotDirections: { mg: [{ x: Infinity, y: 0, z: 0 }], cannon: [] } }), /finite/);
+  assert.equal(campaignStateHash(run.state), unchanged);
 });
 
 test('all class multipliers use half-up integers and apply no infantry matchup to a turret', () => {

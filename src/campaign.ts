@@ -11,6 +11,14 @@ export { predictBombImpact, predictAim, allocateEffectiveDamage } from './campai
 
 let runOrdinal = 0;
 function validVec(v: Vec): void { if (![v.x, v.y, v.z].every(Number.isFinite)) throw new RangeError('Campaign vectors must be finite'); }
+function validQuaternion(q: CampaignState['player']['quaternion']): void {
+  if (![q.x, q.y, q.z, q.w].every(Number.isFinite) || Math.abs(Math.hypot(q.x, q.y, q.z, q.w) - 1) > 1e-6) throw new RangeError('Campaign orientation must be a finite unit quaternion');
+}
+function validateInput(input: CampaignInput): void {
+  for (const v of [input.playerPosition, input.playerVelocity, input.forward]) if (v) validVec(v);
+  for (const q of [input.playerQuaternion, input.previousQuaternion]) if (q) validQuaternion(q);
+  for (const collection of [input.muzzles, input.gunMuzzles?.mg, input.gunMuzzles?.cannon, input.shotDirections?.mg, input.shotDirections?.cannon]) if (collection) for (const v of collection) validVec(v);
+}
 function deepFreeze<T>(value: T): T {
   if (value && typeof value === 'object') { Object.freeze(value); for (const child of Object.values(value)) if (child && typeof child === 'object' && !Object.isFrozen(child)) deepFreeze(child); }
   return value;
@@ -64,8 +72,10 @@ export function validateCampaignState(state: CampaignState): void {
     validVec(actor.position); validVec(actor.previous); validVec(actor.velocity);
   }
   validVec(state.player.position); validVec(state.player.previous); validVec(state.player.velocity);
+  validQuaternion(state.player.quaternion); validQuaternion(state.player.previousQuaternion);
   if (!Number.isFinite(state.player.hp) || state.player.hp < 0 || state.player.hp > state.player.maxHp) throw new Error('Invalid player health');
   for (const site of state.sites) {
+    if (!['friendly', 'enemy', 'neutral'].includes(site.owner) || site.challenger !== null && !['friendly', 'enemy'].includes(site.challenger)) throw new Error('Invalid site ownership');
     if (site.progress < 0 || site.progress > CAPTURE_MAX || !Number.isInteger(site.progress) || site.captureProgress !== site.progress / 600) throw new Error('Invalid capture progress');
   }
   for (const army of state.armies) {
@@ -82,6 +92,7 @@ export function validateCampaignState(state: CampaignState): void {
     if (ground + tickets.reduce((n, t) => n + countClasses(t.classCounts), 0) > 32 || dragons + tickets.reduce((n, t) => n + t.dragonCount, 0) > 2) throw new Error('Enemy capacity exceeded');
   }
   if (state.projectiles.length > 4096) throw new Error('Projectile capacity exceeded');
+  for (const projectile of state.projectiles) { validVec(projectile.position); validVec(projectile.previous); validVec(projectile.velocity); }
 }
 
 /** The only owner of battle time; rendering and wall time cannot advance it. */
@@ -140,6 +151,7 @@ export class Campaign {
   }
   step(input: CampaignInput = {}): void {
     const state = this.state; if (state.status !== 'running') return;
+    validateInput(input);
     const player = state.player; state.events = [];
     player.previous = copyVec(player.position); player.previousQuaternion = { ...(input.previousQuaternion ?? player.quaternion) };
     if (input.playerVelocity) { validVec(input.playerVelocity); player.velocity = copyVec(input.playerVelocity); }
