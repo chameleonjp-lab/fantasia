@@ -34,12 +34,19 @@ const TEAM_COLORS = { friendly: 0x27aaa4, enemy: 0xe29b55 };
 const UNIT_NAMES = { sword: '剣', bow: '弓', mage: '魔', cavalry: '騎', dragon: '竜' };
 
 /** All geometry here is generated locally; it has no external texture dependency. */
-class GeometryBuilder {
+export class GeometryBuilder {
   private pieces: BufferGeometry[] = [];
   add(geometry: BufferGeometry, color: number, position: readonly number[] = [0, 0, 0],
     scale: readonly number[] = [1, 1, 1], rotation: readonly number[] = [0, 0, 0]) {
-    const part = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+    const part = geometry.clone();
     geometry.dispose();
+    // Preserve the authored vertex sharing and every triangle/attribute. All
+    // pieces must be indexed to merge; an unindexed fan only needs an identity
+    // index, not welding, simplification, or recomputed normals.
+    if (!part.index) {
+      const count = part.getAttribute('position').count;
+      part.setIndex(Array.from({ length: count }, (_, vertex) => vertex));
+    }
     part.deleteAttribute('uv');
     part.scale(scale[0], scale[1], scale[2]);
     part.rotateX(rotation[0]); part.rotateY(rotation[1]); part.rotateZ(rotation[2]);

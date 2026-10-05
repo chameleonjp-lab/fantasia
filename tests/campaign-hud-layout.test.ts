@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CampaignHudLayout, intersects, layoutCampaignHud, placeRectangle, toCanvasRect, type HudMeasurement, type HudRect } from '../src/campaign-hud-layout';
+import { CampaignHudLayout, createCampaignHudLayout, intersects, layoutCampaignHud, placeRectangle, toCanvasRect, type HudMeasurement, type HudRect } from '../src/campaign-hud-layout';
+import { DEFAULT_LAYOUT, controlBounds, controlDisplaySize } from '../src/control-settings';
 
 const cards320 = Array.from({ length: 7 }, (_, i) => ({ id: `site-${i + 1}`, x: 12 + i % 4 * 75, y: 116 + Math.floor(i / 4) * 60.96875, width: 71, height: 56.96875 }));
 const bounds = { x: 8, y: 8, width: 304, height: 552 };
@@ -111,4 +112,161 @@ test('blocked notification after rotation keeps its full size inside the new bou
   assert.equal(out.status, 'blocked'); assert.equal(out.threat!.status, 'blocked');
   assert.equal(out.threat!.rect.width, 180); assert.equal(out.threat!.rect.height, 40);
   assert.equal(out.threat!.rect.y, 272); assert.equal(out.threat!.rect.y + out.threat!.rect.height, 312);
+});
+
+// Exact production default-control math, with source-derived text dimensions.
+// These fixtures are packing tests, not replacements for live DOM/CI evidence.
+function defaultControls(width: number, height: number) {
+  return Object.entries(DEFAULT_LAYOUT).map(([id, entry]) => {
+    const size = controlDisplaySize(entry.size, width, height);
+    const bounds = controlBounds(size, width, height, { top: 0, right: 0, bottom: 0, left: 0 });
+    const x = Math.max(bounds.minX, Math.min(bounds.maxX, entry.x)) * width;
+    const y = Math.max(bounds.minY, Math.min(bounds.maxY, entry.y)) * height;
+    return { id, x: x - size / 2, y: y - size / 2, width: size, height: size };
+  });
+}
+const narrowPanels = [
+  { id: 'health-label', x: 8, y: 238, width: 94, height: 18 },
+  { id: 'health-track', x: 8, y: 263, width: 118, height: 3 },
+  { id: 'instrument', x: 8, y: 276, width: 94, height: 12 },
+  { id: 'wingmen', x: 237, y: 177, width: 71, height: 51 },
+  { id: 'campaign-limit', x: 97, y: 341.2, width: 114, height: 12 },
+  { id: 'score-readout', x: 97, y: 357.2, width: 114, height: 14 },
+  { id: 'ammo', x: 97, y: 375.2, width: 114, height: 26 },
+  { id: 'campaign-threat', x: 12, y: 354, width: 114, height: 46.3 },
+  { id: 'announcement', x: 97, y: 455.2, width: 114, height: 43 },
+  { id: 'flight-tip', x: 218, y: 238, width: 94, height: 42 },
+];
+const narrow: HudMeasurement = { ...measurement, obstacles: [...cards320, ...defaultControls(320, 568),
+  { id: 'header', x: 98, y: 8, width: 210, height: 98 }], panels: narrowPanels };
+function assertCompletePacking(source: HudMeasurement, aim: HudRect) {
+  const before = JSON.stringify(source), out = layoutCampaignHud(source, aim);
+  assert.equal(out.status, 'placed');
+  assert.equal(JSON.stringify(source), before);
+  const boxes = [{ id: 'radar', rect: out.radar.rect }, ...out.panels!];
+  for (const [i, item] of boxes.entries()) {
+    assert(item.rect.x >= source.bounds.x && item.rect.y >= source.bounds.y, item.id);
+    assert(item.rect.x + item.rect.width <= source.bounds.x + source.bounds.width, item.id);
+    assert(item.rect.y + item.rect.height <= source.bounds.y + source.bounds.height, item.id);
+    assert(out.obstacles.every(obstacle => !intersects(item.rect, obstacle, 4)), `${item.id} avoids fixed HUD, controls and sight`);
+    assert(boxes.slice(i + 1).every(other => !intersects(item.rect, other.rect, 4)), `${item.id} avoids every readout`);
+  }
+  for (const panel of source.panels!) {
+    const actual = out.panels!.find(item => item.id === panel.id)!;
+    assert.equal(actual.rect.width, panel.width); assert.equal(actual.rect.height, panel.height);
+  }
+  return out;
+}
+test('320 Normal reflow packs all readouts with exact unchanged default-control geometry', () => {
+  const controls = defaultControls(320, 568);
+  assert.deepEqual(controls.map(item => item.width), [96, 72, 76, 76, 52]);
+  assertCompletePacking(narrow, sight);
+});
+test('full-size readout packing keeps a blocked custom-control layout honest', () => {
+  const out = layoutCampaignHud({ ...narrow, obstacles: [{ ...bounds, id: 'custom-control-obstruction' }] }, sight);
+  assert.equal(out.status, 'blocked'); assert.equal(out.panels!.length, narrowPanels.length);
+  for (const panel of out.panels!) {
+    const original = narrowPanels.find(item => item.id === panel.id)!;
+    assert.equal(panel.rect.width, original.width); assert.equal(panel.rect.height, original.height);
+  }
+});
+test('unchanged visible readouts remain stable while a nearby sight moves without contact', () => {
+  let measures = 0, applies = 0;
+  const adapter = new CampaignHudLayout({ measure: () => { measures++; return narrow; }, observe: () => () => {},
+    applyThreat: () => { throw new Error('panel layout uses its own adapter'); }, applyPanels: () => { applies++; } });
+  const first = adapter.update(sight)!;
+  for (let i = 0; i < 100; i++) adapter.update({ ...sight, x: sight.x + (i % 2) * .1 });
+  assert.equal(measures, 1); assert.equal(applies, 1); assert.deepEqual(adapter.diagnostics().panels, first.panels);
+  adapter.dispose();
+});
+
+test('landscape readouts pack away from exact default buttons without shortening gauges', () => {
+  const width = 568, height = 320;
+  const source: HudMeasurement = { canvas: { x: 0, y: 0, width, height },
+    bounds: { x: 8, y: 8, width: 552, height: 304 }, flightData: null, threat: null,
+    obstacles: [{ id: 'header', x: 12, y: 8, width: 544, height: 54 }, ...defaultControls(width, height),
+      ...Array.from({ length: 7 }, (_, i) => ({ id: `site-${i}`, x: 12 + i * 78, y: 70, width: 76, height: 41.875 }))],
+    panels: [
+      { id: 'health-label', x: 18, y: 123, width: 118, height: 18 },
+      { id: 'health-track', x: 18, y: 147, width: 118, height: 3 },
+      { id: 'instrument', x: 18, y: 158, width: 118, height: 12 },
+      { id: 'wingmen', x: 18, y: 179, width: 118, height: 34 },
+      { id: 'campaign-limit', x: 18, y: 218, width: 118, height: 12 },
+      { id: 'score-readout', x: 18, y: 235, width: 118, height: 14 },
+      { id: 'ammo', x: 18, y: 256, width: 118, height: 24 },
+      { id: 'campaign-threat', x: 376, y: 150, width: 180, height: 28 },
+      { id: 'announcement', x: 376, y: 118, width: 180, height: 24 },
+    ] };
+  assertCompletePacking(source, { x: 246.8, y: 122.8, width: 74.4, height: 74.4 });
+});
+test('packing rejects invalid measurements and bounds no-fit work without accepting a partial result', () => {
+  assert.equal(layoutCampaignHud({ ...narrow, panels: [{ ...narrowPanels[0], width: NaN }] }, sight).status, 'invalid');
+  const crowded = { ...narrow, panels: Array.from({ length: 18 }, (_, i) => ({ id: `notice-${i}`, x: 97, y: 350, width: 114, height: 30 })) };
+  const out = layoutCampaignHud(crowded, sight);
+  assert.equal(out.status, 'blocked'); assert.equal(out.panels!.length, 18);
+  assert(out.searchChecks! <= 120_000);
+  assert(out.panels!.every(panel => panel.status === 'blocked' && panel.rect.width === 114 && panel.rect.height === 30));
+});
+
+test('DOM adapter catches wrapped text before draw, caches repeated writes and restores its own styles on disposal', () => {
+  const previousResize = globalThis.ResizeObserver, previousMutation = globalThis.MutationObserver;
+  const records: MutationRecord[] = [];
+  let resizeDisconnected = 0, mutationDisconnected = 0, removed = 0;
+  const listeners = new Set<string>();
+  class Styles {
+    values = new Map<string, string>(); cssText = '';
+    getPropertyValue(name: string) { return this.values.get(name) ?? ''; }
+    getPropertyPriority() { return ''; }
+    setProperty(name: string, value: string) { this.values.set(name, value); }
+    removeProperty(name: string) { this.values.delete(name); }
+  }
+  const makeNode = (id: string, box: HudRect) => {
+    const style = new Styles();
+    return { id, className: id, style, hidden: false, textContent: 'notice', box,
+      getAttribute(name: string) { return name === 'style' ? [...style.values].map(([key, value]) => `${key}:${value}`).join(';') || null : this.hidden && name === 'hidden' ? '' : null; },
+      setAttribute() {}, closest() { return this.hidden ? this : null; }, contains(other: unknown) { return other === this; },
+      getClientRects() { return this.hidden ? [] : [this.box]; },
+      getBoundingClientRect() { return { ...this.box, x: this.box.x + (parseFloat(style.getPropertyValue('--campaign-hud-x')) || 0),
+        y: this.box.y + (parseFloat(style.getPropertyValue('--campaign-hud-y')) || 0) }; },
+      remove() { removed++; },
+    };
+  };
+  const announcement = makeNode('announcement', { x: 350, y: 300, width: 180, height: 18 });
+  const instrument = makeNode('instrument', { x: 60, y: 150, width: 118, height: 12 });
+  announcement.style.setProperty('color', 'plum');
+  announcement.style.setProperty('--campaign-hud-x', '5px'); announcement.style.setProperty('--campaign-hud-y', '6px');
+  const probe = makeNode('probe', { x: 0, y: 0, width: 0, height: 0 });
+  const app = { ...makeNode('app', { x: 40, y: 60, width: 800, height: 600 }), append() {},
+    querySelectorAll(selector: string) { return selector.includes('.flight-data > *') ? [announcement, instrument] : []; }, querySelector() { return null; } };
+  const win = { getComputedStyle() { return { visibility: 'visible', display: 'block', paddingLeft: '0', paddingRight: '0', paddingTop: '0', paddingBottom: '0' }; },
+    addEventListener(name: string) { listeners.add(name); }, removeEventListener(name: string) { listeners.delete(name); } };
+  const doc = { defaultView: win, documentElement: makeNode('html', app.box), body: makeNode('body', app.box), createElement() { return probe; },
+    fonts: { addEventListener(name: string) { listeners.add(name); }, removeEventListener(name: string) { listeners.delete(name); } } };
+  const canvas = { ...makeNode('flight', app.box), ownerDocument: doc, closest() { return app; }, parentElement: app };
+  globalThis.ResizeObserver = class { observe() {} disconnect() { resizeDisconnected++; } } as unknown as typeof ResizeObserver;
+  globalThis.MutationObserver = class { observe() {} disconnect() { mutationDisconnected++; } takeRecords() { return records.splice(0); } } as unknown as typeof MutationObserver;
+  try {
+    const adapter = createCampaignHudLayout(canvas as unknown as HTMLCanvasElement);
+    const aim = { x: 350, y: 250, width: 100, height: 100 };
+    adapter.update(aim); assert.equal(adapter.diagnostics().measurements, 1);
+    records.push({ type: 'childList', target: announcement } as unknown as MutationRecord);
+    adapter.update(aim); assert.equal(adapter.diagnostics().measurements, 1, 'same text must not remeasure');
+    announcement.textContent = 'same size notice'; instrument.textContent = '400km/h';
+    records.push(...[announcement, instrument].map(target => ({ type: 'childList', target }) as unknown as MutationRecord));
+    adapter.update(aim); assert.equal(adapter.diagnostics().measurements, 1, 'changed same-size text must not repack');
+    announcement.textContent = 'longer notice wraps onto a second line'; announcement.box.height = 36;
+    instrument.textContent = '401km/h';
+    records.push(...[announcement, instrument].map(target => ({ type: 'childList', target }) as unknown as MutationRecord));
+    adapter.update(aim); assert.equal(adapter.diagnostics().measurements, 2);
+    assert.equal(adapter.diagnostics().panels!.find(panel => panel.id === 'announcement')!.rect.height, 36);
+    records.push(...[announcement, instrument].map(target => ({ type: 'childList', target }) as unknown as MutationRecord));
+    adapter.update(aim); assert.equal(adapter.diagnostics().measurements, 2, 'all signatures were consumed in the prior batch');
+    announcement.style.setProperty('outline', '2px solid gold');
+    adapter.dispose(); adapter.dispose();
+    assert.equal(announcement.style.getPropertyValue('--campaign-hud-x'), '5px');
+    assert.equal(announcement.style.getPropertyValue('--campaign-hud-y'), '6px');
+    assert.equal(announcement.style.getPropertyValue('color'), 'plum');
+    assert.equal(announcement.style.getPropertyValue('outline'), '2px solid gold');
+    assert.equal(resizeDisconnected, 1); assert.equal(mutationDisconnected, 1); assert.equal(removed, 1); assert.equal(listeners.size, 0);
+  } finally { globalThis.ResizeObserver = previousResize; globalThis.MutationObserver = previousMutation; }
 });

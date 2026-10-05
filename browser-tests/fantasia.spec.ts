@@ -16,8 +16,24 @@ type ReadState = {
 
 const state = (page: Page) => page.evaluate(() => {
   const read = (window as any).__fantasiaReadState;
-  return typeof read === 'function' ? read(false) as ReadState : null;
+  const current = typeof read === 'function' ? read(false) as ReadState : null;
+  if (!current) return null;
+  // Poll only assertion inputs. Returning the entire campaign through
+  // Playwright's recursive serializer can itself delay a live frame.
+  const { phase, screen, mode, selectedMode, tick, pauseReasons, fatalLogicError, renderStatus } = current;
+  return { phase, screen, mode, selectedMode, tick, pauseReasons, fatalLogicError, renderStatus,
+    campaignPlayer: { bombs: current.campaignPlayer?.bombs } };
 });
+
+async function fullEvidenceState(page: Page): Promise<ReadState | null> {
+  // Evidence still includes every original field. Serialize once in the page
+  // and decode in the runner instead of traversing the object over the wire.
+  const serialized = await page.evaluate(() => {
+    const read = (window as any).__fantasiaReadState;
+    return JSON.stringify(typeof read === 'function' ? read(false) : null);
+  });
+  return JSON.parse(serialized);
+}
 
 const audit = (page: Page) => page.evaluate(() => {
   const read = (window as any).__fantasiaReadState;
@@ -84,7 +100,7 @@ async function tapLiveControl(page: Page, selector: string) {
 async function saveEvidence(page: Page, name: string, note: string) {
   await mkdir('test-results/evidence', { recursive: true });
   await page.screenshot({ path: `test-results/evidence/${name}.png` });
-  const observed = await state(page);
+  const observed = await fullEvidenceState(page);
   await writeFile(`test-results/evidence/${name}.json`, JSON.stringify({
     environment: 'Playwright Chromium viewport emulation; not physical-device coverage',
     note,
@@ -111,12 +127,15 @@ async function readHudGeometry(page: Page) {
     };
     const visible = (node: Element) => !node.closest('[hidden]') && node.getClientRects().length > 0
       && getComputedStyle(node).visibility !== 'hidden' && node.getBoundingClientRect().width > 0 && node.getBoundingClientRect().height > 0;
-    const selectors = '.hud-top, #campaign-sites .campaign-site[data-site], .flight-data, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip, #hud button';
+    const selectors = '.hud-top, #campaign-sites .campaign-site[data-site], #hud button';
     const obstacles = Array.from(document.querySelectorAll<HTMLElement>(selectors)).filter(visible)
       .map(node => ({ id: node.id || node.className, ...rect(node) }));
+    const panels = Array.from(document.querySelectorAll<HTMLElement>('.flight-data > *, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip')).filter(visible)
+      .map(node => ({ id: node.id || node.className, ...rect(node),
+        overflowX: node.scrollWidth - node.clientWidth, overflowY: node.scrollHeight - node.clientHeight }));
     const threat = document.querySelector('#campaign-threat')!;
     return { phase: observed?.phase, pauseReasons: observed?.pauseReasons, renderStatus: observed?.renderStatus,
-      deviceScaleFactor: devicePixelRatio, layout: observed?.render?.hudLayout, obstacles,
+      deviceScaleFactor: devicePixelRatio, layout: observed?.render?.hudLayout, obstacles, panels,
       threat: visible(threat) ? rect(threat) : null };
   });
 }
@@ -143,6 +162,10 @@ async function expectHudSafeLayout(page: Page, name: string) {
   inBounds(radar.rect);
   const sight = hud.layout.obstacles.find((o: { id: string }) => o.id === 'aim-and-reload-ring');
   expect(sight).toBeTruthy();
+  const header = hud.obstacles.find(obstacle => obstacle.id === 'hud-top')!;
+  for (const site of hud.obstacles.filter(obstacle => obstacle.id.includes('campaign-site'))) {
+    expect(overlap(site, header), 'reflowed header must avoid the site strip').toBe(false);
+  }
   for (const obstacle of [...hud.obstacles, sight]) {
     expect(overlap(radar.rect, obstacle), `radar circle/caption must avoid ${obstacle.id}`).toBe(false);
     if (hud.threat) expect(overlap(hud.threat, obstacle), `threat must avoid ${obstacle.id}`).toBe(false);
@@ -151,6 +174,17 @@ async function expectHudSafeLayout(page: Page, name: string) {
     inBounds(hud.threat); expect(overlap(radar.rect, hud.threat), 'radar and threat do not overlap').toBe(false);
     expect(Math.abs(hud.threat.x - hud.layout.threat.rect.x)).toBeLessThan(.75);
     expect(Math.abs(hud.threat.y - hud.layout.threat.rect.y)).toBeLessThan(.75);
+  }
+  expect(hud.layout.panels.map((panel: { id: string }) => panel.id).sort()).toEqual(hud.panels.map(panel => panel.id).sort());
+  for (const [index, panel] of hud.panels.entries()) {
+    inBounds(panel);
+    expect(panel.overflowX, `${panel.id} retains readable horizontal content`).toBeLessThanOrEqual(1);
+    expect(panel.overflowY, `${panel.id} retains readable vertical content`).toBeLessThanOrEqual(1);
+    const expected = hud.layout.panels.find((entry: { id: string }) => entry.id === panel.id).rect;
+    for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(panel[key] - expected[key]), `${panel.id} measured ${key}`).toBeLessThan(.75);
+    for (const obstacle of [...hud.obstacles, sight, { ...radar.rect, id: 'radar' }, ...hud.panels.slice(index + 1)]) {
+      expect(overlap(panel, obstacle), `${panel.id} must avoid ${obstacle.id}`).toBe(false);
+    }
   }
 }
 
