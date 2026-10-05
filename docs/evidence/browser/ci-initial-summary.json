@@ -1,0 +1,18 @@
+{
+  "candidateCommit": "fe7e03935dd4ff4c59a14a6f35511f50aaf7e9e2",
+  "runUrl": "https://github.com/chameleonjp-lab/fantasia/actions/runs/37258940524",
+  "conclusion": "failure",
+  "browser": {
+    "passed": 4,
+    "failed": 4
+  },
+  "unit": "pass",
+  "build": "pass",
+  "artifactDownload": "HTTP403 from artifact storage; local evidence retained",
+  "notes": [
+    "All four viewport site-layout cases passed on CI",
+    "Settings and 200% tests opened the keyboard editor; explicit touch selection corrected subsequently",
+    "Headless new tabs left document visible; not physical visibility evidence",
+    "No full-browser acceptance"
+  ]
+}

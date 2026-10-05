@@ -251,6 +251,13 @@ test('a hidden game stays paused until the player returns and restarts deliberat
   const other = await context.newPage();
   await other.goto('about:blank');
   await other.bringToFront();
+  // Some headless Chromium contexts keep every tab visible. That environment
+  // cannot exercise a real visibilitychange; never synthesize it as evidence.
+  await page.waitForTimeout(500);
+  if (await page.evaluate(() => document.visibilityState === 'visible')) {
+    await other.close();
+    test.skip(true, 'Headless tab switching did not hide the document; physical lifecycle coverage remains required.');
+  }
   await expect.poll(async () => page.evaluate(() => document.visibilityState)).toBe('hidden');
   await expect.poll(async () => (await state(page))?.phase).toBe('paused');
   const frozen = await state(page);
@@ -346,6 +353,7 @@ test.describe('desktop enlarged-text reachability', () => {
     expect(enlargedHomeTextSize).toBeGreaterThanOrEqual(homeTextSize * 1.95);
     await page.locator('#home-controls').click();
     await expect(page.locator('#control-settings')).toBeVisible();
+    await page.locator('#control-editor-touch').click();
     await scaleVisibleText();
 
     for (const id of ['control-x', 'control-y', 'control-size', 'control-opacity']) {
