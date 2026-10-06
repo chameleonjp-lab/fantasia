@@ -68,8 +68,15 @@ const startPreparation = new CampaignStartPreparation<{ mode: GameMode; runId: s
   },
   submit: selection => {
     if (!scene || selection.runId !== state.runId || selection.mode !== state.mode) return null;
-    scene.setOverlayVisible(false);
-    return scene.render(state, player, selection.mode) ? scene.diagnostics().queue : null;
+    // The staged HUD has real layout boxes, but remains transparent/inert.
+    // Prepare its initial text, layout and Canvas2D drawing before live time.
+    updateHUD(); scene.setOverlayVisible(true);
+    if (!scene.render(state, player, selection.mode)) return null;
+    const rendered = scene.diagnostics();
+    if (!rendered.hudLayout.measurements || (rendered.hudLayout.canvas?.width ?? 0) <= 0 || (rendered.hudLayout.canvas?.height ?? 0) <= 0) {
+      throw new Error('Initial HUD preparation unavailable');
+    }
+    return rendered.queue;
   },
   schedule: (callback, delay) => { const timer = setTimeout(callback, delay); return () => clearTimeout(timer); },
   complete: selection => {
@@ -80,7 +87,7 @@ const startPreparation = new CampaignStartPreparation<{ mode: GameMode; runId: s
     // This is the playing boundary, after acknowledgment of the selected view.
     // Drop preparation time and all stale input; the next rAF starts with dt=0.
     setScreen('playing'); syncAudio(); scene?.setOverlayVisible(true);
-    announce('7軍の進軍開始 · 砲台と竜を排除し、旗をそろえよう', 5); updateHUD();
+    updateHUD();
   },
   failed: reason => {
     if (reason === 'render-failed') renderStatus = 'failed';
@@ -168,7 +175,14 @@ for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="gam
 }
 function setScreen(next: typeof screen) {
   settings.close(); rules?.close(); screen = next; app.dataset.screen = next;
-  el('home').hidden = next !== 'home' && next !== 'preparing'; el('hud').hidden = next !== 'playing' && next !== 'paused';
+  el('home').hidden = next !== 'home' && next !== 'preparing';
+  const hud = el('hud');
+  hud.hidden = next !== 'preparing' && next !== 'playing' && next !== 'paused';
+  hud.inert = next === 'preparing';
+  for (const node of [hud, el('announcement')]) {
+    if (next === 'preparing') node.setAttribute('aria-hidden', 'true'); else node.removeAttribute('aria-hidden');
+  }
+  if (next === 'home') el('announcement').textContent = '';
   el('pause-screen').hidden = next !== 'paused'; el('result').hidden = next !== 'result';
   el('start-cancel').hidden = next !== 'preparing'; clearInput();
   if (next === 'home') syncStartPreparation();
@@ -198,7 +212,8 @@ function begin() {
   void audio.unlock().then(() => { if (!disposed) syncAudio(); });
   resetCampaign(); announcementUntil = 0; announcementPriority = 0; pauseReasons.clear(); audio.resetFlight(); syncMode(); frameIntervals = []; updateTimes = [];
   if (import.meta.env.DEV) { inputAudit = []; inputAuditSignature = ''; inputAuditDropped = 0; }
-  setScreen('preparing'); startPreparation.begin({ mode: state.mode, runId: state.runId });
+  setScreen('preparing'); announce('7軍の進軍開始 · 砲台と竜を排除し、旗をそろえよう', 5);
+  startPreparation.begin({ mode: state.mode, runId: state.runId });
   syncStartPreparation(); syncAudio(); updateHUD();
 }
 function home() {
@@ -293,7 +308,7 @@ function updateBombCue() {
   if (bombPredictionTick !== state.simTick) {
     bombPrediction = predictBombImpact(player.position, forwardOf(player).multiplyScalar(player.speed), player.quaternion); bombPredictionTick = state.simTick;
   }
-  const ready = screen === 'playing' && state.status === 'running' && state.player.bombs > 0 && state.player.protectionTicks === 0;
+  const ready = (screen === 'playing' || screen === 'preparing') && state.status === 'running' && state.player.bombs > 0 && state.player.protectionTicks === 0;
   const affected = bombPrediction ? state.actors.filter(actor => actor.hp > 0 && distanceSquared(actor.position, bombPrediction!.position) < 45 ** 2
     && sweepSphere({ ...bombPrediction!.position, y: bombPrediction!.position.y + .1 }, actor.position, 0) === null) : [];
   const enemy = affected.some(actor => actor.team === 'enemy'), friendly = affected.some(actor => actor.team === 'friendly');

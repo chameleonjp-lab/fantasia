@@ -1197,3 +1197,13 @@ p {
     margin: 0;
   }
 }
+
+/* Measure/draw the actual first-flight HUD during preparation without exposing
+   it or its controls. Keep normal geometry: display/visibility hiding would
+   make the layout adapter skip these boxes. main.ts also sets inert/aria-hidden. */
+#app[data-screen="preparing"] #hud,
+#app[data-screen="preparing"] #markers,
+#app[data-screen="preparing"] #announcement {
+  opacity: 0;
+  pointer-events: none;
+}

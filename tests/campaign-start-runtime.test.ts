@@ -34,7 +34,10 @@ async function appHarness() {
   const node = (id: string) => {
     const n = Object.assign(new Target(), { id, hidden: true, disabled: false, textContent: '', innerHTML: '', dataset: {} as any,
       style: { removeProperty() {}, width: '', top: '', left: '' },
-      setAttribute() {}, focus() { if (!n.hidden && !n.disabled) doc.activeElement = n; }, querySelectorAll: () => [] });
+      attributes: new Map<string, string>(), inert: false,
+      setAttribute(name: string, value: string) { n.attributes.set(name, value); },
+      removeAttribute(name: string) { n.attributes.delete(name); },
+      getAttribute(name: string) { return n.attributes.get(name) ?? null; }, focus() { if (!n.hidden && !n.disabled) doc.activeElement = n; }, querySelectorAll: () => [] });
     nodes.set(id, n); return n;
   };
   for (const match of readFileSync('index.html', 'utf8').matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) node(match[1]).hidden = /\bhidden\b/.test(match[0]);
@@ -49,21 +52,25 @@ async function appHarness() {
     deleteSync: fence => { if (fence) deleted.push(fence); },
   };
   class Scene {
-    queue = new RenderQueue(gl); camera = { aspect: 1 }; prepared = false; disposed = false; resets = 0; resizes = 0; renderAttempts = 0; lastState: any = null;
-    submissions: Array<{ mode: string; tick: number; runId: string }> = [];
+    queue = new RenderQueue(gl); camera = { aspect: 1 }; prepared = false; disposed = false; resets = 0; resizes = 0; renderAttempts = 0; lastState: any = null; overlayVisible = false; hudMeasured = false; failHud = false;
+    submissions: Array<{ mode: string; tick: number; runId: string; overlay: boolean; hudHidden: boolean; hudInert: boolean; hudAriaHidden: string | null; hint: string; announcement: string; announcementAriaHidden: string | null }> = [];
     constructor() { scene = this; }
     async prepare() { this.prepared = true; }
-    setOverlayVisible() {} resize() { this.resizes++; } gunSight() { return { x: 0, y: 0 }; }
+    setOverlayVisible(visible: boolean) { this.overlayVisible = visible; } resize() { this.resizes++; } gunSight() { return { x: 0, y: 0 }; }
     pollRender() { return this.queue.poll(now); }
     resetRenderQueue() { this.resets++; this.queue.reset(); }
     render(state: any, _player: unknown, mode: string) {
       this.renderAttempts++; this.lastState = state;
       if (!this.prepared) return true;
       if (this.pollRender() !== 'ready') return false;
-      this.submissions.push({ mode, tick: state.simTick, runId: state.runId });
+      if (this.overlayVisible && !nodes.get('hud').hidden && !this.failHud) this.hudMeasured = true;
+      this.submissions.push({ mode, tick: state.simTick, runId: state.runId, overlay: this.overlayVisible,
+        hudHidden: nodes.get('hud').hidden, hudInert: nodes.get('hud').inert, hudAriaHidden: nodes.get('hud').getAttribute('aria-hidden'),
+        hint: nodes.get('bomb-hint').textContent, announcement: nodes.get('announcement').textContent,
+        announcementAriaHidden: nodes.get('announcement').getAttribute('aria-hidden') });
       signaled = false; this.queue.submit(now); return true;
     }
-    diagnostics() { return { queue: this.queue.diagnostics(now) }; }
+    diagnostics() { return { queue: this.queue.diagnostics(now), hudLayout: { measurements: this.hudMeasured ? 1 : 0, canvas: this.hudMeasured ? { width: 393, height: 852 } : undefined } }; }
     dispose() { this.disposed = true; this.queue.dispose(); }
   }
   class Controls {
@@ -111,15 +118,16 @@ async function appHarness() {
     failWait: () => { waitFailed = true; },
   };
 }
-async function selectedPending() {
-  const h = await appHarness(); h.frame(); h.mode('normal'); h.click('start');
+async function selectedPending(mode = 'normal') {
+  const h = await appHarness(); h.frame(); h.mode(mode); h.click('start');
   h.signal(); h.frame(); h.frame(); return h;
 }
 
 test('actual main wiring stays preparing without ticks/sampling until selected frame acknowledgment, then resets clock/input once', async () => {
   const h = await appHarness(); h.frame(); h.mode('normal'); h.click('start'); h.click('start');
   assert.equal(h.read().phase, 'preparing'); assert.equal(h.read().mode, 'normal');
-  assert.equal(h.nodes.get('home').hidden, false); assert.equal(h.nodes.get('hud').hidden, true);
+  assert.equal(h.nodes.get('home').hidden, false); assert.equal(h.nodes.get('hud').hidden, false);
+  assert.equal(h.nodes.get('hud').inert, true); assert.equal(h.nodes.get('hud').getAttribute('aria-hidden'), 'true');
   assert.equal(h.nodes.get('start-cancel').hidden, false); assert.equal(h.doc.activeElement.id, 'start-cancel'); assert.match(h.nodes.get('start-status').textContent, /ノーマル.*15秒/);
   assert.equal(h.unlocks(), 1); assert.equal(h.controls.active(), false);
   h.frame(2500); assert.equal(h.read().tick, 0); assert.equal(h.samples(), 0); assert.deepEqual(h.audit().entries, []);
@@ -216,7 +224,7 @@ test('home context loss disables Start visibly and restoration does not auto-sta
 test('a completion callback failure returns partial playing UI to failed preparation before any tick/input', async () => {
   const h = await selectedPending(); h.audio.failOnActiveSync = true; h.signal(); h.frame();
   assert.equal(h.read().phase, 'preparing'); assert.equal(h.read().startPreparation.failure, 'render-failed');
-  assert.equal(h.nodes.get('hud').hidden, true); assert.equal(h.nodes.get('home').hidden, false);
+  assert.equal(h.nodes.get('hud').hidden, false); assert.equal(h.nodes.get('hud').inert, true); assert.equal(h.nodes.get('home').hidden, false);
   assert.equal(h.nodes.get('reload').hidden, false); assert.equal(h.read().tick, 0); assert.equal(h.samples(), 0);
   h.frame(); assert.equal(h.read().tick, 0); assert.equal(h.controls.active(), false);
 });
@@ -339,3 +347,50 @@ test('result transition still renders its final scene and can return Home after 
   h.click('result-home'); h.signal(); h.frame(); assert.equal(h.read().phase, 'ready');
   assert.equal(h.nodes.get('result').hidden, true); assert.equal(h.scene.submissions.at(-1)!.tick, 0);
 });
+
+
+for (const mode of ['easy', 'normal']) test(`${mode} selected preparation frame measures the real staged HUD and draws its overlay before any live tick`, async () => {
+  const h = await selectedPending(mode); const selected = h.scene.submissions.at(-1)!;
+  assert.equal(h.read().phase, 'preparing'); assert.equal(h.read().tick, 0); assert.equal(h.samples(), 0);
+  assert.equal(selected.mode, mode); assert.equal(selected.overlay, true); assert.equal(selected.hudHidden, false, 'display:none cannot prepare real geometry');
+  assert.equal(selected.hudInert, true); assert.equal(selected.hudAriaHidden, 'true');
+  assert.equal(h.controls.active(), false); assert.equal(h.audio.active, false);
+  assert.equal(h.nodes.get('home').hidden, false); assert.equal(h.doc.activeElement.id, 'start-cancel');
+  assert.equal(selected.announcementAriaHidden, 'true'); assert.match(selected.announcement, /7軍の進軍開始/); assert.equal(selected.hint, '落下地点の予測');
+  h.frame(2000); assert.equal(h.read().phase, 'preparing'); assert.equal(h.read().tick, 0);
+  h.signal(); h.frame(); assert.equal(h.read().phase, 'playing'); assert.equal(h.read().tick, 0);
+  assert.equal(h.nodes.get('hud').hidden, false); assert.equal(h.nodes.get('hud').inert, false);
+  assert.equal(h.nodes.get('hud').getAttribute('aria-hidden'), null); assert.equal(h.nodes.get('home').hidden, true);
+  assert.equal(h.nodes.get('bomb-hint').textContent, selected.hint);
+  assert.equal(h.nodes.get('announcement').textContent, selected.announcement);
+  assert.equal(h.nodes.get('announcement').getAttribute('aria-hidden'), null);
+});
+
+test('preparing HUD is visually suppressed without display:none or visibility:hidden geometry', () => {
+  const css = readFileSync('src/style.css', 'utf8');
+  const rule = css.match(/#app\[data-screen="preparing"\] #hud,\s*#app\[data-screen="preparing"\] #markers,\s*#app\[data-screen="preparing"\] #announcement\s*\{([^}]+)\}/);
+  assert.ok(rule, 'the DOM HUD, canvas overlay and separate live announcement have a preparation-only staging rule');
+  assert.match(rule[1], /opacity:\s*0/); assert.match(rule[1], /pointer-events:\s*none/);
+  assert.doesNotMatch(rule[1], /display:|visibility:|font-size:|transform:/);
+});
+
+test('missing actual HUD measurement fails preparation rather than certifying a 3D-only receipt', async () => {
+  const h = await appHarness(); h.scene.failHud = true;
+  h.frame(); h.mode('normal'); h.click('start'); h.signal(); h.frame(); h.frame();
+  assert.equal(h.read().phase, 'preparing'); assert.equal(h.read().startPreparation.failure, 'render-failed');
+  assert.equal(h.read().tick, 0); assert.equal(h.samples(), 0); assert.equal(h.controls.active(), false);
+  assert.equal(h.nodes.get('reload').hidden, false);
+  h.signal(); h.frame(); assert.equal(h.read().phase, 'preparing');
+});
+
+for (const action of ['start-cancel', 'mode', 'home-controls', 'home-rules'] as const) {
+  test(`${action} removes the staged HUD and keeps stale receipts from activating it`, async () => {
+    const h = await selectedPending();
+    assert.equal(h.nodes.get('hud').hidden, false); assert.equal(h.nodes.get('hud').inert, true);
+    if (action === 'mode') h.mode('easy'); else h.click(action);
+    assert.equal(h.read().phase, 'ready'); assert.equal(h.nodes.get('hud').hidden, true);
+    assert.equal(h.nodes.get('announcement').textContent, '');
+    h.signal(); h.frame(); assert.equal(h.nodes.get('hud').hidden, true); assert.equal(h.read().tick, 0);
+    assert.equal(h.controls.active(), false);
+  });
+}
