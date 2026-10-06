@@ -1,0 +1,107 @@
+name: Diagnose Fantasia PR5 rendering
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/render-comparison.yml'
+      - 'browser-tests/render-comparison.spec.ts'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: diagnostic
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 36b0e3b8130acb7149a646845b46f72294a3798a
+          path: comparison/main
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: e7d69dfc075b6908c162009828253fd9a312be37
+          path: comparison/pr5
+          persist-credentials: false
+      - name: Verify exact refs and identical experiment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e comparison/main/test-results
+          test ! -e comparison/pr5/test-results
+          test ! -e comparison/main/render-comparison-results
+          mkdir comparison/main/render-comparison-results
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, subprocess
+          roots = [Path('comparison/main'), Path('comparison/pr5')]
+          refs = ['36b0e3b8130acb7149a646845b46f72294a3798a', 'e7d69dfc075b6908c162009828253fd9a312be37']
+          inventories = []
+          for root, ref in zip(roots, refs):
+              assert subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip() == ref
+              names = subprocess.check_output(['git', '-C', str(root), 'ls-files', '-z']).decode().split('\0')
+              inventories.append({name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in names if name})
+          a, b = inventories
+          different = sorted(name for name in a.keys() | b.keys() if a.get(name) != b.get(name))
+          assert different == ['.github/workflows/pages.yml', 'README.md'], different
+          report = {'refs': refs, 'differentFiles': different, 'main': a, 'pr5': b,
+                    'runtimeTestsLockAndVerifyIdentical': True, 'gameAcceptance': 'not evaluated by this diagnostic'}
+          Path('comparison/main/render-comparison-results/source-identity.json').write_text(json.dumps(report, indent=2))
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: comparison/main/package-lock.json
+      - name: Install identical official locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd comparison/main && npm ci)
+          (cd comparison/pr5 && npm ci)
+          (cd comparison/main && npx playwright install --with-deps chromium)
+      - name: Run bounded diagnostic, not game acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test ! -e comparison/main/browser-tests/render-comparison.spec.ts
+          cp diagnostic/browser-tests/render-comparison.spec.ts comparison/main/browser-tests/render-comparison.spec.ts
+          (cd comparison/pr5 && npm run dev -- --port 4177 --strictPort) > comparison/main/render-comparison-results/pr5-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 60); do
+            if curl --silent --fail http://127.0.0.1:4177/ > /dev/null; then break; fi
+            sleep 1
+          done
+          curl --silent --fail http://127.0.0.1:4177/ > /dev/null
+          cd comparison/main
+          node --version > render-comparison-results/toolchain.txt
+          npm --version >> render-comparison-results/toolchain.txt
+          npx playwright --version >> render-comparison-results/toolchain.txt
+          npx playwright test render-comparison.spec.ts --project=chromium
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fantasia-pr5-render-comparison-common
+          path: |
+            comparison/main/test-results/
+            comparison/main/render-comparison-results/source-identity.json
+            comparison/main/render-comparison-results/toolchain.txt
+            comparison/main/render-comparison-results/pr5-server.log
+            comparison/main/render-comparison-results/summary.json
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fantasia-pr5-render-comparison-mobile
+          path: comparison/main/render-comparison-results/easy-393x852-*
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fantasia-pr5-render-comparison-desktop
+          path: comparison/main/render-comparison-results/normal-1280x800-*
+          if-no-files-found: warn
