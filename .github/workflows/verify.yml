@@ -18,6 +18,9 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
+      - name: Report browser acceptance evidence
+        if: always()
+        run: node scripts/report-browser-acceptance.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

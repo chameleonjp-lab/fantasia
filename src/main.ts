@@ -8,6 +8,7 @@ import { CampaignRecords, type RecordSaveStatus } from './campaign-records';
 import { CampaignFlightController } from './campaign-flight';
 import { terrainHeight, distanceSquared, sweepSphere } from './campaign-terrain';
 import { CampaignScene } from './campaign-scene';
+import { CampaignStartPreparation, type StartPreparationFailure } from './campaign-start';
 import { updateCampaignHud } from './campaign-hud';
 import type { CampaignEvent } from './campaign-types';
 import { forwardOf } from './flight';
@@ -28,7 +29,7 @@ const STANDARD_SEED = 20261005;
 let selectedMode: GameMode = 'easy';
 let campaign = new Campaign(selectedMode, STANDARD_SEED), state = campaign.state;
 let flight = new CampaignFlightController(state), player = flight.player;
-let screen: 'home' | 'playing' | 'paused' | 'result' = 'home';
+let screen: 'home' | 'preparing' | 'playing' | 'paused' | 'result' = 'home';
 let scene: CampaignScene | null = null;
 let graphicsReady = false, contextLost = false, disposed = false;
 let accumulator = 0, lastFrame = 0, frameId = 0;
@@ -59,6 +60,58 @@ const controls = new FlightControls(canvas, buttons, () => screen === 'playing' 
 let bombPrediction: BombPrediction | null = null, bombPredictionTick = -1;
 const modeName = (mode: GameMode) => mode === 'easy' ? 'イージー' : 'ノーマル';
 const formatTicks = formatCampaignTicks;
+const startPreparation = new CampaignStartPreparation<{ mode: GameMode; runId: string }>({
+  now: () => performance.now(),
+  poll: () => {
+    if (!scene || contextLost) throw new Error('Renderer unavailable');
+    renderStatus = scene.pollRender(); return scene.diagnostics().queue;
+  },
+  submit: selection => {
+    if (!scene || selection.runId !== state.runId || selection.mode !== state.mode) return null;
+    scene.setOverlayVisible(false);
+    return scene.render(state, player, selection.mode) ? scene.diagnostics().queue : null;
+  },
+  schedule: (callback, delay) => { const timer = setTimeout(callback, delay); return () => clearTimeout(timer); },
+  complete: selection => {
+    if (disposed || contextLost || document.hidden || settings.isOpen || rules?.isOpen
+      || screen !== 'preparing' || selection.runId !== state.runId || selection.mode !== selectedMode) {
+      home(); return;
+    }
+    // This is the playing boundary, after acknowledgment of the selected view.
+    // Drop preparation time and all stale input; the next rAF starts with dt=0.
+    setScreen('playing'); syncAudio(); scene?.setOverlayVisible(true);
+    announce('7軍の進軍開始 · 砲台と竜を排除し、旗をそろえよう', 5); updateHUD();
+  },
+  failed: reason => {
+    if (reason === 'render-failed') renderStatus = 'failed';
+    if (screen === 'playing') setScreen('preparing');
+    clearInput(); syncStartPreparation(reason); syncAudio();
+  },
+});
+function syncStartPreparation(reason: StartPreparationFailure | null = startPreparation.snapshot().failure) {
+  const preparing = screen === 'preparing', contextWaiting = contextLost && screen === 'home';
+  const failed = preparing && reason !== null;
+  el('start-cancel').hidden = !preparing;
+  el('start-retry').hidden = !failed || reason === 'render-failed';
+  el<HTMLButtonElement>('start-retry').disabled = contextLost || renderStatus === 'failed' || document.hidden;
+  el('start-status').hidden = !preparing && !contextWaiting;
+  el('start-status').textContent = contextWaiting ? '描画が中断されました。復帰を待つか、再読み込みしてください' : !failed ? `${modeName(state.mode)}の出撃画面を準備しています。作戦時間はまだ進みません（最大15秒）`
+    : reason === 'timeout' ? '準備が15秒以内に完了しませんでした。時間は進んでいません。再試行するか、ホームへ戻れます'
+      : reason === 'context-lost' ? contextLost ? '描画が中断されました。復帰を待つか、再読み込みしてください'
+        : '描画が復帰しました。「準備を再試行」で出撃画面を準備できます'
+        : reason === 'render-failed' ? '出撃画面を準備できませんでした。再読み込みしてお試しください'
+          : '表示や操作が切り替わったため準備を止めました。「準備を再試行」で再開できます';
+  el('reload').hidden = !(contextWaiting || failed && (reason === 'render-failed' || reason === 'context-lost'));
+  el<HTMLButtonElement>('start').disabled = !graphicsReady || contextLost || preparing || renderStatus === 'failed';
+  if (graphicsReady) {
+    if (contextWaiting || preparing) el('start').textContent = contextWaiting ? '描画の復帰を待っています' : failed ? '出撃の準備を停止しました' : '出撃画面を準備しています';
+    else el('start').innerHTML = '出撃する <span aria-hidden="true">↗</span>';
+  }
+}
+function leavePreparation() {
+  if (screen !== 'preparing') return;
+  startPreparation.cancel(); setScreen('home'); syncAudio();
+}
 
 function clearInput() {
   controls.clear(); pendingLoop = false; pendingBomb = false; flight.clearPending(); accumulator = 0; lastFrame = 0;
@@ -96,23 +149,25 @@ const unsubscribeKeyboard = keyboardSettings.subscribe(() => { clearInput(); syn
 const unsubscribePresentation = inputPresentation.subscribe(syncInstructions);
 rules = new RulesGuide(() => ({ mode: state.mode, input: inputPresentation.value, keyboardDescription: keyboardDescription() }), clearInput);
 for (const id of ['home-rules', 'pause-rules']) {
-  const button = el(id); button.addEventListener('click', () => { clearInput(); rules?.open(button); });
+  const button = el(id); button.addEventListener('click', () => { leavePreparation(); clearInput(); rules?.open(button); });
 }
 for (const [id, allowBoth] of [['home-controls', true], ['pause-controls', false], ['result-controls', true]] as const) {
-  const button = el(id); button.addEventListener('click', () => { clearInput(); settings.open(button, screen === 'home' ? selectedMode : state.mode, allowBoth); });
+  const button = el(id); button.addEventListener('click', () => { leavePreparation(); clearInput(); settings.open(button, screen === 'home' ? selectedMode : state.mode, allowBoth); });
 }
 el('control-settings').addEventListener('close', clearInput);
 for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="game-mode"]')) {
   radio.addEventListener('change', () => {
-    if (screen !== 'home' || !radio.checked) return;
-    selectedMode = radio.value === 'normal' ? 'normal' : 'easy'; resetCampaign(); syncMode(); updateHUD(); scene?.render(state, player, state.mode);
+    if ((screen !== 'home' && screen !== 'preparing') || !radio.checked) return;
+    leavePreparation(); selectedMode = radio.value === 'normal' ? 'normal' : 'easy'; resetCampaign(); syncMode(); updateHUD();
   });
 }
 function setScreen(next: typeof screen) {
   settings.close(); rules?.close(); screen = next; app.dataset.screen = next;
-  el('home').hidden = next !== 'home'; el('hud').hidden = next !== 'playing' && next !== 'paused';
-  el('pause-screen').hidden = next !== 'paused'; el('result').hidden = next !== 'result'; clearInput();
-  const focus = next === 'home' ? 'start' : next === 'paused' ? 'resume' : next === 'result' ? 'retry' : null;
+  el('home').hidden = next !== 'home' && next !== 'preparing'; el('hud').hidden = next !== 'playing' && next !== 'paused';
+  el('pause-screen').hidden = next !== 'paused'; el('result').hidden = next !== 'result';
+  el('start-cancel').hidden = next !== 'preparing'; clearInput();
+  if (next === 'home') syncStartPreparation();
+  const focus = next === 'preparing' ? 'start-cancel' : next === 'home' ? 'start' : next === 'paused' ? 'resume' : next === 'result' ? 'retry' : null;
   if (focus) el<HTMLButtonElement>(focus).focus({ preventScroll: true }); else canvas.focus({ preventScroll: true });
 }
 function announce(text: string, duration = 3, priority = 0) {
@@ -131,19 +186,23 @@ async function toggleAudio() {
 }
 for (const id of ['home-sound', 'game-sound']) el(id).addEventListener('click', () => void toggleAudio());
 function begin() {
-  if (!scene || !graphicsReady || contextLost || document.hidden || screen === 'playing' || settings.isOpen || rules?.isOpen) return;
+  if (!scene || !graphicsReady || disposed || contextLost || document.hidden || screen === 'playing'
+    || startPreparation.active || renderStatus === 'failed' || settings.isOpen || rules?.isOpen) return;
+  // AudioContext.resume must run synchronously inside this click's user gesture.
+  // Audio stays inactive until the selected frame actually completes.
+  void audio.unlock().then(() => { if (!disposed) syncAudio(); });
   resetCampaign(); announcementUntil = 0; announcementPriority = 0; pauseReasons.clear(); audio.resetFlight(); syncMode(); frameIntervals = []; updateTimes = [];
   if (import.meta.env.DEV) { inputAudit = []; inputAuditSignature = ''; inputAuditDropped = 0; }
-  setScreen('playing'); syncAudio(); void audio.unlock().then(syncAudio);
-  announce('7軍の進軍開始 · 砲台と竜を排除し、旗をそろえよう', 5); updateHUD();
-  scene.setOverlayVisible(true); scene.render(state, player, state.mode); lastFrame = 0;
+  setScreen('preparing'); startPreparation.begin({ mode: state.mode, runId: state.runId });
+  syncStartPreparation(); syncAudio(); updateHUD();
 }
 function home() {
-  audio.resetFlight(); resetCampaign(); syncMode(); pauseReasons.clear(); setScreen('home');
-  el('announcement').textContent = ''; syncAudio(); updateHUD(); scene?.setOverlayVisible(false); scene?.render(state, player, state.mode);
+  startPreparation.cancel(); audio.resetFlight(); resetCampaign(); syncMode(); pauseReasons.clear(); setScreen('home');
+  el('announcement').textContent = ''; syncAudio(); updateHUD(); scene?.setOverlayVisible(false);
 }
 function pause(reason: string) {
-  clearInput(); if (screen !== 'playing' && screen !== 'paused') return;
+  clearInput(); if (screen === 'preparing') { startPreparation.interrupt('interrupted'); return; }
+  if (screen !== 'playing' && screen !== 'paused') return;
   if (screen === 'playing') pauseCount++; pauseReasons.add(reason); if (screen !== 'paused') setScreen('paused');
   el('pause-reason').textContent = contextLost ? '描画が中断されました。復帰を待っています'
     : fatalLogicError ? '作戦の処理を続けられません。再読み込みしてお試しください'
@@ -266,6 +325,11 @@ function updateHUD() {
 }
 function frame() {
   const now = performance.now(); if (disposed) return; frameId = requestAnimationFrame(frame);
+  // Preparation owns submission, including its failed state until a deliberate
+  // retry/cancel. Home rendering must not replenish the queue while it drains.
+  if (startPreparation.ownsRendering) {
+    clearInput(); startPreparation.step(); updateHUD(); return;
+  }
   const dt = lastFrame ? Math.max(0, (now - lastFrame) / 1000) : 0; lastFrame = now; lastFrameGap = dt;
   if (scene && !contextLost) renderStatus = scene.pollRender(now);
   if (screen === 'playing') {
@@ -315,10 +379,10 @@ function frame() {
     }
   }
 }
-for (const id of ['start', 'retry', 'pause-restart']) el(id).addEventListener('click', begin);
-for (const id of ['result-home', 'pause-home']) el(id).addEventListener('click', home);
+for (const id of ['start', 'start-retry', 'retry', 'pause-restart']) el(id).addEventListener('click', begin);
+for (const id of ['start-cancel', 'result-home', 'pause-home']) el(id).addEventListener('click', home);
 el('pause').addEventListener('click', () => pause('manual')); el('resume').addEventListener('click', resume);
-document.addEventListener('visibilitychange', () => { if (document.hidden) pause('hidden'); else clearInput(); }); window.addEventListener('blur', () => pause('blur'));
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause('hidden'); else { clearInput(); if (screen === 'preparing') syncStartPreparation(); } }); window.addEventListener('blur', () => pause('blur'));
 document.addEventListener('keydown', event => {
   if (settings.isOpen || rules?.isOpen) return;
   if (keyboardSettings.matchesPause(event)) { event.preventDefault(); if (screen === 'playing') pause('manual'); else if (screen === 'paused') resume(); }
@@ -328,16 +392,21 @@ document.addEventListener('keydown', event => {
     if (event.shiftKey && index <= 0) { event.preventDefault(); items.at(-1)?.focus(); } else if (!event.shiftKey && index === items.length - 1) { event.preventDefault(); items[0]?.focus(); }
   }
 });
-canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); contextLost = true; scene?.resetRenderQueue(); pause('context'); });
+canvas.addEventListener('webglcontextlost', event => {
+  event.preventDefault(); contextLost = true; renderStatus = 'failed';
+  if (screen === 'preparing') { startPreparation.interrupt('context-lost'); clearInput(); syncStartPreparation(); }
+  else { pause('context'); if (screen === 'home' && graphicsReady) syncStartPreparation(); }
+});
 canvas.addEventListener('webglcontextrestored', () => {
   contextLost = false; clearInput(); scene?.resetRenderQueue(); renderStatus = 'ready'; el<HTMLButtonElement>('resume').disabled = !!fatalLogicError; el('pause-reason').textContent = '描画が復帰しました。操作して再開できます';
+  if (graphicsReady && (screen === 'preparing' || screen === 'home')) syncStartPreparation();
 });
 function resize() { pause('resize'); scene?.resize(); }
 window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
 window.addEventListener('pageshow', event => { clearInput(); if (event.persisted) pause('restored'); });
 let preparationGeneration = 0;
 function preparationFailed(error: unknown) {
-  preparationGeneration++; graphicsReady = false; cancelAnimationFrame(frameId); scene?.dispose(); scene = null;
+  preparationGeneration++; startPreparation.cancel(); graphicsReady = false; cancelAnimationFrame(frameId); scene?.dispose(); scene = null;
   el<HTMLButtonElement>('start').disabled = true; el('start').textContent = '出撃の準備ができませんでした'; el('startup-error').hidden = false;
   el('startup-error').textContent = '3D画面の準備が完了しませんでした。再読み込みしてお試しください'; el('reload').hidden = false; console.error('Fantasia renderer preparation failed', error);
 }
@@ -358,8 +427,8 @@ if (import.meta.env.DEV) {
     value: (history: boolean | 'audit' = true) => JSON.parse(JSON.stringify(history === 'audit'
       ? { mode: state.mode, seed: state.seed, rulesVersion: state.rulesVersion, mapVersion: state.mapVersion, startHeading: state.startHeading, entries: inputAudit, dropped: inputAuditDropped }
       : {
-        phase: screen === 'home' ? 'ready' : screen === 'paused' ? 'paused' : screen === 'result' ? 'ended' : state.status === 'respawning' ? 'respawning' : 'playing',
-        screen, mode: state.mode, selectedMode, status: state.status, graphicsReady, tick: state.simTick, elapsed: state.activeTicks / 60, activeTicks: state.activeTicks,
+        phase: screen === 'preparing' ? 'preparing' : screen === 'home' ? 'ready' : screen === 'paused' ? 'paused' : screen === 'result' ? 'ended' : state.status === 'respawning' ? 'respawning' : 'playing',
+        screen, startPreparation: startPreparation.snapshot(), mode: state.mode, selectedMode, status: state.status, graphicsReady, tick: state.simTick, elapsed: state.activeTicks / 60, activeTicks: state.activeTicks,
         player, campaignPlayer: state.player, campaign: campaign.snapshot(), sites: state.sites, armies: state.armies, actors: state.actors, projectiles: state.projectiles.length, result: state.resultSnapshot,
         bombGuide: bombPrediction, respawnRemaining, controlsInput: controls.peek(), settingsOpen: settings.isOpen, rulesOpen: rules?.isOpen ?? false,
         render: scene?.diagnostics(), renderStatus, lastFrameGap, lastInterruption, pauseReasons: [...pauseReasons], pauseCount, performanceInterrupted, fatalLogicError,
@@ -369,6 +438,6 @@ if (import.meta.env.DEV) {
   });
 }
 window.addEventListener('pagehide', event => {
-  pause('hidden'); if (event.persisted || disposed) return; disposed = true; preparationGeneration++; cancelAnimationFrame(frameId);
+  pause('hidden'); if (event.persisted || disposed) return; disposed = true; preparationGeneration++; startPreparation.dispose(); cancelAnimationFrame(frameId);
   controls.dispose(); settings.dispose(); rules?.dispose(); unsubscribeKeyboard(); unsubscribePresentation(); inputPresentation.dispose(); audio.dispose(); scene?.dispose(); campaign.dispose();
 });

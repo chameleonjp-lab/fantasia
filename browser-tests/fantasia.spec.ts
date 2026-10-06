@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { oneTickPulseEvidence, type InputAudit } from './input-audit';
 
 type ReadState = {
   phase?: string;
@@ -37,7 +38,7 @@ async function fullEvidenceState(page: Page): Promise<ReadState | null> {
 
 const audit = (page: Page) => page.evaluate(() => {
   const read = (window as any).__fantasiaReadState;
-  return typeof read === 'function' ? read('audit') as { entries: Array<{ tick: number; input: Record<string, unknown> }> } : null;
+  return typeof read === 'function' ? read('audit') as InputAudit : null;
 });
 
 async function ready(page: Page, viewport?: { width: number; height: number }) {
@@ -456,7 +457,7 @@ test('a hidden game stays paused until the player returns and restarts deliberat
 });
 
 for (const action of ['bomb', 'loop'] as const) {
-  test(`the first touch ${action} release after keyboard-default input reaches exactly one live tick`, async ({ page }) => {
+  test(`the first touch ${action} release after keyboard-default input reaches exactly one live tick`, async ({ page }, testInfo) => {
     await ready(page);
     await page.keyboard.press('ArrowUp');
     await expect(page.locator('#app')).toHaveAttribute('data-input', 'keyboard');
@@ -471,13 +472,24 @@ for (const action of ['bomb', 'loop'] as const) {
     // context; the release edge must survive that presentation-only update.
     await tapLiveControl(page, `#${action}`);
     await expect(page.locator('#app')).toHaveAttribute('data-input', 'touch');
-    await expect.poll(async () => (await audit(page))?.entries.filter(entry => entry.input[action] === true).length ?? 0).toBe(1);
+    await expect.poll(async () => oneTickPulseEvidence(await audit(page), action), {
+      message: `${action} audit must close exactly one consumed tick with an explicit false boundary`,
+    }).toMatchObject({ status: 'pass', durationTicks: 1 });
     if (action === 'bomb' && typeof bombsBefore === 'number') {
       await expect.poll(async () => (await state(page))?.campaignPlayer?.bombs).toBe(bombsBefore - 1);
     }
     await page.waitForTimeout(100);
-    const consumed = (await audit(page))?.entries.filter(entry => entry.input[action] === true) ?? [];
-    expect(consumed).toHaveLength(1);
+    const finalAudit = await audit(page);
+    const consumed = oneTickPulseEvidence(finalAudit, action);
+    // Preserve this exact observation for CI review, including pending or
+    // failed evidence. Attachment creation does not read or alter game state.
+    await testInfo.attach(`first-touch-${action}-input-audit.json`, {
+      body: JSON.stringify({ action, audit: finalAudit, dropped: finalAudit?.dropped ?? null,
+        startTick: consumed.startTick, falseTick: consumed.endTick, durationTicks: consumed.durationTicks,
+        outcome: consumed.status, validation: consumed }, null, 2),
+      contentType: 'application/json',
+    });
+    expect(consumed, `${action} audit must still prove one closed tick and no later pulse`).toMatchObject({ status: 'pass', durationTicks: 1 });
     expect((await state(page))?.phase).toBe('playing');
   });
 }
