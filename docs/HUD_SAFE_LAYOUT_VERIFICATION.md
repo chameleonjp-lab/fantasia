@@ -29,8 +29,8 @@ Use the exact commit containing this document for candidate CI and image checks.
   preservation with unchanged expanded triangle attributes
 - `src/style.css`: narrow-portrait header/readout arrangement, full text wrapping,
   and scene-owned translation offsets that preserve normal flow and transforms
-- `tests/campaign-hud-layout.test.ts`: 22 geometry/cache/DOM-adapter regressions
-- `tests/campaign-geometry.test.ts`: 13 index-preservation/conservative ground-rejection regressions
+- `tests/campaign-hud-layout.test.ts`: 24 geometry/cache/DOM-adapter/canvas-label regressions
+- `tests/campaign-geometry.test.ts`: 14 geometry/ground-rejection/canvas-label lifecycle regressions
 - `browser-tests/fantasia.spec.ts`: live geometry/content guards and compact
   assertion polling, while preserving every original full-state evidence field
 - this document
@@ -175,6 +175,43 @@ was updated; the other six changed source/test files are byte-identical to the
 validated tree. Supported CI must still run the updated PR head, and its real
 browser results/screenshots are pending. No browser pass, merge readiness or
 release acceptance is claimed by these local results.
+
+## Second PR CI and third-candidate corrections
+
+[PR #6 second-head CI](https://github.com/chameleonjp-lab/fantasia/actions/runs/37395455425)
+ran `70840fe144ce5cbf645925e6bb92c2c51f4d58b8`: 161 unit passes/build success,
+14 browser passes, one failure and one existing headless visibility skip. The
+remaining 200% text case paused before screenshot capture: its recorded GPU-fence
+wait was 1087.9 ms at interruption, frame gap 146.8 ms, and active tick 10. Its
+screenshot began after the pause. The trace does not establish observation work
+as the sole cause, and no safety threshold or rendering-quality setting changes.
+
+The text-scaling helper did have a separate verified defect. It changed ancestor
+fonts before reading child baselines: ammunition became 41.6px instead of 20.8px,
+score 44px instead of 22px, and remaining-time 40px instead of 20px. The corrected
+helper snapshots all visible target baselines before any writes, then applies
+exactly 2× once. It records baseline/actual sizes and any already-scaled ancestor
+for each stage; assertions require a clean baseline and the exact multiplier,
+including nested flight readouts. This corrects the requested 200% scenario;
+it does not prove that the GPU stall is resolved. Altitude/speed retain their
+font sizes and wrap as complete values when enlarged text needs another line.
+
+Review also found the canvas bomb-impact label crossing the radar in Normal568
+and a loop control after DPR2 rotation. The label keeps its complete text,
+`600 10px system-ui` font, measured width plus 12px and 20px background height.
+Only its full-size placement changes to avoid fixed controls, sites, radar,
+DOM readouts, projected sight and the central flight lane. Diagnostics record
+the actual painted rectangle/status; browser guards include it. Unplaceable
+labels remain full-size and explicitly blocked. No-bombs, dead, offscreen and
+no-prediction paths clear the prior label record. Reticle/blast geometry is
+unchanged. Unit checks compare actual canvas draw arguments with diagnostics.
+
+The third candidate's focused geometry/HUD checks passed 38 cases. Its full unit
+suite passed 164 tests, with zero failed, cancelled or skipped; TypeScript/Vite
+build passed and Playwright discovered 16 browser tests. Those are local checks;
+the exact updated head still needs real-browser CI and screenshots. The prior
+source checkpoint and build outputs remain preserved. Ordinary successful
+viewport tests, live-flight assertions, skips and safety thresholds are retained.
 
 ## Browser acceptance and remaining work
 

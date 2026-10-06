@@ -16,7 +16,7 @@ import { aimRadius, AIM_COLORS } from './aim-indicator';
 import { FLIGHT_FOV, getFlightCameraPose, projectFlightTarget } from './flight-view';
 import { projectGunSight } from './gun-sight';
 import { RenderQueue } from './render-queue';
-import { createCampaignHudLayout, type CampaignHudLayout } from './campaign-hud-layout';
+import { createCampaignHudLayout, layoutCampaignCanvasLabel, type CampaignHudLayout, type HudLayout } from './campaign-hud-layout';
 import type { Aircraft, Bullet, Team } from './types';
 import type { CampaignActor, CampaignState, Vec } from './campaign-types';
 import { heightAt, radialPosition, route, sweepSphere, TERRAIN_OBSTACLES } from './campaign-terrain';
@@ -298,6 +298,7 @@ export class CampaignScene {
   private readonly scene = new Scene();
   private readonly renderQueue: RenderQueue;
   private readonly hudLayout: CampaignHudLayout;
+  private bombGuideLabel: (ReturnType<typeof layoutCampaignCanvasLabel> & { id: 'bomb-guide'; text: string }) | null = null;
   private readonly aircraftFactory = new AircraftFactory();
   private readonly aircraftBatches = new AircraftBatchFactory();
   private readonly aircraftTracers = new AircraftTracers();
@@ -679,13 +680,14 @@ export class CampaignScene {
     return { x: (p.x * .5 + .5) * this.width, y: (.5 - p.y * .5) * this.height, depth, nx: p.x, ny: p.y, z: p.z };
   }
   private drawOverlay(state: CampaignState, player: Aircraft, mode: 'normal' | 'easy') {
+    this.bombGuideLabel = null;
     const c = this.ctx, w = this.width, h = this.height; if (!c) return;
     c.shadowBlur = 0; c.clearRect(0, 0, w, h); if (!this.overlayVisible) return;
     const sight = mode === 'normal' ? this.gunSight(player) : { x: w / 2, y: h / 2 };
     const radius = aimRadius(mode, w, h);
     // Reserve the actual sight, crosshair and reload-ring fringe without changing them.
     const sightExtent = radius + 10;
-    this.hudLayout.update({ x: sight.x - sightExtent, y: sight.y - sightExtent, width: sightExtent * 2, height: sightExtent * 2 });
+    const hudLayout = this.hudLayout.update({ x: sight.x - sightExtent, y: sight.y - sightExtent, width: sightExtent * 2, height: sightExtent * 2 });
     let indicator: keyof typeof AIM_COLORS = 'clear';
     for (const actor of state.actors) {
       if (actor.hp <= 0) continue;
@@ -710,7 +712,7 @@ export class CampaignScene {
       c.strokeStyle = 'rgba(7,30,43,.8)'; c.lineWidth = 5; c.beginPath(); c.arc(sight.x, sight.y, radius + 7, 0, Math.PI * 2); c.stroke();
       c.strokeStyle = '#ffd27a'; c.lineWidth = 3; c.beginPath(); c.arc(sight.x, sight.y, radius + 7, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2); c.stroke();
     }
-    this.drawBombGuide(state);
+    this.drawBombGuide(state, hudLayout);
     c.shadowColor = 'rgba(0,20,30,.9)'; c.shadowBlur = 3; c.font = '600 11px system-ui'; c.textAlign = 'center';
     for (const site of state.sites) {
       const marker = this.projection({ x: site.position.x + 13, y: site.position.y + 22, z: site.position.z + 8 });
@@ -751,7 +753,8 @@ export class CampaignScene {
     this.drawThreats(state);
     c.shadowBlur = 0; this.drawRadar(state, player);
   }
-  private drawBombGuide(state: CampaignState) {
+  private drawBombGuide(state: CampaignState, layout: HudLayout | null) {
+    this.bombGuideLabel = null;
     const c = this.ctx!; if (state.player.bombs <= 0 || state.player.hp <= 0) return;
     const guide = predictBombImpact(state.player.position, state.player.velocity, state.player.quaternion); if (!guide) return;
     const point = this.projection(guide.position);
@@ -777,8 +780,10 @@ export class CampaignScene {
     const labelWidth = c.measureText(label).width + 12;
     const labelX = point.x + 32 + labelWidth < this.width - 12 ? point.x + 32 : Math.max(12, point.x - 32 - labelWidth);
     const labelY = Math.max(76, Math.min(this.height - 60, point.y - 36));
-    c.fillStyle = 'rgba(4,24,34,.78)'; c.fillRect(labelX, labelY, labelWidth, 20);
-    c.fillStyle = friendlyRisk ? '#b2d8ff' : '#d1ffe3'; c.fillText(label, labelX + 6, labelY + 14); c.restore();
+    const placed = layoutCampaignCanvasLabel(layout, { x: labelX, y: labelY, width: labelWidth, height: 20 });
+    this.bombGuideLabel = { id: 'bomb-guide', text: label, ...placed };
+    c.fillStyle = 'rgba(4,24,34,.78)'; c.fillRect(placed.rect.x, placed.rect.y, labelWidth, 20);
+    c.fillStyle = friendlyRisk ? '#b2d8ff' : '#d1ffe3'; c.fillText(label, placed.rect.x + 6, placed.rect.y + 14); c.restore();
   }
   private drawThreats(state: CampaignState) {
     const c = this.ctx!, w = this.width, h = this.height;
@@ -837,12 +842,14 @@ export class CampaignScene {
   }
 
   diagnostics() {
+    const hud = this.hudLayout.diagnostics();
+    const hudStatus = hud.status === 'placed' && this.bombGuideLabel && this.bombGuideLabel.status !== 'placed' ? this.bombGuideLabel.status : hud.status;
     return { queue: this.renderQueue.diagnostics(performance.now()), calls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles, geometries: this.renderer.info.memory.geometries,
       textures: this.renderer.info.memory.textures, particles: this.particles.length,
       ground: this.shadows.count, groundSubmitted: [...this.ground.values()].reduce((n, mesh) => n + mesh.count, 0), dragons: this.dragonBodies.count,
       sites: this.siteVisuals.size, width: this.width, height: this.height, pixelRatio: this.renderer.getPixelRatio(),
-      aircraftTracers: this.aircraftTracers.diagnostics(), hudLayout: this.hudLayout.diagnostics() };
+      aircraftTracers: this.aircraftTracers.diagnostics(), hudLayout: { ...hud, status: hudStatus, canvasLabels: this.bombGuideLabel ? [this.bombGuideLabel] : [] } };
   }
   dispose() {
     if (this.disposed) return; this.disposed = true;

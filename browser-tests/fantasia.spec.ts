@@ -223,6 +223,20 @@ async function expectHudSafeLayout(page: Page, name: string) {
         expect(overlap(panel, obstacle), `${panel.id} must avoid ${obstacle.id}`).toBe(false);
       }
     }
+    const canvasLabels = hud.layout.canvasLabels ?? [];
+    if (name === 'fantasia-normal-568x320' || name === 'fantasia-dpr2-393x852') {
+      expect(canvasLabels.some((label: { id: string }) => label.id === 'bomb-guide'),
+        'the known visible bomb guide must remain present in its regression viewport').toBe(true);
+    }
+    for (const label of canvasLabels) {
+      expect(label.status, `${label.id} full-size canvas label placement`).toBe('placed');
+      expect(label.text, `${label.id} retains its complete text`).not.toBe('');
+      inBounds(label.rect);
+      if (label.id === 'bomb-guide') expect(label.rect.height).toBe(20);
+      for (const obstacle of [...hud.layout.obstacles, radar.rect, ...hud.panels]) {
+        expect(overlap(label.rect, obstacle), `${label.id} must avoid fixed controls, sight, radar and readouts`).toBe(false);
+      }
+    }
   } finally {
     // Preserve the original assertion error while retaining numeric evidence
     // if screenshot capture, startup, or a later safety check interrupts flight.
@@ -473,33 +487,58 @@ test.describe('desktop enlarged-text reachability', () => {
 
     // Increase each visible text run in CSS before measuring. This changes
     // font layout in the document; it does not scale a screenshot or canvas.
-    const scaleVisibleText = async () => page.evaluate(() => {
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
-      const textParents = new Set<HTMLElement>();
-      while (walker.nextNode()) {
-        if (!walker.currentNode.textContent?.trim()) continue;
-        const parent = walker.currentNode.parentElement;
-        if (!parent || !parent.getClientRects().length || parent.closest('[hidden]')) continue;
-        textParents.add(parent as HTMLElement);
+    const scaleVisibleText = async (stage: string) => {
+      const serialized = await page.evaluate(() => {
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+        const textParents = new Set<HTMLElement>();
+        while (walker.nextNode()) {
+          if (!walker.currentNode.textContent?.trim()) continue;
+          const parent = walker.currentNode.parentElement;
+          if (!parent || !parent.getClientRects().length || parent.closest('[hidden]')) continue;
+          textParents.add(parent as HTMLElement);
+        }
+        // Snapshot every baseline before writing any ancestor's font size.
+        // Interleaved read/write would turn inherited child text into 400%.
+        const targets = [...textParents].filter(element => element.dataset.fantasiaTextZoom !== '200')
+          .map(element => {
+            // The HTML zoom marker is not a font override. Only actual text
+            // targets can contribute an already-scaled inherited baseline.
+            const ancestor = element.parentElement?.closest<HTMLElement>('[data-fantasia-text-target="200"]');
+            return { element, baseline: Number.parseFloat(getComputedStyle(element).fontSize),
+              scaledAncestor: ancestor ? ancestor.id || `${ancestor.tagName}.${ancestor.className}` : null };
+          })
+          .filter(target => Number.isFinite(target.baseline) && target.baseline > 0);
+        for (const { element, baseline } of targets) {
+          element.style.setProperty('font-size', `${baseline * 2}px`, 'important');
+          element.dataset.fantasiaTextZoom = '200';
+          element.dataset.fantasiaTextTarget = '200';
+        }
+        document.documentElement.dataset.fantasiaTextZoom = '200';
+        return JSON.stringify(targets.map(({ element, baseline, scaledAncestor }, index) => ({ index, id: element.id,
+          tag: element.tagName, className: element.className, baseline,
+          scaledAncestor, actual: Number.parseFloat(getComputedStyle(element).fontSize) })));
+      });
+      const evidence: Array<{ index: number; id: string; baseline: number; actual: number; scaledAncestor: string | null }> = JSON.parse(serialized);
+      await mkdir('test-results/evidence', { recursive: true });
+      await writeFile(`test-results/evidence/fantasia-text-200-${stage}.json`, JSON.stringify(evidence, null, 2));
+      expect(evidence.length, 'the visible text stage must contain measured targets').toBeGreaterThan(0);
+      for (const target of evidence) {
+        expect(target.scaledAncestor, `${target.id || target.index} baseline is not inherited from an earlier enlarged ancestor`).toBeNull();
+        expect(target.actual, `${target.id || target.index} is exactly 200% of its pre-write baseline`).toBeCloseTo(target.baseline * 2, 2);
       }
-      for (const element of textParents) {
-        if (element.dataset.fantasiaTextZoom === '200') continue;
-        const size = Number.parseFloat(getComputedStyle(element).fontSize);
-        if (!Number.isFinite(size) || size <= 0) continue;
-        element.style.setProperty('font-size', `${size * 2}px`, 'important');
-        element.dataset.fantasiaTextZoom = '200';
+      if (stage === 'flight') for (const id of ['hud-mode', 'remaining-time', 'score', 'mg-ammo', 'cannon-ammo']) {
+        expect(evidence.some(target => target.id === id), `nested inherited ${id} was measured before ancestor writes`).toBe(true);
       }
-      document.documentElement.dataset.fantasiaTextZoom = '200';
-    });
+    };
 
     const homeTextSize = await page.locator('#home-controls').evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
-    await scaleVisibleText();
+    await scaleVisibleText('home');
     const enlargedHomeTextSize = await page.locator('#home-controls').evaluate(element => Number.parseFloat(getComputedStyle(element).fontSize));
     expect(enlargedHomeTextSize).toBeGreaterThanOrEqual(homeTextSize * 1.95);
     await page.locator('#home-controls').click();
     await expect(page.locator('#control-settings')).toBeVisible();
     await page.locator('#control-editor-touch').click();
-    await scaleVisibleText();
+    await scaleVisibleText('touch-settings');
 
     for (const id of ['control-x', 'control-y', 'control-size', 'control-opacity']) {
       await page.locator(`#${id}`).scrollIntoViewIfNeeded();
@@ -508,14 +547,14 @@ test.describe('desktop enlarged-text reachability', () => {
     await expect(page.locator('#control-save')).toBeInViewport();
     await expect(page.locator('#control-cancel')).toBeInViewport();
     await page.locator('#control-editor-keyboard').click();
-    await scaleVisibleText();
+    await scaleVisibleText('keyboard-settings');
     await page.locator('[data-key-action="pause"]').scrollIntoViewIfNeeded();
     await expect(page.locator('[data-key-action="pause"]')).toBeInViewport();
     await expect(page.locator('#control-save')).toBeInViewport();
     await page.locator('#control-cancel').click();
 
     await start(page, 'normal');
-    await scaleVisibleText();
+    await scaleVisibleText('flight');
     await waitForCurrentHudLayout(page);
     await expectSevenSiteLayout(page, { width: 1280, height: 800 });
     const overlap = await page.evaluate(() => {

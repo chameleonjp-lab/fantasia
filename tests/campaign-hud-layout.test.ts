@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CampaignHudLayout, createCampaignHudLayout, campaignSiteStripTop, layoutCampaignSites, intersects, layoutCampaignHud, placeRectangle, toCanvasRect, type HudMeasurement, type HudRect } from '../src/campaign-hud-layout';
+import { CampaignHudLayout, createCampaignHudLayout, campaignSiteStripTop, layoutCampaignSites, layoutCampaignCanvasLabel, intersects, layoutCampaignHud, placeRectangle, toCanvasRect, type HudMeasurement, type HudRect } from '../src/campaign-hud-layout';
 import { DEFAULT_LAYOUT, controlBounds, controlDisplaySize } from '../src/control-settings';
 import { projectGunSight } from '../src/gun-sight';
 import { aimRadius } from '../src/aim-indicator';
@@ -653,4 +653,39 @@ test('Normal568 measured DOM cards reflow around the production projected sight 
   sites.forEach((site, index) => Object.assign(site, positions[index]));
   const out = assertCompletePacking(source, aim, 'Normal568 source-derived sight');
   assert.equal(out.fixedConflicts!.length, 0);
+});
+
+test('canvas bomb labels retain full size while avoiding radar, fixed controls, both sight lanes and DOM readouts', () => {
+  // Label boxes below are pixel-estimated regression inputs. Radar/control boxes
+  // are exact run37395455425 JSON; the browser gate checks future drawn boxes.
+  for (const fixture of [
+    { canvas: { x: 0, y: 0, width: 568, height: 320 }, preferred: { x: 318, y: 162, width: 120, height: 20 },
+      radar: { x: 341.84375, y: 101.875, width: 100, height: 116 },
+      control: { id: 'loop', x: 445.84375, y: 185.59375, width: 51.1875, height: 51.1875 } },
+    { canvas: { x: 0, y: 0, width: 393, height: 852 }, preferred: { x: 228, y: 583, width: 120, height: 20 },
+      radar: { x: 276, y: 203.9375, width: 100, height: 116 },
+      control: { id: 'loop', x: 290.1875, y: 526.3125, width: 72, height: 72 } },
+  ]) {
+    const { canvas, preferred, radar, control } = fixture;
+    const layout = { status: 'placed' as const, canvas, bounds: { x: 8, y: 8, width: canvas.width - 16, height: canvas.height - 16 },
+      radar: { status: 'placed' as const, rect: radar, radius: 49, center: { x: radar.x + 50, y: radar.y + 50 } }, threat: null,
+      obstacles: [control, { id: 'aim-and-reload-ring', x: canvas.width / 2 - 54, y: canvas.height / 2 - 54, width: 108, height: 108 },
+        { id: 'central-flight-lane', x: canvas.width / 2 - 42, y: canvas.height / 2 - 42, width: 84, height: 84 }],
+      panels: [{ id: 'ammo', status: 'placed' as const, rect: { x: 18, y: 120, width: 118, height: 14 } }] };
+    assert(intersects(preferred, radar) || intersects(preferred, control), 'fixture exposes the old canvas overlap');
+    const before = JSON.stringify(layout), out = layoutCampaignCanvasLabel(layout, preferred);
+    assert.equal(out.status, 'placed'); assert.equal(out.rect.width, 120); assert.equal(out.rect.height, 20);
+    for (const obstacle of [radar, ...layout.obstacles, ...layout.panels.map(panel => panel.rect)]) assert(!intersects(out.rect, obstacle, 4));
+    assert.equal(JSON.stringify(layout), before);
+  }
+});
+test('blocked canvas labels remain full-size and explicit, including absence of a ready HUD layout', () => {
+  const preferred = { x: 280, y: 540, width: 120, height: 20 };
+  const layout = layoutCampaignHud({ ...narrow, obstacles: [{ ...bounds, id: 'custom-obstruction' }] }, sight);
+  const out = layoutCampaignCanvasLabel(layout, preferred);
+  assert.equal(out.status, 'blocked'); assert.equal(out.rect.width, 120); assert.equal(out.rect.height, 20);
+  assert.equal(out.rect.x + out.rect.width, bounds.x + bounds.width);
+  assert.deepEqual(layoutCampaignCanvasLabel(null, preferred), { status: 'blocked', rect: preferred });
+  assert.equal(layoutCampaignCanvasLabel({ ...layout, obstacles: [{ ...bounds, x: NaN, id: 'invalid-control' }] }, preferred).status, 'invalid');
+  assert.equal(layoutCampaignCanvasLabel({ ...layout, bounds: { ...bounds, width: Infinity } }, preferred).status, 'invalid');
 });

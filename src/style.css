@@ -1134,6 +1134,8 @@ p {
 .fantasia-shell [style*="--campaign-hud-x"] {
   translate: var(--campaign-hud-x) var(--campaign-hud-y);
 }
+/* Keep both full-size instrument values readable when text grows to 200%. */
+.fantasia-shell .instrument { flex-wrap: wrap; }
 .fantasia-shell .campaign-site[style*="--campaign-site-x"] {
   translate: var(--campaign-site-x) var(--campaign-site-y);
 }

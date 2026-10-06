@@ -316,3 +316,31 @@ test('ground compaction preserves original capacity admission, visible matrix or
     for (const mesh of ground.values()) mesh.dispose(); shadows.dispose(); geometry.dispose(); material.dispose();
   }
 });
+
+test('bomb-label diagnostics match drawing and clear for inactive, dead, offscreen or absent predictions', () => {
+  const scene = Object.create(CampaignScene.prototype) as any;
+  const rectangles: number[][] = [], text: Array<{ value: string; x: number; y: number; font: string }> = [];
+  scene.ctx = { font: '', save() {}, restore() {}, beginPath() {}, moveTo() {}, lineTo() {}, stroke() {}, setLineDash() {},
+    measureText() { return { width: 109.5 }; }, fillRect(...args: number[]) { rectangles.push(args); },
+    fillText(value: string, x: number, y: number) { text.push({ value, x, y, font: this.font }); } };
+  scene.width = 568; scene.height = 320;
+  scene.projection = () => ({ depth: 1, z: 0, nx: 0, ny: 0, x: 284, y: 196 });
+  const player = { bombs: 1, hp: 100, position: { x: 0, y: 300, z: 0 }, velocity: { x: 0, y: 0, z: -100 }, quaternion: { x: 0, y: 0, z: 0, w: 1 } };
+  const state = { player, actors: [], mode: 'normal' }, before = JSON.stringify(state);
+  const layout = { status: 'placed', canvas: { x: 0, y: 0, width: 568, height: 320 }, bounds: { x: 8, y: 8, width: 552, height: 304 },
+    radar: { status: 'placed', rect: { x: 341.84375, y: 101.875, width: 100, height: 116 }, radius: 49, center: { x: 391.84375, y: 151.875 } },
+    obstacles: [], panels: [], threat: null };
+  scene.drawBombGuide(state, layout);
+  const drawn = scene.bombGuideLabel;
+  assert.equal(drawn.status, 'placed');
+  assert.deepEqual(rectangles, [[drawn.rect.x, drawn.rect.y, 121.5, 20]], 'diagnostics match the actual full-size background draw');
+  assert.deepEqual(text, [{ value: drawn.text, x: drawn.rect.x + 6, y: drawn.rect.y + 14, font: '600 10px system-ui' }]);
+  assert.equal(JSON.stringify(state), before, 'presentation does not alter bomb state');
+  scene.projection = () => ({ depth: -1, z: 0, nx: 0, ny: 0, x: 0, y: 0 });
+  for (const state of [{ player: { ...player, bombs: 0 } }, { player: { ...player, hp: 0 } }, { player },
+    { player: { ...player, position: { x: 0, y: 100000, z: 0 } } }]) {
+    scene.bombGuideLabel = { id: 'bomb-guide', status: 'placed', text: 'previous label', rect: { x: 20, y: 20, width: 120, height: 20 } };
+    scene.drawBombGuide(state, null);
+    assert.equal(scene.bombGuideLabel, null, 'do not retain an earlier drawn box after any early return');
+  }
+});

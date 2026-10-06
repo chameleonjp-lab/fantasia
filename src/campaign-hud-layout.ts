@@ -104,6 +104,18 @@ function fullSizeFallback(rect: HudRect, bounds: HudRect): HudRect {
   return { ...rect, x: Math.max(bounds.x, Math.min(rect.x, bounds.x + bounds.width - rect.width)),
     y: Math.max(bounds.y, Math.min(rect.y, bounds.y + bounds.height - rect.height)) };
 }
+export function layoutCampaignCanvasLabel(layout: HudLayout | null, preferred: HudRect): { status: Placement['status']; rect: HudRect } {
+  if (!layout) return { status: 'blocked', rect: preferred };
+  const obstacles = [...layout.obstacles, layout.radar.rect, ...(layout.panels?.map(panel => panel.rect) ?? []),
+    ...(layout.threat && !layout.panels ? [layout.threat.rect] : [])];
+  const { bounds } = layout;
+  if (!valid(bounds) || !valid(preferred) || !obstacles.every(valid)) return { status: 'invalid', rect: fullSizeFallback(preferred, bounds) };
+  if (valid(preferred) && preferred.x >= bounds.x && preferred.y >= bounds.y
+    && preferred.x + preferred.width <= bounds.x + bounds.width && preferred.y + preferred.height <= bounds.y + bounds.height
+    && !obstacles.some(rect => intersects(preferred, rect, 4))) return { status: 'placed', rect: preferred };
+  const placed = placeRectangle({ bounds, size: preferred, preferred, obstacles });
+  return placed.status === 'placed' ? placed : { status: placed.status, rect: fullSizeFallback(preferred, bounds) };
+}
 export function layoutCampaignHud(measurement: HudMeasurement, sight: HudRect): HudLayout {
   if (measurement.panels) return layoutCampaignPanels(measurement, sight);
   const { canvas, bounds, flightData, threat } = measurement;
