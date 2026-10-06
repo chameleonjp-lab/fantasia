@@ -11,6 +11,7 @@ test.use({ trace: 'off' });
 const REFS = {
   main: { sha: '36b0e3b8130acb7149a646845b46f72294a3798a', origin: 'http://127.0.0.1:4176' },
   pr5: { sha: 'e7d69dfc075b6908c162009828253fd9a312be37', origin: 'http://127.0.0.1:4177' },
+  pr6: { sha: 'a8ca1a5d681648d1a620f94cc05e532f86c08255', origin: 'http://127.0.0.1:4178' },
 } as const;
 const SCENARIOS = [
   { name: 'easy-393x852', mode: 'easy', width: 393, height: 852, isMobile: true, hasTouch: true },
@@ -39,6 +40,13 @@ function samplerFactorSchedule() {
   return [true, false, false, true].map((periodicSample, ordinal) => ({
     scenario: SCENARIOS[1], profile: 'light' as const, ref: 'main' as const,
     ordinal, periodicSample, phase: 'sampler-factor' as const, traceEnabled: false,
+  }));
+}
+
+function matchedSourceSchedule() {
+  return (['main', 'pr6', 'pr6', 'main'] as const).map((ref, ordinal) => ({
+    scenario: SCENARIOS[1], profile: 'light' as const, ref, ordinal,
+    phase: 'matched-source' as const, traceEnabled: false, periodicSample: false, apiTiming: true,
   }));
 }
 
@@ -281,7 +289,7 @@ function safetyProblems(s: any) {
 
 async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], profile: Profile,
   ref: keyof typeof REFS, ordinal: number,
-  options: { phase: 'trace-factor' | 'sampler-factor' | 'api-timing'; traceEnabled: boolean; periodicSample?: boolean; apiTiming?: boolean } | undefined = undefined) {
+  options: { phase: 'trace-factor' | 'sampler-factor' | 'api-timing' | 'matched-source'; traceEnabled: boolean; periodicSample?: boolean; apiTiming?: boolean } | undefined = undefined) {
   const phase = options?.phase ?? 'source-load-comparison';
   const traceEnabled = options?.traceEnabled ?? true;
   const periodicSample = options?.periodicSample ?? true;
@@ -330,7 +338,7 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
         hardwareConcurrency: navigator.hardwareConcurrency, devicePixelRatio, visibility: document.visibilityState,
         renderer: gl && debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : null,
         vendor: gl && debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : null,
-        ...(apiTimingEnabled ? { version: gl ? gl.getParameter(gl.VERSION) : null,
+        ...(apiTimingEnabled ? { viewportWidth: innerWidth, viewportHeight: innerHeight, version: gl ? gl.getParameter(gl.VERSION) : null,
           drawingBufferWidth: gl?.drawingBufferWidth ?? null, drawingBufferHeight: gl?.drawingBufferHeight ?? null } : {}),
         savedSettings: Object.fromEntries(['fantasia-controls-v1', 'fantasia-controls-easy-v1', 'fantasia-keyboard-v1']
           .map(key => [key, localStorage.getItem(key)])) };
@@ -419,6 +427,10 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
       wrappedMethodCount: report.timeline.apiTiming.wrappedMethods.length, installationFailures: report.timeline.apiTiming.installationFailures,
       recordingErrors: report.timeline.apiTiming.recordingErrors, overwrittenEvents: report.timeline.apiTiming.overwrittenEvents,
       unrecordedFences: report.timeline.apiTiming.unrecordedFences, fenceCount: report.timeline.apiTiming.fenceCount } : null,
+    actualSetup: report.environment ?? null, pageErrorCount: errors.length,
+    renderObservations: [report.before?.result, report.after?.result, report.timeline?.samples.at(-1)]
+      .map(sample => sample ? { label: sample.label, atMs: sample.atMs, phase: sample.state?.phase,
+        tick: sample.state?.tick, render: sample.state?.render } : null),
     finalObservationError: report.finalObservationError ?? null, traceError: report.traceError ?? null, blockedRequests: blocked.length,
     safety: report.flightSafety ?? null, seed: report.seed ?? null };
 }
@@ -573,4 +585,58 @@ test('PR5 API timing diagnosis only, two flights, not game acceptance', async ({
   expect(cells.every(cell => JSON.stringify(cell.seed) === JSON.stringify(cells[0].seed))).toBe(true);
   expect(cells[0].seed?.seed).toBe(20261005);
   expect(cells.filter(cell => cell.experimentError || cell.finalObservationError || cell.traceError || cell.blockedRequests)).toEqual([]);
+});
+
+
+// Fifth phase: only the pinned source changes. Retain all four earlier test
+// definitions; the workflow explicitly selects this fresh-context ABBA phase.
+test('PR6 matched source diagnosis only, four flights, not game acceptance', async ({ browser }, testInfo) => {
+  test.setTimeout(5 * 60 * 1000);
+  await mkdir(OUTPUT, { recursive: true });
+  const environment = { browserVersion: browser.version(), node: process.version, platform: process.platform,
+    runnerTimeOrigin: performance.timeOrigin, osRelease: release(), cpuModels: [...new Set(cpus().map(cpu => cpu.model))], cpuCount: cpus().length,
+    project: testInfo.project.name, launchOptions: testInfo.project.use.launchOptions,
+    workerIndex: testInfo.workerIndex, startedAt: new Date().toISOString() };
+  const cells: any[] = [];
+  for (const cell of matchedSourceSchedule()) {
+    cells.push(await runCell(browser, cell.scenario, cell.profile, cell.ref, cell.ordinal,
+      { phase: cell.phase, traceEnabled: false, periodicSample: false, apiTiming: true }));
+    await writeFile(`${OUTPUT}/summary-matched-source.json`, JSON.stringify({
+      phase: 'matched-source', environment, cells, expectedCells: 4, gameAcceptance: 'NOT EVALUATED',
+      sources: { main: REFS.main, pr6: REFS.pr6 }, onlyChangedFactor: 'pinned source revision',
+      order: ['main', 'pr6', 'pr6', 'main'],
+      fixedInputs: { viewport: SCENARIOS[1], textScale: '100%', profile: 'light', traceEnabled: false,
+        periodicSample: false, apiTiming: true, seed: 20261005,
+        requestedWarmupMs: WARMUP_MS, requestedWindowMs: WINDOW_MS },
+      interpretation: [
+        'Main and current PR6 run sequentially on the same runner/browser with identical native API/rAF instrumentation and fresh contexts.',
+        'The exact main/PR5 shared-runtime check remains; PR6 differs from main only in the seven inventoried files. No product changes are introduced here.',
+        'Trace and periodic full-state sampling are off in all four cells; initial/boundary/final reads and passive observers remain identical.',
+        'No resume or retry, watchdog/quality change, acceptance skip or added flight GL query is introduced.',
+        'Compare reported rendered triangles/draw calls, native API/rAF elapsed time, fence latency/poll gaps and safety outcomes at matched observation boundaries.',
+        'Triangles/draw calls describe submitted rendering work, not measured unique vertex-shader invocations or GPU execution time.',
+        'Fast zero-timeout polls with long post-flush completion latency describe pending asynchronous work/scheduling, not a synchronous one-second GL block.',
+        'The whole existing PR6 source difference is the treatment; this cannot attribute effects to one individual change.',
+        'Two observations per source on one runner support a bounded comparison, not device-wide qualification. Order and runner scheduling can still matter.',
+        'Collection success is separate from gameplay safety and is not game acceptance or release approval.',
+      ],
+    }, null, 2));
+  }
+  expect(cells).toHaveLength(4);
+  expect(cells.map(cell => cell.ref)).toEqual(['main', 'pr6', 'pr6', 'main']);
+  expect(cells.every(cell => cell.traceEnabled === false && cell.periodicSample === false && cell.periodicSampleCount === 0)).toBe(true);
+  expect(cells.every(cell => cell.apiTiming?.enabled && cell.apiTiming.rafWrapped && cell.apiTiming.wrappedMethodCount > 0)).toBe(true);
+  expect(cells.every(cell => cell.apiTiming.installationFailures.length === 0 && cell.apiTiming.recordingErrors === 0 && cell.apiTiming.unrecordedFences === 0)).toBe(true);
+  expect(cells.every(cell => cell.apiTiming.wrappedMethodCount === cells[0].apiTiming.wrappedMethodCount)).toBe(true);
+  expect(cells.every(cell => cell.actualSetup?.viewportWidth === 1280 && cell.actualSetup?.viewportHeight === 800
+    && cell.actualSetup?.drawingBufferWidth === 1280 && cell.actualSetup?.drawingBufferHeight === 800
+    && cell.actualSetup?.devicePixelRatio === 1 && cell.actualSetup?.visibility === 'visible')).toBe(true);
+  expect(cells.every(cell => cell.actualSetup?.renderer && cell.actualSetup.renderer === cells[0].actualSetup.renderer
+    && cell.actualSetup.version && cell.actualSetup.version === cells[0].actualSetup.version)).toBe(true);
+  expect(cells.every(cell => Object.values(cell.actualSetup?.savedSettings ?? {}).length === 3
+    && Object.values(cell.actualSetup.savedSettings).every(value => value === null))).toBe(true);
+  expect(cells.every(cell => JSON.stringify(cell.seed) === JSON.stringify(cells[0].seed))).toBe(true);
+  expect(cells[0].seed?.seed).toBe(20261005);
+  expect(cells[0].seed?.mode).toBe('normal');
+  expect(cells.filter(cell => cell.experimentError || cell.finalObservationError || cell.traceError || cell.blockedRequests || cell.pageErrorCount)).toEqual([]);
 });

@@ -1,4 +1,4 @@
-name: Diagnose Fantasia PR5 rendering
+name: Diagnose Fantasia matched PR6 rendering
 on:
   pull_request:
     paths:
@@ -26,29 +26,48 @@ jobs:
           ref: e7d69dfc075b6908c162009828253fd9a312be37
           path: comparison/pr5
           persist-credentials: false
-      - name: Verify exact refs and identical experiment inputs
+      - uses: actions/checkout@v4
+        with:
+          ref: a8ca1a5d681648d1a620f94cc05e532f86c08255
+          path: comparison/pr6
+          persist-credentials: false
+      - name: Verify exact refs and bounded source differences
         shell: bash
         run: |
           set -euo pipefail
           test ! -e comparison/main/test-results
           test ! -e comparison/pr5/test-results
+          test ! -e comparison/pr6/test-results
           test ! -e comparison/main/render-comparison-results
           mkdir comparison/main/render-comparison-results
           python3 - <<'PY'
           from pathlib import Path
           import hashlib, json, subprocess
-          roots = [Path('comparison/main'), Path('comparison/pr5')]
-          refs = ['36b0e3b8130acb7149a646845b46f72294a3798a', 'e7d69dfc075b6908c162009828253fd9a312be37']
+          roots = [Path('comparison/main'), Path('comparison/pr5'), Path('comparison/pr6')]
+          refs = ['36b0e3b8130acb7149a646845b46f72294a3798a', 'e7d69dfc075b6908c162009828253fd9a312be37', 'a8ca1a5d681648d1a620f94cc05e532f86c08255']
           inventories = []
           for root, ref in zip(roots, refs):
               assert subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip() == ref
               names = subprocess.check_output(['git', '-C', str(root), 'ls-files', '-z']).decode().split('\0')
               inventories.append({name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in names if name})
-          a, b = inventories
+          a, b, c = inventories
           different = sorted(name for name in a.keys() | b.keys() if a.get(name) != b.get(name))
           assert different == ['.github/workflows/pages.yml', 'README.md'], different
-          report = {'refs': refs, 'differentFiles': different, 'main': a, 'pr5': b,
-                    'runtimeTestsLockAndVerifyIdentical': True, 'gameAcceptance': 'not evaluated by this diagnostic'}
+          pr6_different = sorted(name for name in a.keys() | c.keys() if a.get(name) != c.get(name))
+          expected_pr6 = [
+              'browser-tests/fantasia.spec.ts',
+              'docs/HUD_SAFE_LAYOUT_VERIFICATION.md',
+              'src/campaign-hud-layout.ts',
+              'src/campaign-scene.ts',
+              'src/style.css',
+              'tests/campaign-geometry.test.ts',
+              'tests/campaign-hud-layout.test.ts',
+          ]
+          assert pr6_different == expected_pr6, pr6_different
+          report = {'refs': refs, 'differentFiles': different, 'main': a, 'pr5': b, 'pr6': c,
+                    'mainPr5RuntimeTestsLockAndVerifyIdentical': True,
+                    'mainPr6DifferentFiles': pr6_different, 'mainPr6AllOtherTrackedFilesIdentical': True,
+                    'gameAcceptance': 'not evaluated by this diagnostic'}
           Path('comparison/main/render-comparison-results/source-identity.json').write_text(json.dumps(report, indent=2))
           PY
       - uses: actions/setup-node@v4
@@ -62,6 +81,7 @@ jobs:
           set -euo pipefail
           (cd comparison/main && npm ci)
           (cd comparison/pr5 && npm ci)
+          (cd comparison/pr6 && npm ci)
           (cd comparison/main && npx playwright install --with-deps chromium)
       - name: Run bounded diagnostic, not game acceptance
         shell: bash
@@ -70,18 +90,21 @@ jobs:
           test ! -e comparison/main/browser-tests/render-comparison.spec.ts
           cp diagnostic/browser-tests/render-comparison.spec.ts comparison/main/browser-tests/render-comparison.spec.ts
           (cd comparison/pr5 && npm run dev -- --port 4177 --strictPort) > comparison/main/render-comparison-results/pr5-server.log 2>&1 &
-          server_pid=$!
-          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          pr5_server_pid=$!
+          (cd comparison/pr6 && npm run dev -- --port 4178 --strictPort) > comparison/main/render-comparison-results/pr6-server.log 2>&1 &
+          pr6_server_pid=$!
+          trap 'kill "$pr5_server_pid" "$pr6_server_pid" 2>/dev/null || true' EXIT
           for attempt in $(seq 1 60); do
-            if curl --silent --fail http://127.0.0.1:4177/ > /dev/null; then break; fi
+            if curl --silent --fail http://127.0.0.1:4177/ > /dev/null && curl --silent --fail http://127.0.0.1:4178/ > /dev/null; then break; fi
             sleep 1
           done
           curl --silent --fail http://127.0.0.1:4177/ > /dev/null
+          curl --silent --fail http://127.0.0.1:4178/ > /dev/null
           cd comparison/main
           node --version > render-comparison-results/toolchain.txt
           npm --version >> render-comparison-results/toolchain.txt
           npx playwright --version >> render-comparison-results/toolchain.txt
-          npx playwright test render-comparison.spec.ts --project=chromium --grep 'PR5 API timing diagnosis only'
+          npx playwright test render-comparison.spec.ts --project=chromium --grep 'PR6 matched source diagnosis only'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -91,6 +114,7 @@ jobs:
             comparison/main/render-comparison-results/source-identity.json
             comparison/main/render-comparison-results/toolchain.txt
             comparison/main/render-comparison-results/pr5-server.log
+            comparison/main/render-comparison-results/pr6-server.log
             comparison/main/render-comparison-results/summary*.json
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
