@@ -81,7 +81,7 @@ jobs:
           node --version > render-comparison-results/toolchain.txt
           npm --version >> render-comparison-results/toolchain.txt
           npx playwright --version >> render-comparison-results/toolchain.txt
-          npx playwright test render-comparison.spec.ts --project=chromium --grep 'PR5 sampler factor diagnosis only'
+          npx playwright test render-comparison.spec.ts --project=chromium --grep 'PR5 API timing diagnosis only'
       - uses: actions/upload-artifact@v4
         if: always()
         with:

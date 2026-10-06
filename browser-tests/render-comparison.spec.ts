@@ -46,10 +46,160 @@ function allowedOrigin(url: string, origin: string) {
   try { return new URL(url).origin === origin; } catch { return false; }
 }
 
-function installProbe(intervalMs: number) {
+function installProbe(options: number | { intervalMs: number; apiTiming: boolean }) {
+  const intervalMs = typeof options === 'number' ? options : options.intervalMs;
   const w = window as any;
   const samples: any[] = [], frames: any[] = [], longTasks: any[] = [];
   let previousFrame: number | null = null, raf = 0, stopped = false, stage = 'navigation';
+  // Keep the passive observer outside the application callback wrapper. The
+  // native request ID is always returned unchanged; cancellation is untouched.
+  const nativeRaf = window.requestAnimationFrame;
+  const apiTiming = typeof options !== 'number' && options.apiTiming ? (() => {
+    const EVENT_LIMIT = 936, FENCE_LIMIT = 64, SLOW_MS = 10;
+    const events: any[] = [], fences: any[] = [];
+    const methods: Record<string, any> = {}, groups: Record<string, any> = {}, callbacks: Record<string, any> = {};
+    const installationFailures: string[] = [], wrappedMethods: string[] = [];
+    const contextIds = new WeakMap<object, number>(), fenceIds = new WeakMap<object, number>();
+    const latestFence = new WeakMap<object, number>(), callbackIds = new WeakMap<Function, number>();
+    let contextSequence = 0, fenceSequence = 0, callbackSequence = 0;
+    let nextEvent = 0, overwrittenEvents = 0, unrecordedFences = 0, recordingErrors = 0;
+    let currentCallback: any = null, callbackNameCount = 0, active = true;
+    const aggregate = () => ({ count: 0, totalMs: 0, maxMs: 0, throws: 0 });
+    const add = (stat: any, elapsed: number, threw: boolean) => {
+      stat.count++; stat.totalMs += elapsed; stat.maxMs = Math.max(stat.maxMs, elapsed); if (threw) stat.throws++;
+    };
+    const remember = (event: any) => {
+      if (events.length < EVENT_LIMIT) events.push(event);
+      else { events[nextEvent] = event; nextEvent = (nextEvent + 1) % EVENT_LIMIT; overwrittenEvents++; }
+    };
+    const groupFor = (name: string) => /^(fenceSync|clientWaitSync|waitSync|flush|finish|deleteSync|isContextLost)$/.test(name) ? 'sync'
+      : /^(draw|clear|blit)/.test(name) ? 'draw'
+      : /^(bufferData|bufferSubData|copyBufferSubData|texImage|texSubImage|texStorage|compressedTex|copyTex|generateMipmap)/.test(name) ? 'upload'
+      : /^(compileShader|linkProgram|createShader|createProgram|shaderSource|validateProgram)$/.test(name) ? 'shader'
+      : /^(get|check|readPixels)/.test(name) ? 'query'
+      : /^(bind|uniform|vertexAttrib|enable|disable|blend|depth|stencil|colorMask|cull|frontFace|pixelStore|polygon|scissor|viewport|useProgram)/.test(name) ? 'state'
+      : 'other';
+    const contextId = (context: object) => {
+      let id = contextIds.get(context); if (!id) { id = ++contextSequence; contextIds.set(context, id); } return id;
+    };
+    const screenState = () => {
+      const app = document.getElementById('app');
+      return { screen: app?.dataset.screen ?? null, mode: app?.dataset.mode ?? null };
+    };
+    const noteFence = (name: string, context: object, args: IArguments, result: any, begin: number, end: number, callStage: string) => {
+      if (name === 'fenceSync' && result && typeof result === 'object') {
+        const id = ++fenceSequence; fenceIds.set(result, id); latestFence.set(context, id);
+        if (id <= FENCE_LIMIT) fences.push({ id, contextId: contextId(context), stage: callStage,
+          condition: args[0], flags: args[1], issuedState: screenState(), firstSignaledState: null,
+          fenceEnterMs: begin, fenceExitMs: end, flushEnterMs: null, flushExitMs: null,
+          pollCount: 0, timeoutCount: 0, signaledCount: 0, waitFailedCount: 0, unexpectedCount: 0,
+          nonzeroFlagsOrTimeout: 0, firstPollMs: null, lastPollMs: null, maxPollGapMs: 0,
+          totalPollMs: 0, maxPollMs: 0, firstPollFlags: null, firstPollTimeout: null, lastPollFlags: null, lastPollTimeout: null,
+          firstPollStage: null, lastPollStage: null, firstSignaledMs: null, firstSignaledStage: null,
+          firstSignaledAfterFenceMs: null, firstSignaledAfterFlushMs: null, lastResult: null, deleteMs: null });
+        else unrecordedFences++;
+      } else if (name === 'flush') {
+        const id = latestFence.get(context), f = id ? fences[id - 1] : undefined;
+        if (f && f.flushEnterMs === null) { f.flushEnterMs = begin; f.flushExitMs = end; }
+      } else if (name === 'clientWaitSync' || name === 'deleteSync') {
+        const sync = args[0], id = sync && typeof sync === 'object' ? fenceIds.get(sync) : undefined;
+        const f = id ? fences[id - 1] : undefined; if (!f) return;
+        if (name === 'deleteSync') { f.deleteMs = end; return; }
+        f.pollCount++; f.totalPollMs += end - begin; f.maxPollMs = Math.max(f.maxPollMs, end - begin);
+        if (f.firstPollMs === null) { f.firstPollMs = begin; f.firstPollFlags = args[1]; f.firstPollTimeout = args[2]; f.firstPollStage = callStage; }
+        if (f.lastPollMs !== null) f.maxPollGapMs = Math.max(f.maxPollGapMs, begin - f.lastPollMs);
+        f.lastPollMs = begin; f.lastResult = result; f.lastPollFlags = args[1]; f.lastPollTimeout = args[2]; f.lastPollStage = callStage;
+        if (args[1] !== 0 || args[2] !== 0) f.nonzeroFlagsOrTimeout++;
+        // Standard WebGL enum results, recorded without any additional GL query.
+        if (result === 0x911B) f.timeoutCount++;
+        else if (result === 0x911A || result === 0x911C) { f.signaledCount++; if (f.firstSignaledMs === null) {
+          f.firstSignaledMs = end; f.firstSignaledStage = callStage; f.firstSignaledState = screenState(); f.firstSignaledAfterFenceMs = end - f.fenceEnterMs;
+          f.firstSignaledAfterFlushMs = f.flushExitMs === null ? null : end - f.flushExitMs;
+        } }
+        else if (result === 0x911D) f.waitFailedCount++;
+        else f.unexpectedCount++;
+      }
+    };
+    const visited = new Set<object>();
+    for (const constructorName of ['WebGLRenderingContext', 'WebGL2RenderingContext']) {
+      let prototype = w[constructorName]?.prototype;
+      while (prototype && prototype !== Object.prototype && !visited.has(prototype)) {
+        visited.add(prototype);
+        for (const name of Object.getOwnPropertyNames(prototype)) {
+          const descriptor = Object.getOwnPropertyDescriptor(prototype, name);
+          if (name === 'constructor' || !descriptor || typeof descriptor.value !== 'function') continue;
+          const original = descriptor.value, key = `${constructorName}.${name}`, group = groupFor(name);
+          const stat = methods[key] = aggregate(), groupStat = groups[group] ??= aggregate();
+          try {
+            Object.defineProperty(prototype, name, { ...descriptor, value: function(this: any) {
+              if (!active) return Reflect.apply(original, this, arguments);
+              const begin = performance.now(), callStage = stage;
+              let result: any, threw = false;
+              try { result = Reflect.apply(original, this, arguments); return result; }
+              catch (error) { threw = true; throw error; }
+              finally {
+                const end = performance.now();
+                try {
+                  const elapsed = end - begin; add(stat, elapsed, threw); add(groupStat, elapsed, threw);
+                  if (currentCallback) {
+                    currentCallback.glCalls++; currentCallback.glMs += elapsed;
+                    const entry = currentCallback.groups[group] ??= aggregate(); add(entry, elapsed, threw);
+                  }
+                  if (elapsed >= SLOW_MS) remember({ kind: 'native-call', method: key, group, stage: callStage,
+                    callbackId: currentCallback?.id ?? null, beginMs: begin, endMs: end, wallMs: elapsed, threw });
+                  if (!threw) noteFence(name, this, arguments, result, begin, end, callStage);
+                } catch { recordingErrors++; }
+              }
+            } });
+            wrappedMethods.push(key);
+          } catch { if (installationFailures.length < 32) installationFailures.push(key); }
+        }
+        prototype = Object.getPrototypeOf(prototype);
+      }
+    }
+    let rafWrapped = false;
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(window, 'requestAnimationFrame');
+      if (!descriptor || typeof descriptor.value !== 'function') throw new Error('Missing rAF data descriptor');
+      Object.defineProperty(window, 'requestAnimationFrame', { ...descriptor, value: function(this: any, callback: FrameRequestCallback) {
+        if (typeof callback !== 'function') return Reflect.apply(nativeRaf, this, arguments);
+        // Let the native implementation validate its original receiver and
+        // allocate the real cancellation handle, with no ID translation.
+        return nativeRaf.call(this, function(this: any, timestamp: number) {
+          if (!active) return callback.call(this, timestamp);
+          const begin = performance.now(), previous = currentCallback;
+          let id = callbackIds.get(callback); if (!id) { id = ++callbackSequence; callbackIds.set(callback, id); }
+          const name = callback.name || '(anonymous)';
+          const record = { kind: 'raf-callback', id, name, stage, timestamp,
+            beginMs: begin, endMs: 0, wallMs: 0, outsideWebGLMs: 0, glCalls: 0, glMs: 0, groups: {} as Record<string, any>, threw: false };
+          currentCallback = record;
+          try { return callback.call(this, timestamp); }
+          catch (error) { record.threw = true; throw error; }
+          finally {
+            const end = performance.now(); currentCallback = previous;
+            try {
+              record.endMs = end; record.wallMs = end - begin; record.outsideWebGLMs = Math.max(0, record.wallMs - record.glMs);
+              const aggregateName = Object.hasOwn(callbacks, name) || callbackNameCount < 32 ? name : '(other callbacks)';
+              if (!Object.hasOwn(callbacks, aggregateName)) { callbacks[aggregateName] = { ...aggregate(), glMs: 0, glCalls: 0 }; callbackNameCount++; }
+              add(callbacks[aggregateName], record.wallMs, record.threw); callbacks[aggregateName].glMs += record.glMs; callbacks[aggregateName].glCalls += record.glCalls;
+              remember(record);
+            } catch { recordingErrors++; }
+          }
+        });
+      } });
+      rafWrapped = true;
+    } catch { installationFailures.push('requestAnimationFrame'); }
+    return {
+      finish() {
+        active = false;
+        return { enabled: true, slowCallThresholdMs: SLOW_MS, eventLimit: EVENT_LIMIT, fenceLimit: FENCE_LIMIT,
+          events: overwrittenEvents ? [...events.slice(nextEvent), ...events.slice(0, nextEvent)] : events,
+          fences, methods, groups, callbacks, wrappedMethods, rafWrapped, installationFailures, recordingErrors,
+          overwrittenEvents, unrecordedFences, fenceCount: fenceSequence,
+          interpretation: 'Elapsed call/callback wall time includes possible descheduling. outsideWebGLMs includes JavaScript, DOM, other APIs and probe overhead. Extension-object methods are not wrapped. No added GL calls, timers or CPU/GPU time claims.' };
+      },
+    };
+  })() : undefined;
   const project = (s: any) => s ? ({
     phase: s.phase, screen: s.screen, mode: s.mode, tick: s.tick, activeTicks: s.activeTicks,
     graphicsReady: s.graphicsReady, pauseReasons: s.pauseReasons, fatalLogicError: s.fatalLogicError,
@@ -70,9 +220,9 @@ function installProbe(intervalMs: number) {
     const now = performance.now();
     if (frames.length < 8000) frames.push({ atMs: now, stage, gapMs: previousFrame === null ? null : now - previousFrame });
     previousFrame = now;
-    if (!stopped) raf = requestAnimationFrame(frame);
+    if (!stopped) raf = nativeRaf.call(window, frame);
   };
-  raf = requestAnimationFrame(frame);
+  raf = nativeRaf.call(window, frame);
   const timer = intervalMs > 0 ? setInterval(() => take('periodic'), intervalMs) : undefined;
   let observer: PerformanceObserver | undefined;
   if (PerformanceObserver.supportedEntryTypes.includes('longtask')) {
@@ -87,7 +237,7 @@ function installProbe(intervalMs: number) {
     stage(value: string) { stage = value; },
     finish() {
       take('final'); stopped = true; if (timer !== undefined) clearInterval(timer); cancelAnimationFrame(raf); observer?.disconnect();
-      return { timeOrigin: performance.timeOrigin, samples, frames, longTasks,
+      return { timeOrigin: performance.timeOrigin, samples, frames, longTasks, apiTiming: apiTiming?.finish(),
         limitsReached: { samples: samples.length >= 240, frames: frames.length >= 8000, longTasks: longTasks.length >= 1000 } };
     },
   };
@@ -131,7 +281,7 @@ function safetyProblems(s: any) {
 
 async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], profile: Profile,
   ref: keyof typeof REFS, ordinal: number,
-  options: { phase: 'trace-factor' | 'sampler-factor'; traceEnabled: boolean; periodicSample?: boolean } | undefined = undefined) {
+  options: { phase: 'trace-factor' | 'sampler-factor' | 'api-timing'; traceEnabled: boolean; periodicSample?: boolean; apiTiming?: boolean } | undefined = undefined) {
   const phase = options?.phase ?? 'source-load-comparison';
   const traceEnabled = options?.traceEnabled ?? true;
   const periodicSample = options?.periodicSample ?? true;
@@ -161,7 +311,7 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
   if (traceEnabled) await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   report.trace = { enabled: traceEnabled, screenshots: traceEnabled, snapshots: traceEnabled, sources: traceEnabled,
     retained: traceEnabled ? 'every enabled diagnostic cell' : 'intentionally not collected; no trace start or stop call' };
-  await context.addInitScript(installProbe, periodicSample ? SAMPLE_MS : 0);
+  await context.addInitScript(installProbe, options?.apiTiming ? { intervalMs: 0, apiTiming: true } : periodicSample ? SAMPLE_MS : 0);
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   page.on('pageerror', error => errors.push(String(error)));
@@ -172,7 +322,7 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
     const prepare = performance.now();
     await expect(page.locator('#start')).toBeEnabled({ timeout: 25000 });
     report.preparationMs = performance.now() - prepare;
-    report.environment = await page.evaluate(() => {
+    report.environment = await page.evaluate(apiTimingEnabled => {
       const canvas = document.querySelector<HTMLCanvasElement>('#flight');
       const gl = canvas?.getContext('webgl2');
       const debug = gl?.getExtension('WEBGL_debug_renderer_info');
@@ -180,9 +330,11 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
         hardwareConcurrency: navigator.hardwareConcurrency, devicePixelRatio, visibility: document.visibilityState,
         renderer: gl && debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : null,
         vendor: gl && debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : null,
+        ...(apiTimingEnabled ? { version: gl ? gl.getParameter(gl.VERSION) : null,
+          drawingBufferWidth: gl?.drawingBufferWidth ?? null, drawingBufferHeight: gl?.drawingBufferHeight ?? null } : {}),
         savedSettings: Object.fromEntries(['fantasia-controls-v1', 'fantasia-controls-easy-v1', 'fantasia-keyboard-v1']
           .map(key => [key, localStorage.getItem(key)])) };
-    });
+    }, options?.apiTiming === true);
     await page.evaluate(() => (window as any).__renderComparisonProbe.stage('home-warmup'));
     const warmup = performance.now(); await page.waitForTimeout(WARMUP_MS);
     report.actualWarmupMs = performance.now() - warmup;
@@ -263,6 +415,10 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
     await context.close();
   }
   return { id, phase, periodicSample, periodicSampleCount: report.timeline?.samples.filter((sample: any) => sample.label === 'periodic').length ?? null, traceEnabled, traceExpected: traceEnabled, ref, profile, scenario: scenario.name, experimentError: report.experimentError ?? null,
+    apiTiming: report.timeline?.apiTiming ? { enabled: true, rafWrapped: report.timeline.apiTiming.rafWrapped,
+      wrappedMethodCount: report.timeline.apiTiming.wrappedMethods.length, installationFailures: report.timeline.apiTiming.installationFailures,
+      recordingErrors: report.timeline.apiTiming.recordingErrors, overwrittenEvents: report.timeline.apiTiming.overwrittenEvents,
+      unrecordedFences: report.timeline.apiTiming.unrecordedFences, fenceCount: report.timeline.apiTiming.fenceCount } : null,
     finalObservationError: report.finalObservationError ?? null, traceError: report.traceError ?? null, blockedRequests: blocked.length,
     safety: report.flightSafety ?? null, seed: report.seed ?? null };
 }
@@ -371,6 +527,49 @@ test('PR5 sampler factor diagnosis only, four flights, not game acceptance', asy
   expect(cells.map(cell => cell.periodicSample)).toEqual([true, false, false, true]);
   expect(cells.every(cell => cell.traceEnabled === false)).toBe(true);
   expect(cells.every(cell => cell.periodicSample ? cell.periodicSampleCount > 0 : cell.periodicSampleCount === 0)).toBe(true);
+  expect(cells.every(cell => JSON.stringify(cell.seed) === JSON.stringify(cells[0].seed))).toBe(true);
+  expect(cells[0].seed?.seed).toBe(20261005);
+  expect(cells.filter(cell => cell.experimentError || cell.finalObservationError || cell.traceError || cell.blockedRequests)).toEqual([]);
+});
+
+
+// Fourth phase: two repeated instrumented observations, not a treatment/control
+// comparison. Runtime, quality, safety checks, source and observer boundaries stay fixed.
+test('PR5 API timing diagnosis only, two flights, not game acceptance', async ({ browser }, testInfo) => {
+  test.setTimeout(5 * 60 * 1000);
+  await mkdir(OUTPUT, { recursive: true });
+  const environment = { browserVersion: browser.version(), node: process.version, platform: process.platform,
+    runnerTimeOrigin: performance.timeOrigin, osRelease: release(), cpuModels: [...new Set(cpus().map(cpu => cpu.model))], cpuCount: cpus().length,
+    project: testInfo.project.name, launchOptions: testInfo.project.use.launchOptions,
+    workerIndex: testInfo.workerIndex, startedAt: new Date().toISOString() };
+  const cells: any[] = [];
+  for (const ordinal of [0, 1]) {
+    cells.push(await runCell(browser, SCENARIOS[1], 'light', 'main', ordinal,
+      { phase: 'api-timing', traceEnabled: false, periodicSample: false, apiTiming: true }));
+    await writeFile(`${OUTPUT}/summary-api-timing.json`, JSON.stringify({
+      phase: 'api-timing', environment, cells, expectedCells: 2, gameAcceptance: 'NOT EVALUATED',
+      fixedSource: REFS.main, instrumentedObservationsOnly: true,
+      fixedInputs: { viewport: SCENARIOS[1], textScale: '100%', profile: 'light', traceEnabled: false,
+        periodicSample: false, requestedWarmupMs: WARMUP_MS, requestedWindowMs: WINDOW_MS },
+      interpretation: [
+        'Both fresh flights have identical instrumentation; there is no unwrapped control and no causal claim.',
+        'No source/runtime/safety/quality change, resume, retry, new flight/probe GL call or recurring sample timer is introduced. One setup VERSION query supplements existing environment metadata.',
+        'All existing callable WebGL prototype methods are wrapped; extension-object methods and other browser APIs are outside coverage.',
+        'Slow call records are >=10ms. Per-method/group totals cover fast calls too. Detail storage is at most 936 ring events plus 64 fences.',
+        'App rAF callbacks retain the original callback timestamp/receiver/error and native cancellation ID; passive probe rAF is excluded.',
+        'Long native API elapsed time localizes where the main thread stayed, but cannot separate execution, IPC/backpressure or descheduling.',
+        'Short callbacks and fast repeated zero-timeout TIMEOUT_EXPIRED polls after flush support pending asynchronous render completion, not its underlying cause.',
+        'Callback wall minus GL time includes JavaScript, DOM, unwrapped APIs, scheduling and instrumentation overhead; it is not pure JavaScript CPU.',
+        'Existing initial/boundary/final clone readMs remains; no periodic full-state sampler runs.',
+        'Fence completion is observed latency, not a GPU timer query. Installation/recording/drop counters determine coverage limits.',
+        'Collection success is not game acceptance, renderer qualification or release approval.',
+      ],
+    }, null, 2));
+  }
+  expect(cells).toHaveLength(2);
+  expect(cells.every(cell => cell.traceEnabled === false && cell.periodicSample === false && cell.periodicSampleCount === 0)).toBe(true);
+  expect(cells.every(cell => cell.apiTiming?.enabled && cell.apiTiming.rafWrapped && cell.apiTiming.wrappedMethodCount > 0)).toBe(true);
+  expect(cells.every(cell => cell.apiTiming.installationFailures.length === 0 && cell.apiTiming.recordingErrors === 0 && cell.apiTiming.unrecordedFences === 0)).toBe(true);
   expect(cells.every(cell => JSON.stringify(cell.seed) === JSON.stringify(cells[0].seed))).toBe(true);
   expect(cells[0].seed?.seed).toBe(20261005);
   expect(cells.filter(cell => cell.experimentError || cell.finalObservationError || cell.traceError || cell.blockedRequests)).toEqual([]);
