@@ -1,4 +1,4 @@
-name: Diagnose Fantasia matched PR6 rendering
+name: Diagnose Fantasia first-frame draw GPU timing
 on:
   pull_request:
     paths:
@@ -104,7 +104,7 @@ jobs:
           node --version > render-comparison-results/toolchain.txt
           npm --version >> render-comparison-results/toolchain.txt
           npx playwright --version >> render-comparison-results/toolchain.txt
-          npx playwright test render-comparison.spec.ts --project=chromium --grep 'PR6 matched source diagnosis only'
+          npx playwright test render-comparison.spec.ts --project=chromium --grep 'PR6 first-frame GPU timer diagnosis only'
       - uses: actions/upload-artifact@v4
         if: always()
         with:

@@ -54,7 +54,7 @@ function allowedOrigin(url: string, origin: string) {
   try { return new URL(url).origin === origin; } catch { return false; }
 }
 
-function installProbe(options: number | { intervalMs: number; apiTiming: boolean }) {
+function installProbe(options: number | { intervalMs: number; apiTiming: boolean; gpuTimer?: boolean }) {
   const intervalMs = typeof options === 'number' ? options : options.intervalMs;
   const w = window as any;
   const samples: any[] = [], frames: any[] = [], longTasks: any[] = [];
@@ -128,6 +128,233 @@ function installProbe(options: number | { intervalMs: number; apiTiming: boolean
         else f.unexpectedCount++;
       }
     };
+    // Opt-in sixth phase. Capture native functions before wrapping either GL
+    // prototype: diagnostic query commands must not recursively count as app calls.
+    const gpuTimer = options.gpuTimer ? (() => {
+      const DRAW_LIMIT = 256, HASH_BUFFER_LIMIT = 512 * 1024, HASH_TOTAL_LIMIT = 16 * 1024 * 1024;
+      const native: Record<string, Function> = {}, gl2Prototype = w.WebGL2RenderingContext?.prototype;
+      for (let p = gl2Prototype; p && p !== Object.prototype; p = Object.getPrototypeOf(p)) {
+        for (const name of Object.getOwnPropertyNames(p)) {
+          const value = Object.getOwnPropertyDescriptor(p, name)?.value;
+          if (typeof value === 'function' && !Object.hasOwn(native, name)) native[name] = value;
+        }
+      }
+      const draws: any[] = [], errors: any[] = [], states = new WeakMap<object, any>();
+      const buffers = new WeakMap<object, any>(), vaos = new WeakMap<object, any>(), programs = new WeakMap<object, any>();
+      const pending: { query: any; record: any }[] = [];
+      let bufferSequence = 0, vaoSequence = 0, programSequence = 0, hashedBytes = 0;
+      let frame: any = null, context: any = null, ext: any = null, closed = false, finished = false, failed = false;
+      let overflowDraws = 0, errorCount = 0, trackingMs = 0, setupMs = 0, queryCommandsMs = 0, collectMs = 0;
+      const capability: any = { extension: 'EXT_disjoint_timer_query_webgl2', status: 'not-observed',
+        supportedExtensions: null, extensionPresent: null, elapsedCounterBits: null,
+        disjointResetRead: false, disjointBefore: null, disjointAtFinish: null, finalReadPasses: 0 };
+      const call = (name: string, gl: any, args: any[]) => {
+        if (!native[name]) throw new Error(`Missing native ${name}`);
+        return Reflect.apply(native[name], gl, args);
+      };
+      const error = (operation: string, value: unknown) => {
+        failed = true; errorCount++;
+        if (errors.length < 32) errors.push({ operation, message: String(value) });
+      };
+      const isGL2 = (gl: any) => !!gl2Prototype && gl2Prototype.isPrototypeOf(gl);
+      const buffer = (value: any) => {
+        if (!value) return null;
+        let found = buffers.get(value);
+        if (!found) { found = { id: ++bufferSequence, byteLength: null, fnv1a32: null, signatureStatus: 'no-upload-observed', uploads: 0 }; buffers.set(value, found); }
+        return found;
+      };
+      const vao = (value: any) => {
+        if (!value) return { id: 0, attributes: new Map(), elementBuffer: null };
+        let found = vaos.get(value);
+        if (!found) { found = { id: ++vaoSequence, attributes: new Map(), elementBuffer: null }; vaos.set(value, found); }
+        return found;
+      };
+      const program = (value: any) => {
+        if (!value) return null;
+        let found = programs.get(value);
+        if (!found) { found = { id: ++programSequence, attributes: new Map() }; programs.set(value, found); }
+        return found;
+      };
+      const state = (gl: any) => {
+        let found = states.get(gl);
+        if (!found) {
+          const defaultVao = vao(null);
+          found = { bindings: new Map(), defaultVao, vao: defaultVao, program: null }; states.set(gl, found);
+        }
+        return found;
+      };
+      const boundBuffer = (s: any, target: number) => target === 0x8893 ? s.vao.elementBuffer : s.bindings.get(target);
+      const snapshot = (value: any) => value ? { ...buffer(value) } : null;
+      const invalidate = (value: any, reason: string) => {
+        const b = buffer(value); if (b) { b.fnv1a32 = null; b.signatureStatus = reason; }
+      };
+      const upload = (value: any, args: IArguments) => {
+        const b = buffer(value); if (!b) return;
+        const input = args[1]; b.uploads++; b.fnv1a32 = null;
+        if (typeof input === 'number') { b.byteLength = input; b.signatureStatus = 'size-only'; return; }
+        if (!input || typeof input.byteLength !== 'number') { b.byteLength = null; b.signatureStatus = 'unknown-upload'; return; }
+        const view = ArrayBuffer.isView(input), bytesPerElement = view ? ((input as any).BYTES_PER_ELEMENT ?? 1) : 1;
+        const offset = view ? (args[3] ?? 0) * bytesPerElement : 0;
+        const byteLength = view && args[4] ? args[4] * bytesPerElement : input.byteLength - offset;
+        b.byteLength = byteLength;
+        if (b.uploads !== 1) { b.signatureStatus = 'reuploaded-unhashed'; return; }
+        if (byteLength > HASH_BUFFER_LIMIT || hashedBytes + byteLength > HASH_TOTAL_LIMIT) { b.signatureStatus = 'hash-byte-cap'; return; }
+        const bytes = new Uint8Array(view ? input.buffer : input, (view ? input.byteOffset : 0) + offset, byteLength);
+        let hash = 0x811c9dc5;
+        for (const byte of bytes) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+        b.fnv1a32 = hash.toString(16).padStart(8, '0'); b.signatureStatus = 'initial-upload'; hashedBytes += byteLength;
+      };
+      const trackedNames = new Set(['bindBuffer', 'bufferData', 'bufferSubData', 'copyBufferSubData', 'bindVertexArray',
+        'vertexAttribPointer', 'vertexAttribIPointer', 'enableVertexAttribArray', 'disableVertexAttribArray', 'vertexAttribDivisor', 'useProgram', 'getAttribLocation']);
+      const track = (name: string, gl: any, args: IArguments, result: any) => {
+        if (!trackedNames.has(name) || closed || !isGL2(gl)) return;
+        const start = performance.now();
+        try {
+          const s = state(gl);
+          if (name === 'bindVertexArray') s.vao = args[0] ? vao(args[0]) : s.defaultVao;
+          else if (name === 'bindBuffer') {
+            if (args[0] === 0x8893) s.vao.elementBuffer = args[1]; else s.bindings.set(args[0], args[1]);
+          } else if (name === 'bufferData') upload(boundBuffer(s, args[0]), args);
+          else if (name === 'bufferSubData' || name === 'copyBufferSubData') invalidate(boundBuffer(s, args[name === 'copyBufferSubData' ? 1 : 0]), name);
+          else if (name === 'useProgram') s.program = program(args[0]);
+          else if (name === 'getAttribLocation') { if (result >= 0) program(args[0])?.attributes.set(args[1], result); }
+          else {
+            const a = s.vao.attributes.get(args[0]) ?? { enabled: false, divisor: 0 };
+            if (name === 'vertexAttribPointer' || name === 'vertexAttribIPointer') {
+              Object.assign(a, { buffer: s.bindings.get(0x8892), size: args[1], type: args[2], integer: name === 'vertexAttribIPointer',
+                normalized: name === 'vertexAttribPointer' ? args[3] : false,
+                stride: args[name === 'vertexAttribPointer' ? 4 : 3], offset: args[name === 'vertexAttribPointer' ? 5 : 4] });
+            } else if (name === 'vertexAttribDivisor') a.divisor = args[1];
+            else a.enabled = name === 'enableVertexAttribArray';
+            s.vao.attributes.set(args[0], a);
+          }
+        } catch (e) { error(`track:${name}`, e); }
+        finally { trackingMs += performance.now() - start; }
+      };
+      const prepare = (gl: any) => {
+        const start = performance.now();
+        try {
+          capability.supportedExtensions = call('getSupportedExtensions', gl, []);
+          ext = call('getExtension', gl, [capability.extension]); capability.extensionPresent = !!ext;
+          if (!ext) { capability.status = 'unsupported-extension'; return; }
+          capability.elapsedCounterBits = call('getQuery', gl, [ext.TIME_ELAPSED_EXT, ext.QUERY_COUNTER_BITS_EXT]);
+          if (!(capability.elapsedCounterBits > 0)) { capability.status = 'unsupported-elapsed-counter'; return; }
+          capability.disjointBefore = call('getParameter', gl, [ext.GPU_DISJOINT_EXT]); capability.disjointResetRead = true;
+          capability.status = 'available';
+        } catch (e) { capability.status = 'instrumentation-error'; error('capability', e); }
+        finally { setupMs += performance.now() - start; }
+      };
+      const before = (name: string, gl: any, args: IArguments) => {
+        if (closed || !/^draw(Arrays|Elements)(Instanced)?$|^drawRangeElements$/.test(name) || !isGL2(gl)) return null;
+        if (!frame) {
+          const issuedState = screenState();
+          if (issuedState.screen !== 'playing' || issuedState.mode !== 'normal') return null;
+          context = gl; frame = { contextId: contextId(gl), stage, issuedState, startMs: performance.now(),
+            endMs: null, fenceId: null, endReason: null, observedDraws: 0 }; prepare(gl);
+        }
+        if (context !== gl) return null;
+        frame.observedDraws++;
+        if (draws.length >= DRAW_LIMIT) { overflowDraws++; return null; }
+        const start = performance.now();
+        let token: any = null;
+        try {
+          const s = state(gl), p = s.program, location = p?.attributes.get('position');
+          const attribute = location === undefined ? null : s.vao.attributes.get(location);
+          const indexed = name !== 'drawArrays' && name !== 'drawArraysInstanced', range = name === 'drawRangeElements';
+          const record: any = { ordinal: draws.length, command: name, args: Array.from(args), mode: args[0],
+            count: args[range ? 3 : indexed ? 1 : 2],
+            indexType: indexed ? args[range ? 4 : 2] : null, indexOffset: indexed ? args[range ? 5 : 3] : null,
+            first: indexed ? null : args[1], instanceCount: name.endsWith('Instanced') ? args[indexed ? 4 : 3] : 1,
+            programId: p?.id ?? null, vaoId: s.vao.id,
+            position: attribute ? { location, size: attribute.size, type: attribute.type, normalized: attribute.normalized,
+              integer: attribute.integer, stride: attribute.stride, offset: attribute.offset, divisor: attribute.divisor,
+              enabled: attribute.enabled, buffer: snapshot(attribute.buffer) } : null,
+            indexBuffer: indexed ? snapshot(s.vao.elementBuffer) : null, nativeEnterMs: null, nativeExitMs: null, nativeThrew: false,
+            status: capability.status === 'available' ? 'not-started' : capability.status, elapsedNs: null, elapsedMs: null };
+          draws.push(record); token = { record, query: null, begun: false };
+          if (capability.status !== 'available' || failed) { if (failed) record.status = 'instrumentation-error'; return token; }
+          const q = call('createQuery', gl, []);
+          if (!q) throw new Error('createQuery returned null');
+          token.query = q; pending.push({ query: q, record });
+          call('beginQuery', gl, [ext.TIME_ELAPSED_EXT, q]); token.begun = true; record.status = 'pending';
+        } catch (e) { if (token) token.record.status = 'instrumentation-error'; error('begin-draw-query', e); }
+        finally { queryCommandsMs += performance.now() - start; }
+        return token;
+      };
+      const after = (name: string, gl: any, args: IArguments, result: any, threw: boolean, token: any, begin: number, end: number) => {
+        if (token) {
+          const start = performance.now();
+          token.record.nativeEnterMs = begin; token.record.nativeExitMs = end; token.record.nativeThrew = threw;
+          try { if (token.begun) call('endQuery', gl, [ext.TIME_ELAPSED_EXT]); }
+          catch (e) { token.record.status = 'instrumentation-error'; error('end-draw-query', e); }
+          finally { queryCommandsMs += performance.now() - start; }
+        }
+        if (!threw) track(name, gl, args, result);
+        if (name === 'fenceSync' && frame && context === gl && !closed) {
+          closed = true; frame.endMs = end; frame.endReason = 'existing-fenceSync'; frame.fenceId = result ? fenceIds.get(result) ?? null : null;
+          if (threw || !result) error('frame-boundary', 'Existing fenceSync did not produce a fence');
+        }
+      };
+      return {
+        before(name: string, gl: any, args: IArguments) {
+          try { return before(name, gl, args); } catch (e) { error('before-hook', e); return null; }
+        },
+        after(name: string, gl: any, args: IArguments, result: any, threw: boolean, token: any, begin: number, end: number) {
+          try { after(name, gl, args, result, threw, token, begin, end); } catch (e) { error('after-hook', e); }
+        },
+        finish() {
+          if (finished) throw new Error('GPU timer finish called twice');
+          finished = true; const start = performance.now();
+          if (frame && !closed) { frame.endReason = 'finish-before-existing-fence'; closed = true; }
+          try {
+            if (pending.length) {
+              capability.finalReadPasses++;
+              // One pass after the existing Playwright observation window returns
+              // to the event loop. No wait, flush, finish, extra render or polling.
+              for (const item of pending) {
+                try { item.record.availableAtFinish = call('getQueryParameter', context, [item.query, 0x8867]); }
+                catch (e) { item.record.status = 'instrumentation-error'; error('query-availability', e); }
+              }
+              capability.disjointAtFinish = call('getParameter', context, [ext.GPU_DISJOINT_EXT]);
+              for (const item of pending) {
+                if (item.record.status === 'instrumentation-error') continue;
+                if (item.record.nativeThrew) { item.record.status = 'native-draw-error'; continue; }
+                if (capability.disjointAtFinish) { item.record.status = 'disjoint'; continue; }
+                if (!item.record.availableAtFinish) { item.record.status = 'pending'; continue; }
+                try {
+                  const ns = call('getQueryParameter', context, [item.query, 0x8866]);
+                  if (typeof ns !== 'number' || !Number.isFinite(ns) || ns < 0) throw new Error(`Invalid timer result: ${String(ns)}`);
+                  item.record.elapsedNs = ns; item.record.elapsedMs = ns / 1e6; item.record.status = 'valid';
+                } catch (e) { item.record.status = 'instrumentation-error'; error('query-result', e); }
+              }
+            }
+          } catch (e) {
+            error('collect', e);
+            for (const item of pending) { item.record.status = 'instrumentation-error'; item.record.elapsedNs = null; item.record.elapsedMs = null; }
+          } finally {
+            // Pending, disjoint and error results are also released without waiting.
+            for (const item of pending) {
+              try { call('deleteQuery', context, [item.query]); item.record.queryDeleted = true; }
+              catch (e) { item.record.queryDeleted = false; error('delete-query', e); }
+            }
+            collectMs += performance.now() - start;
+          }
+          const valid = draws.filter(draw => draw.status === 'valid'), incompleteFrame = !frame || frame.endReason !== 'existing-fenceSync';
+          const complete = !errorCount && !incompleteFrame && !overflowDraws && draws.length > 0 && valid.length === draws.length;
+          return { enabled: true, capability, frame, drawLimit: DRAW_LIMIT, draws, overflowDraws, incompleteFrame,
+            errorCount, errors, validDraws: valid.length, pendingDraws: draws.filter(draw => draw.status === 'pending').length,
+            disjointDraws: draws.filter(draw => draw.status === 'disjoint').length,
+            validDrawElapsedMs: valid.length ? valid.reduce((sum, draw) => sum + draw.elapsedMs, 0) : null,
+            validDrawElapsedMsIsPartial: !complete,
+            completeFrameDrawElapsedMs: complete ? valid.reduce((sum, draw) => sum + draw.elapsedMs, 0) : null,
+            result: errorCount ? 'instrumentation-error' : capability.status !== 'available' ? capability.status : complete ? 'complete' : 'incomplete',
+            overhead: { trackingMs, setupMs, queryCommandsMs, collectMs, scope: 'CPU-observed diagnostic wall time, not GPU time; queryCommandsMs includes per-draw metadata' },
+            signatures: { algorithm: 'fnv1a32-byte-order', hashBufferLimit: HASH_BUFFER_LIMIT, hashTotalLimit: HASH_TOTAL_LIMIT, hashedBytes,
+              limits: 'Only first bufferData input per buffer is hashed. Later writes invalidate it. position is resolved only by the observed getAttribLocation(program, position). No extra GL state reads; hashes require byteLength and draw arguments for source correspondence and are not collision-proof identities.' },
+            interpretation: 'Only the first Normal-playing draw stream through the existing fenceSync is instrumented. Query commands perturb submission. Valid elapsed values describe instrumented draw GPU time; they exclude other GL work and do not establish compositor or notification time. Unsupported, pending, disjoint, capped or incomplete results cannot stand in for a GPU pass.' };
+        },
+      };
+    })() : undefined;
     const visited = new Set<object>();
     for (const constructorName of ['WebGLRenderingContext', 'WebGL2RenderingContext']) {
       let prototype = w[constructorName]?.prototype;
@@ -141,6 +368,7 @@ function installProbe(options: number | { intervalMs: number; apiTiming: boolean
           try {
             Object.defineProperty(prototype, name, { ...descriptor, value: function(this: any) {
               if (!active) return Reflect.apply(original, this, arguments);
+              const gpuToken = gpuTimer?.before(name, this, arguments);
               const begin = performance.now(), callStage = stage;
               let result: any, threw = false;
               try { result = Reflect.apply(original, this, arguments); return result; }
@@ -157,6 +385,7 @@ function installProbe(options: number | { intervalMs: number; apiTiming: boolean
                     callbackId: currentCallback?.id ?? null, beginMs: begin, endMs: end, wallMs: elapsed, threw });
                   if (!threw) noteFence(name, this, arguments, result, begin, end, callStage);
                 } catch { recordingErrors++; }
+                gpuTimer?.after(name, this, arguments, result, threw, gpuToken, begin, end);
               }
             } });
             wrappedMethods.push(key);
@@ -200,11 +429,12 @@ function installProbe(options: number | { intervalMs: number; apiTiming: boolean
     return {
       finish() {
         active = false;
-        return { enabled: true, slowCallThresholdMs: SLOW_MS, eventLimit: EVENT_LIMIT, fenceLimit: FENCE_LIMIT,
+        const gpuTimerResult = gpuTimer?.finish();
+        return { enabled: true, ...(gpuTimerResult ? { gpuTimer: gpuTimerResult } : {}), slowCallThresholdMs: SLOW_MS, eventLimit: EVENT_LIMIT, fenceLimit: FENCE_LIMIT,
           events: overwrittenEvents ? [...events.slice(nextEvent), ...events.slice(0, nextEvent)] : events,
           fences, methods, groups, callbacks, wrappedMethods, rafWrapped, installationFailures, recordingErrors,
           overwrittenEvents, unrecordedFences, fenceCount: fenceSequence,
-          interpretation: 'Elapsed call/callback wall time includes possible descheduling. outsideWebGLMs includes JavaScript, DOM, other APIs and probe overhead. Extension-object methods are not wrapped. No added GL calls, timers or CPU/GPU time claims.' };
+          interpretation: gpuTimerResult ? 'Elapsed call/callback wall time includes possible descheduling. outsideWebGLMs includes JavaScript, DOM, other APIs and probe overhead. Extension-object methods are not wrapped. API wall times are not CPU/GPU execution times. When gpuTimer is enabled, its added native query commands and overhead are reported separately; otherwise no GL calls are added.' : 'Elapsed call/callback wall time includes possible descheduling. outsideWebGLMs includes JavaScript, DOM, other APIs and probe overhead. Extension-object methods are not wrapped. No added GL calls, timers or CPU/GPU time claims.' };
       },
     };
   })() : undefined;
@@ -289,7 +519,7 @@ function safetyProblems(s: any) {
 
 async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], profile: Profile,
   ref: keyof typeof REFS, ordinal: number,
-  options: { phase: 'trace-factor' | 'sampler-factor' | 'api-timing' | 'matched-source'; traceEnabled: boolean; periodicSample?: boolean; apiTiming?: boolean } | undefined = undefined) {
+  options: { phase: 'trace-factor' | 'sampler-factor' | 'api-timing' | 'matched-source' | 'gpu-timer'; traceEnabled: boolean; periodicSample?: boolean; apiTiming?: boolean; gpuTimer?: boolean } | undefined = undefined) {
   const phase = options?.phase ?? 'source-load-comparison';
   const traceEnabled = options?.traceEnabled ?? true;
   const periodicSample = options?.periodicSample ?? true;
@@ -319,7 +549,7 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
   if (traceEnabled) await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   report.trace = { enabled: traceEnabled, screenshots: traceEnabled, snapshots: traceEnabled, sources: traceEnabled,
     retained: traceEnabled ? 'every enabled diagnostic cell' : 'intentionally not collected; no trace start or stop call' };
-  await context.addInitScript(installProbe, options?.apiTiming ? { intervalMs: 0, apiTiming: true } : periodicSample ? SAMPLE_MS : 0);
+  await context.addInitScript(installProbe, options?.apiTiming ? { intervalMs: 0, apiTiming: true, gpuTimer: options.gpuTimer === true } : periodicSample ? SAMPLE_MS : 0);
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   page.on('pageerror', error => errors.push(String(error)));
@@ -427,6 +657,7 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
       wrappedMethodCount: report.timeline.apiTiming.wrappedMethods.length, installationFailures: report.timeline.apiTiming.installationFailures,
       recordingErrors: report.timeline.apiTiming.recordingErrors, overwrittenEvents: report.timeline.apiTiming.overwrittenEvents,
       unrecordedFences: report.timeline.apiTiming.unrecordedFences, fenceCount: report.timeline.apiTiming.fenceCount } : null,
+    ...(options?.gpuTimer ? { gpuTimer: report.timeline?.apiTiming?.gpuTimer ?? null } : {}),
     actualSetup: report.environment ?? null, pageErrorCount: errors.length,
     renderObservations: [report.before?.result, report.after?.result, report.timeline?.samples.at(-1)]
       .map(sample => sample ? { label: sample.label, atMs: sample.atMs, phase: sample.state?.phase,
@@ -628,6 +859,61 @@ test('PR6 matched source diagnosis only, four flights, not game acceptance', asy
   expect(cells.every(cell => cell.apiTiming?.enabled && cell.apiTiming.rafWrapped && cell.apiTiming.wrappedMethodCount > 0)).toBe(true);
   expect(cells.every(cell => cell.apiTiming.installationFailures.length === 0 && cell.apiTiming.recordingErrors === 0 && cell.apiTiming.unrecordedFences === 0)).toBe(true);
   expect(cells.every(cell => cell.apiTiming.wrappedMethodCount === cells[0].apiTiming.wrappedMethodCount)).toBe(true);
+  expect(cells.every(cell => cell.actualSetup?.viewportWidth === 1280 && cell.actualSetup?.viewportHeight === 800
+    && cell.actualSetup?.drawingBufferWidth === 1280 && cell.actualSetup?.drawingBufferHeight === 800
+    && cell.actualSetup?.devicePixelRatio === 1 && cell.actualSetup?.visibility === 'visible')).toBe(true);
+  expect(cells.every(cell => cell.actualSetup?.renderer && cell.actualSetup.renderer === cells[0].actualSetup.renderer
+    && cell.actualSetup.version && cell.actualSetup.version === cells[0].actualSetup.version)).toBe(true);
+  expect(cells.every(cell => Object.values(cell.actualSetup?.savedSettings ?? {}).length === 3
+    && Object.values(cell.actualSetup.savedSettings).every(value => value === null))).toBe(true);
+  expect(cells.every(cell => JSON.stringify(cell.seed) === JSON.stringify(cells[0].seed))).toBe(true);
+  expect(cells[0].seed?.seed).toBe(20261005);
+  expect(cells[0].seed?.mode).toBe('normal');
+  expect(cells.filter(cell => cell.experimentError || cell.finalObservationError || cell.traceError || cell.blockedRequests || cell.pageErrorCount)).toEqual([]);
+});
+
+
+// Sixth phase: two fresh flights on the fixed PR6 runtime. Timer support and
+// result validity are evidence, never substituted with CPU or triangle counts.
+test('PR6 first-frame GPU timer diagnosis only, two flights, not game acceptance', async ({ browser }, testInfo) => {
+  test.setTimeout(5 * 60 * 1000);
+  await mkdir(OUTPUT, { recursive: true });
+  const environment = { browserVersion: browser.version(), node: process.version, platform: process.platform,
+    runnerTimeOrigin: performance.timeOrigin, osRelease: release(), cpuModels: [...new Set(cpus().map(cpu => cpu.model))], cpuCount: cpus().length,
+    project: testInfo.project.name, launchOptions: testInfo.project.use.launchOptions,
+    workerIndex: testInfo.workerIndex, startedAt: new Date().toISOString() };
+  const cells: any[] = [];
+  for (const ordinal of [0, 1]) {
+    cells.push(await runCell(browser, SCENARIOS[1], 'light', 'pr6', ordinal,
+      { phase: 'gpu-timer', traceEnabled: false, periodicSample: false, apiTiming: true, gpuTimer: true }));
+    await writeFile(`${OUTPUT}/summary-gpu-timer.json`, JSON.stringify({
+      phase: 'gpu-timer', environment, cells, expectedCells: 2, gameAcceptance: 'NOT EVALUATED',
+      fixedSource: REFS.pr6, instrumentedObservationsOnly: true,
+      fixedInputs: { viewport: SCENARIOS[1], textScale: '100%', profile: 'light', traceEnabled: false,
+        periodicSample: false, apiTiming: true, gpuTimer: true, seed: 20261005,
+        requestedWarmupMs: WARMUP_MS, requestedWindowMs: WINDOW_MS },
+      capabilityBlockers: cells.filter(cell => cell.gpuTimer?.capability.status?.startsWith('unsupported'))
+        .map(cell => ({ id: cell.id, capability: cell.gpuTimer.capability })),
+      interpretation: [
+        'Only the fixed PR6 source a8ca1a5d681648d1a620f94cc05e532f86c08255 runs in two fresh 1280x800 Normal/light contexts. No runtime, watchdog, quality, shader, render-state or acceptance changes.',
+        'Trace/periodic sampling remain off; initial, boundary, final reads, passive observers and API/rAF hooks are the same as the matched-source phase.',
+        'At most 256 original draw calls in the first Normal-playing frame are bracketed by native elapsed queries; its existing fenceSync closes capture. Every original draw is executed exactly once with its original receiver and arguments.',
+        'The only added GL commands are timer capability/query commands. There is no added render, flush, finish, fence, readPixels, recurring timer or wait loop.',
+        'Results are checked once at final finish after the existing observation window. Unavailable capability, disjoint values, pending results, missing frame boundaries, overflow and instrumentation errors are explicit; none produces fabricated GPU times.',
+        'Native query calls bypass the API wrappers. Their CPU-observed overhead and upload hashing overhead are reported separately; instrumentation may still perturb execution and submission.',
+        'Position-buffer FNV-1a signatures, byte lengths, program IDs and draw arguments aid source correspondence. Hash caps, reuploads and later writes may prevent mapping; a 32-bit signature alone is not proof of identity.',
+        'Compare valid per-draw elapsed times and their coverage with the same frame fence completion/poll gaps. Draw elapsed excludes clears, uploads and other work and is not a complete frame/compositor/notification measurement.',
+        'Only two instrumented flights on one renderer are observed. Sum GPU draw times only for complete valid uncapped captures; partial valid sums are labelled partial coverage.',
+        'A successful diagnostic collection, including a capability blocker, is not game acceptance, a GPU performance pass, or release approval.',
+      ],
+    }, null, 2));
+  }
+  expect(cells).toHaveLength(2);
+  expect(cells.every(cell => cell.ref === 'pr6' && cell.traceEnabled === false && cell.periodicSample === false && cell.periodicSampleCount === 0)).toBe(true);
+  expect(cells.every(cell => cell.apiTiming?.enabled && cell.apiTiming.rafWrapped && cell.apiTiming.wrappedMethodCount > 0)).toBe(true);
+  expect(cells.every(cell => cell.apiTiming.installationFailures.length === 0 && cell.apiTiming.recordingErrors === 0 && cell.apiTiming.unrecordedFences === 0)).toBe(true);
+  expect(cells.every(cell => cell.gpuTimer?.enabled && cell.gpuTimer.errorCount === 0 && cell.gpuTimer.frame?.observedDraws > 0)).toBe(true);
+  expect(cells.every(cell => cell.gpuTimer.draws.length <= 256 && cell.gpuTimer.capability.finalReadPasses <= 1)).toBe(true);
   expect(cells.every(cell => cell.actualSetup?.viewportWidth === 1280 && cell.actualSetup?.viewportHeight === 800
     && cell.actualSetup?.drawingBufferWidth === 1280 && cell.actualSetup?.drawingBufferHeight === 800
     && cell.actualSetup?.devicePixelRatio === 1 && cell.actualSetup?.visibility === 'visible')).toBe(true);
