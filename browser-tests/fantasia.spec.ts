@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { oneTickPulseEvidence, type InputAudit } from './input-audit';
+import { confirmHudObservation, waitForNativeFrame, type HudObservationGate, type NativeConfirmation } from './hud-observation';
 
 type ReadState = {
   phase?: string;
@@ -103,19 +104,23 @@ async function saveEvidence(page: Page, name: string, note: string) {
   await page.screenshot({ path: `test-results/evidence/${name}.png` });
   const observed = await fullEvidenceState(page);
   const hud = await readHudGeometry(page);
+  const finalGate = observed?.phase === 'playing'
+    ? await confirmHudObservation(hud, () => captureAfterNativeFrame(page)) : null;
   await writeFile(`test-results/evidence/${name}.json`, JSON.stringify({
     environment: 'Playwright Chromium viewport emulation; not physical-device coverage',
     note,
     viewport: page.viewportSize(),
-    liveFlightConfirmed: observed?.phase === 'playing' && hudCaptureProblems(hud).length === 0,
+    liveFlightConfirmed: observed?.phase === 'playing' && finalGate?.outcome === 'pass',
     state: observed,
     hud,
+    finalGate,
+    finalGateSkipped: finalGate === null ? 'prior-nonplaying-observation' : undefined,
   }, null, 2));
   // Preserve a blocked attempt, but never pass a live-layout test on boxes
   // hidden behind the safety-pause overlay.
   expect(observed?.phase, 'Screenshot must show live flight rather than a safety stop').toBe('playing');
   await expect(page.locator('#pause-screen')).toBeHidden();
-  expect(hudCaptureProblems(hud), 'The last HUD observation in saved evidence must still show live flight and clear safety states').toEqual([]);
+  expect(finalGate, 'The last HUD observation in saved evidence must still show live flight and clear safety states').toMatchObject({ outcome: 'pass', problems: [] });
 }
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -138,8 +143,12 @@ async function readHudGeometry(page: Page) {
       .map(node => ({ id: node.id || node.className, ...rect(node),
         overflowX: node.scrollWidth - node.clientWidth, overflowY: node.scrollHeight - node.clientHeight }));
     const threat = document.querySelector('#campaign-threat')!;
-    return { phase: observed?.phase, pauseReasons: observed?.pauseReasons, renderStatus: observed?.renderStatus,
-      fatalLogicError: observed?.fatalLogicError, render: { queue: { status: observed?.render?.queue?.status } },
+    return { runId: observed?.campaign?.runId, phase: observed?.phase, pauseReasons: observed?.pauseReasons, renderStatus: observed?.renderStatus,
+      performanceInterrupted: observed?.performanceInterrupted, lastInterruption: observed?.lastInterruption
+        ? { reason: observed.lastInterruption.reason, gap: observed.lastInterruption.gap } : observed?.lastInterruption,
+      fatalLogicError: observed?.fatalLogicError, render: { queue: { status: observed?.render?.queue?.status,
+        failure: observed?.render?.queue?.failure, pendingMs: observed?.render?.queue?.pendingMs,
+        submittedCount: observed?.render?.queue?.submittedCount, completedCount: observed?.render?.queue?.completedCount } },
       deviceScaleFactor: devicePixelRatio, canvas: { x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height },
       layout: observed?.render?.hudLayout, obstacles, panels,
       threat: visible(threat) ? rect(threat) : null };
@@ -164,7 +173,7 @@ async function captureRenderDiagnostics(page: Page) {
     if (!value) return JSON.stringify(null);
     const render = (source: any) => source ? Object.fromEntries(['queue', 'calls', 'triangles', 'ground', 'groundSubmitted', 'dragons', 'width', 'height', 'pixelRatio']
       .map(key => [key, source[key]])) : null;
-    return JSON.stringify({ capturedAtMs: performance.now(), phase: value.phase, tick: value.tick, activeTicks: value.activeTicks,
+    return JSON.stringify({ capturedAtMs: performance.now(), runId: value.campaign?.runId, phase: value.phase, tick: value.tick, activeTicks: value.activeTicks,
       pauseReasons: value.pauseReasons, renderStatus: value.renderStatus, lastFrameGap: value.lastFrameGap,
       performanceInterrupted: value.performanceInterrupted, fatalLogicError: value.fatalLogicError, render: render(value.render),
       lastInterruption: value.lastInterruption ? { reason: value.lastInterruption.reason, gap: value.lastInterruption.gap,
@@ -172,19 +181,19 @@ async function captureRenderDiagnostics(page: Page) {
   });
   return JSON.parse(serialized);
 }
-function hudCaptureProblems(observed: any): string[] {
-  if (!observed || typeof observed !== 'object') return ['final observation is unavailable'];
-  const problems: string[] = [];
-  if (observed.phase !== 'playing') problems.push(`phase is ${observed.phase}`);
-  if (!Array.isArray(observed.pauseReasons) || observed.pauseReasons.length) problems.push('pause reasons are present or unavailable');
-  if (observed.fatalLogicError !== null) problems.push('logic safety state is not clear');
-  if (!['ready', 'pending'].includes(observed.renderStatus)) problems.push(`render state is ${observed.renderStatus}`);
-  if (!['ready', 'pending'].includes(observed.render?.queue?.status)) problems.push(`render queue is ${observed.render?.queue?.status}`);
-  return problems;
+async function captureAfterNativeFrame(page: Page): Promise<NativeConfirmation> {
+  try {
+    // Same 15-second observation budget as the existing expect timeout. The
+    // app registers its next frame before this callback; no product poll,
+    // reset, resume or repeated read is performed by this confirmation.
+    const stage = await page.evaluate(waitForNativeFrame, 15000);
+    if (stage === 'timeout') return { stage: 'timeout' };
+    return { stage: 'after-native-raf', observation: await captureRenderDiagnostics(page) };
+  } catch (error) { return { stage: 'unavailable', error: String(error) }; }
 }
 async function expectHudSafeLayout(page: Page, name: string) {
   await mkdir('test-results/evidence', { recursive: true });
-  const capture: { before?: unknown; after?: unknown; final?: unknown; diagnosticError?: string } = {};
+  const capture: { before?: unknown; after?: unknown; final?: unknown; finalGate?: HudObservationGate; finalGateSkipped?: string; diagnosticError?: string } = {};
   let hudSaved = false;
   let assertionsFailed = false;
   try {
@@ -264,9 +273,11 @@ async function expectHudSafeLayout(page: Page, name: string) {
       try { await writeFile(`test-results/evidence/${name}-hud.json`, JSON.stringify(await readHudGeometry(page), null, 2)); }
       catch (error) { capture.diagnosticError = `${capture.diagnosticError ?? ''} ${String(error)}`.trim(); }
     }
+    if (!assertionsFailed) capture.finalGate = await confirmHudObservation(capture.final, () => captureAfterNativeFrame(page));
+    else capture.finalGateSkipped = 'prior-assertion-failure';
     await writeFile(`test-results/evidence/${name}-capture.json`, JSON.stringify(capture, null, 2));
-    if (!assertionsFailed) expect(hudCaptureProblems(capture.final),
-      'The last HUD observation must still show live flight and clear safety states').toEqual([]);
+    if (!assertionsFailed) expect(capture.finalGate,
+      'The last HUD observation must still show live flight and clear safety states').toMatchObject({ outcome: 'pass', problems: [] });
   }
 }
 
