@@ -125,3 +125,49 @@ test('first-touch proof references actual attachment path; absence and malformed
   assert.equal(readAttachmentJson({ body: Buffer.from('{"action":"bomb"}').toString('base64') }, '/tmp').value.action, 'bomb');
   assert.equal(readAttachmentJson({ path: '../../outside.json' }, '/tmp/report').status, 'unmapped');
 });
+
+test('an unexpected pass remains a failed check with its original raw status', () => {
+  const input = browser('passed', []);
+  Object.assign(first(input), { status: 'unexpected', expectedStatus: 'failed' });
+  const report = buildReport(input);
+  assert.equal(report.checks[0].rawStatus, 'passed');
+  assert.equal(report.checks[0].rawTestStatus, 'unexpected');
+  assert.equal(report.checks[0].outcome, 'failed');
+  assert.equal(report.checks[0].classification, 'unclassified failure');
+  assert.equal(report.counts.passed, 0);
+  assert.equal(report.browserOutput.outcome, 'failed');
+});
+
+test('unknown or missing earlier attempt status remains unknown after a passed attempt', () => {
+  for (const status of ['future-status', undefined]) {
+    const input = browser('passed', []);
+    first(input).results.unshift({ status, errors: [] });
+    const report = buildReport(input);
+    assert.equal(report.checks[0].rawStatus, 'passed');
+    assert.equal(report.checks[0].outcome, 'unknown');
+    assert.equal(report.counts.passed, 0);
+    assert.equal(report.browserOutput.outcome, 'incomplete');
+    assert.deepEqual(report.checks[0].attempts, first(input).results);
+  }
+});
+
+test('clean pass requires all attempt statuses, aggregate status and expected status to agree', () => {
+  for (const aggregate of ['expected', 'unexpected', 'skipped', 'flaky', 'future-status', undefined]) {
+    for (const expected of ['passed', 'failed', 'skipped', 'future-status', undefined]) {
+      for (const attempt of ['passed', 'failed', 'timedOut', 'interrupted', 'skipped', 'future-status', undefined]) {
+        const input = browser('passed', []), record = first(input);
+        Object.assign(record, { status: aggregate, expectedStatus: expected });
+        record.results.unshift({ status: attempt, errors: [] });
+        const report = buildReport(input);
+        const clean = aggregate === 'expected' && expected === 'passed' && attempt === 'passed';
+        assert.equal(report.counts.passed, Number(clean), JSON.stringify({ aggregate, expected, attempt }));
+        assert.equal(report.browserOutput.outcome === 'passed-observed-checks-only', clean);
+        if (['failed', 'timedOut', 'interrupted'].includes(attempt)) assert.equal(report.checks[0].outcome, 'failed');
+      }
+    }
+  }
+  for (const error of [{ error: { message: 'contradictory error' } }, { errors: [{ message: 'contradictory error' }] }, { errors: 'malformed' }]) {
+    const input = browser('passed', []); Object.assign(first(input).results[0], error);
+    assert.equal(buildReport(input).checks[0].outcome, 'unknown');
+  }
+});

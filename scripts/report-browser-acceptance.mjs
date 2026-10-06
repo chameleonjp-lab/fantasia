@@ -137,9 +137,16 @@ export function buildReport(browser, readEvidence = () => ({ status: 'missing' }
         for (const test of spec.tests) {
           if (!object(test) || !Array.isArray(test.results) || !test.results.every(object)) { report.evidenceIssues.push(`Malformed results for ${spec.title}`); continue; }
           const results = test.results, rawStatus = results.at(-1)?.status ?? 'not-run';
-          // Any failed attempt remains visible even after retries; do not make flaky results clean passes.
-          const outcome = results.some(result => rawFailures.has(result.status)) ? 'failed'
-            : ['passed', 'skipped', 'not-run'].includes(rawStatus) ? rawStatus : 'unknown';
+          // A clean pass needs agreement from every attempt AND Playwright's aggregate/expectation.
+          // Unexpected passes, flaky results, unknown statuses and mixed skipped/passed attempts cannot pass.
+          const knownAttempts = results.every(result => ['passed', 'skipped', ...rawFailures].includes(result.status));
+          const cleanAttempts = results.every(result => result.status === 'passed' && !result.error
+            && (result.errors === undefined || (Array.isArray(result.errors) && result.errors.length === 0)));
+          const outcome = !results.length ? 'not-run'
+            : results.some(result => rawFailures.has(result.status)) || test.status === 'unexpected' ? 'failed'
+            : !knownAttempts || !['passed', 'failed', 'skipped'].includes(test.expectedStatus) ? 'unknown'
+            : test.status === 'skipped' && results.every(result => result.status === 'skipped') ? 'skipped'
+            : test.status === 'expected' && test.expectedStatus === 'passed' && cleanAttempts ? 'passed' : 'unknown';
           report.counts[outcome]++;
           const check = { title: spec.title, suite: [...parents, suite.title].filter(Boolean), file: spec.file,
             project: test.projectName, rawStatus, rawTestStatus: test.status, expectedStatus: test.expectedStatus,
@@ -147,7 +154,7 @@ export function buildReport(browser, readEvidence = () => ({ status: 'missing' }
           const known = basename(spec.file ?? '') === 'fantasia.spec.ts' && test.projectName === 'chromium';
           const names = known ? captureNames(spec.title) : [];
           check.captures = names.map(name => inspectCapture(name, readEvidence));
-          if (outcome === 'failed' && results.length === 1) {
+          if (outcome === 'failed' && results.length === 1 && rawFailures.has(results[0].status)) {
             const errors = results[0].errors ?? (results[0].error ? [results[0].error] : []);
             // More than one reported error could conceal an earlier assertion. Refuse to infer.
             const guard = errors.length === 1 ? guardFailure(errors[0]) : null;
