@@ -9,7 +9,7 @@ function world(): CampaignState {
   const position = { x: 0, y: 300, z: 0 };
   const quaternion = { x: 0, y: 0, z: 0, w: 1 };
   const state: CampaignState = {
-    runId: 'logistics-test', rulesVersion: 'fantasia-capture-v1', mapVersion: 'fantasia-sevenfold-v1',
+    runId: 'logistics-test', rulesVersion: 'fantasia-capture-v1', mapVersion: 'fantasia-sevenfold-v1', features: { dragonFireballs: true },
     seed: 42, rngState: 42, mode: 'normal', startHeading: 0, status: 'running',
     simTick: 0, activeTicks: 0, respawnPenaltyTicks: 0, livesRemaining: 3,
     player: { id: 1, generation: 1, hp: 100, maxHp: 100, position: { ...position }, previous: { ...position },

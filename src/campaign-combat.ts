@@ -280,6 +280,8 @@ function explosion(state: CampaignState, projectile: CampaignProjectile, point: 
 function stepExistingProjectiles(state: CampaignState, grid: ActorGrid, damages: PendingDamage[], emit: CampaignEmit): void {
   const survivors: CampaignProjectile[] = [];
   for (const projectile of state.projectiles) {
+    // Drop any already-present fireballs before collision, damage or impact events.
+    if (!state.features.dragonFireballs && projectile.kind === 'fireball') continue;
     projectile.previous = copyVec(projectile.position);
     if (projectile.kind === 'bomb') {
       projectile.position = addVec(projectile.position, scaleVec(projectile.velocity, CAMPAIGN_DT));
@@ -307,11 +309,18 @@ function stepExistingProjectiles(state: CampaignState, grid: ActorGrid, damages:
   }
   state.projectiles = survivors;
 }
+function suspendDragonAttack(state: CampaignState, actor: CampaignActor): boolean {
+  if (state.features.dragonFireballs || actor.class !== 'dragon') return false;
+  actor.phase = 'idle'; actor.targetRef = null; actor.fireAtTick = null; actor.lockedAim = null;
+  actor.cooldownUntilTick = 0; actor.attackReadyTick = 0;
+  return true;
+}
 export function collectCombat(state: CampaignState, emit: CampaignEmit): CombatTick {
   const grid = new ActorGrid(state.actors), damages: PendingDamage[] = [], readyToFire: CampaignActor[] = [];
   stepExistingProjectiles(state, grid, damages, emit);
   const t = state.simTick;
   for (const actor of state.actors) if (actor.hp > 0) {
+    if (suspendDragonAttack(state, actor)) continue;
     if (actor.phase === 'recovery' && t >= actor.cooldownUntilTick) actor.phase = 'idle';
     const retainedTarget = resolveTarget(state, actor.targetRef);
     if (actor.phase === 'idle' && t >= actor.cooldownUntilTick && (actor.kind !== 'ground' || t % 12 === 0 || !retainedTarget || !attackEligible(state, actor, retainedTarget))) {
@@ -385,7 +394,7 @@ function spawnProjectile(state: CampaignState, source: CampaignActor | CampaignP
 }
 export function commitActorFire(state: CampaignState, ready: readonly CampaignActor[], emit: CampaignEmit): void {
   for (const actor of ready) {
-    if (actor.hp <= 0) continue;
+    if (actor.hp <= 0 || suspendDragonAttack(state, actor)) continue;
     const target = resolveTarget(state, actor.targetRef), stats = ACTOR_STATS[actor.class], origin = actor.position;
     if (!target || !attackEligible(state, actor, target) || sweepSphere(origin, origin, 0) !== null || !actor.lockedAim) actor.cooldownUntilTick = state.simTick + (actor.kind === 'ground' ? 30 : 60);
     else {

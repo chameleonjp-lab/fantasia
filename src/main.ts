@@ -2,7 +2,7 @@ import './style.css';
 import './control-settings.css';
 import { Vector3 } from 'three';
 import { Campaign, campaignScore, formatCampaignTicks } from './campaign';
-import { CAMPAIGN_DT, CAMPAIGN_LIMIT_TICKS } from './campaign-config';
+import { CAMPAIGN_DT, CAMPAIGN_LIMIT_TICKS, SUSPENDED_CAMPAIGN_RULES_VERSION } from './campaign-config';
 import { predictBombImpact, type BombPrediction } from './campaign-combat';
 import { CampaignRecords, type RecordSaveStatus } from './campaign-records';
 import { CampaignFlightController } from './campaign-flight';
@@ -126,6 +126,10 @@ function syncInstructions() {
   el('keyboard-guide').hidden = touch; el('keyboard-guide').textContent = keyboardDescription();
 }
 function updateBestRecord() {
+  if (state.rulesVersion === SUSPENDED_CAMPAIGN_RULES_VERSION) {
+    el('best-record').textContent = '暫定版では最速記録を保存しません（既存記録は保持）';
+    return;
+  }
   const best = records.best(state);
   el('best-record').textContent = best ? `この端末の最速 ${formatTicks(best.recordTicks)} · ${best.score.toLocaleString('ja-JP')}点`
     : records.status === 'future-version' ? '新しい形式の記録を保護しています'
@@ -133,6 +137,7 @@ function updateBestRecord() {
 }
 function syncMode() {
   clearInput(); app.dataset.mode = state.mode; controls.setMode(state.mode); settings.setActiveMode(state.mode);
+  el('rules-variant').textContent = state.rulesVersion === SUSPENDED_CAMPAIGN_RULES_VERSION ? '暫定版 · 竜火球停止' : '7陣地占領戦';
   el('normal-controls').hidden = state.mode !== 'normal'; el('friendly-fire-guide').hidden = state.mode !== 'normal';
   el('hud-mode').textContent = modeName(state.mode); el('result-mode').textContent = modeName(state.mode);
   syncInstructions(); updateBestRecord();
@@ -224,7 +229,8 @@ function showRecordStatus(status: RecordSaveStatus) {
       : status === 'session-only' ? '今回の記録を、このタブを閉じるまで残しました'
         : status === 'future-version' ? '新しい形式の記録を保護するため保存しません。「このタブだけ」で今回の記録を残せます'
           : status === 'unavailable' ? '記録を保存できませんでした。「このタブだけ」で今回の記録を残せます'
-            : performanceInterrupted ? '性能停止があったため、通常の最速記録には保存しません' : '敗北した出撃はクリア記録へ保存しません';
+            : state.rulesVersion === SUSPENDED_CAMPAIGN_RULES_VERSION ? '竜火球を停止した暫定版のため、最速記録には保存しません'
+              : performanceInterrupted ? '性能停止があったため、通常の最速記録には保存しません' : '敗北した出撃はクリア記録へ保存しません';
 }
 function finish() {
   const result = state.resultSnapshot; if (!result || screen === 'result') return;
