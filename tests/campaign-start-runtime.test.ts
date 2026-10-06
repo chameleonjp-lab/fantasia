@@ -49,14 +49,15 @@ async function appHarness() {
     deleteSync: fence => { if (fence) deleted.push(fence); },
   };
   class Scene {
-    queue = new RenderQueue(gl); camera = { aspect: 1 }; prepared = false; disposed = false; resets = 0;
+    queue = new RenderQueue(gl); camera = { aspect: 1 }; prepared = false; disposed = false; resets = 0; resizes = 0; renderAttempts = 0; lastState: any = null;
     submissions: Array<{ mode: string; tick: number; runId: string }> = [];
     constructor() { scene = this; }
     async prepare() { this.prepared = true; }
-    setOverlayVisible() {} resize() {} gunSight() { return { x: 0, y: 0 }; }
+    setOverlayVisible() {} resize() { this.resizes++; } gunSight() { return { x: 0, y: 0 }; }
     pollRender() { return this.queue.poll(now); }
     resetRenderQueue() { this.resets++; this.queue.reset(); }
     render(state: any, _player: unknown, mode: string) {
+      this.renderAttempts++; this.lastState = state;
       if (!this.prepared) return true;
       if (this.pollRender() !== 'ready') return false;
       this.submissions.push({ mode, tick: state.simTick, runId: state.runId });
@@ -85,7 +86,7 @@ async function appHarness() {
     three, './campaign': campaign, './campaign-config': config, './campaign-combat': combat,
     './campaign-flight': flight, './campaign-terrain': terrain, './flight': flightMath,
     './campaign-start': start, './campaign-scene': { CampaignScene: Scene }, './campaign-hud': { updateCampaignHud() {} },
-    './campaign-records': { CampaignRecords: class { status = 'ready'; best() { return null; } } },
+    './campaign-records': { CampaignRecords: class { status = 'ready'; best() { return null; } save() { return 'ineligible'; } } },
     './input': { FlightControls: Controls }, './control-settings': { ControlSettings: Settings },
     './keyboard-settings': { KeyboardSettings: Keys, ControlInputPresentation: Presentation },
     './rules-guide': { RulesGuide: Settings }, './audio': { FlightAudio: Audio },
@@ -218,4 +219,123 @@ test('a completion callback failure returns partial playing UI to failed prepara
   assert.equal(h.nodes.get('hud').hidden, true); assert.equal(h.nodes.get('home').hidden, false);
   assert.equal(h.nodes.get('reload').hidden, false); assert.equal(h.read().tick, 0); assert.equal(h.samples(), 0);
   h.frame(); assert.equal(h.read().tick, 0); assert.equal(h.controls.active(), false);
+});
+
+
+async function playingPending() {
+  const h = await selectedPending();
+  h.signal(); h.frame(); h.frame(200);
+  assert.equal(h.read().phase, 'playing');
+  assert.equal(h.read().render.queue.status, 'pending');
+  return h;
+}
+
+test('frame safety pause does not submit even on the same frame that acknowledges the preceding fence', async () => {
+  const h = await playingPending();
+  const submitted = h.scene.submissions.length, attempts = h.scene.renderAttempts;
+  h.signal(); h.frame(1000);
+  assert.equal(h.read().phase, 'paused'); assert.deepEqual(h.read().pauseReasons, ['frame']);
+  assert.equal(h.read().renderStatus, 'ready'); assert.equal(h.read().performanceInterrupted, true);
+  assert.equal(h.scene.submissions.length, submitted, 'the entering safety-pause frame must not replenish a drained queue');
+  assert.equal(h.scene.renderAttempts, attempts, 'paused frame must not enter scene updates or draw code');
+  const tick = h.read().tick;
+  for (let time = 1016; time < 2500; time += 16) h.frame(time);
+  assert.equal(h.scene.submissions.length, submitted); assert.equal(h.scene.renderAttempts, attempts);
+  assert.equal(h.read().tick, tick); assert.equal(h.nodes.get('resume').disabled, false);
+  assert.equal(h.controls.active(), false); assert.equal(h.audio.active, false);
+});
+
+test('render safety pause drains its existing fence and stays ready without auto-resume or stale input', async () => {
+  const h = await playingPending(); const submitted = h.scene.submissions.length, resets = h.scene.resets;
+  for (let time = 400; time <= 1400; time += 200) h.frame(time);
+  assert.deepEqual(h.read().pauseReasons, ['render']); assert.equal(h.nodes.get('resume').disabled, true);
+  const tick = h.read().tick, samples = h.samples(), attempts = h.scene.renderAttempts;
+  h.click('resume'); assert.equal(h.read().phase, 'paused');
+  h.frame(1600); assert.equal(h.scene.renderAttempts, attempts);
+  h.signal(); h.frame(1616);
+  assert.equal(h.read().renderStatus, 'ready'); assert.equal(h.nodes.get('resume').disabled, false);
+  assert.equal(h.scene.submissions.length, submitted); assert.equal(h.scene.resets, resets);
+  assert.match(h.nodes.get('pause-reason').textContent, /描画が復帰しました/);
+  h.frame(5000); assert.equal(h.read().phase, 'paused'); assert.equal(h.read().tick, tick);
+  assert.equal(h.samples(), samples); assert.equal(h.scene.submissions.length, submitted);
+  h.controls.pending = true; h.click('resume');
+  assert.equal(h.read().phase, 'playing'); assert.deepEqual(h.read().pauseReasons, []);
+  assert.equal(h.controls.pending, false); assert.equal(h.read().performanceInterrupted, true);
+  h.frame(8000); assert.equal(h.read().tick, tick, 'deliberate resume starts a fresh clock');
+  assert.equal(h.scene.submissions.length, submitted + 1);
+  h.signal(); h.frame(8017); assert.equal(h.read().tick, tick + 1);
+  assert.equal(h.audit().entries.at(-1).input.loop, false); assert.equal(h.audit().entries.at(-1).input.bomb, false);
+});
+
+for (const target of ['window', 'visualViewport'] as const) {
+  test(`${target} resize pauses and updates dimensions without a paused redraw, then explicit resume draws`, async () => {
+    const h = await playingPending(); const submitted = h.scene.submissions.length, resizes = h.scene.resizes;
+    const eventTarget = target === 'window' ? h.win : h.win.visualViewport;
+    eventTarget.fire('resize'); assert.equal(h.read().phase, 'paused');
+    assert.equal(h.scene.resizes, resizes + 1); assert.deepEqual(h.read().pauseReasons, ['resize']);
+    h.signal(); h.frame(); h.frame();
+    assert.equal(h.scene.submissions.length, submitted); assert.equal(h.nodes.get('resume').disabled, false);
+    assert.equal(h.nodes.get('pause-screen').hidden, false);
+    h.click('resume'); h.frame(); assert.equal(h.scene.submissions.length, submitted + 1);
+  });
+}
+
+test('context restoration clears only the lost-context queue and waits for explicit resume before drawing', async () => {
+  const h = await playingPending(); const submitted = h.scene.submissions.length, resets = h.scene.resets;
+  h.contextLost(); h.frame(); assert.equal(h.read().phase, 'paused'); assert.equal(h.scene.resets, resets);
+  assert.equal(h.nodes.get('resume').disabled, true); h.click('resume'); assert.equal(h.read().phase, 'paused');
+  h.contextRestored(); h.frame(); h.frame();
+  assert.equal(h.scene.resets, resets + 1); assert.equal(h.scene.submissions.length, submitted);
+  assert.equal(h.read().renderStatus, 'ready'); assert.equal(h.nodes.get('resume').disabled, false);
+  assert.equal(h.nodes.get('pause-screen').hidden, false); assert.equal(h.read().tick, 0);
+  h.click('resume'); h.frame(); assert.equal(h.scene.submissions.length, submitted + 1);
+});
+
+test('explicit Home leaves drain-only pause and renders the new run without retaining the paused scene', async () => {
+  const h = await playingPending(); const previousRun = h.scene.submissions.at(-1)!.runId;
+  h.click('pause'); h.signal(); h.frame(); const submitted = h.scene.submissions.length;
+  h.click('pause-home'); assert.equal(h.read().phase, 'ready');
+  assert.equal(h.nodes.get('pause-screen').hidden, true); assert.equal(h.nodes.get('home').hidden, false);
+  h.frame(); assert.equal(h.scene.submissions.length, submitted + 1);
+  assert.notEqual(h.scene.submissions.at(-1)!.runId, previousRun); assert.equal(h.scene.submissions.at(-1)!.tick, 0);
+  assert.equal(h.scene.resets, 0); assert.equal(h.read().pauseCount, 0);
+});
+
+test('explicit Restart from stalled pause drains the old fence before submitting exactly one selected frame', async () => {
+  const h = await playingPending(); const previousRun = h.scene.submissions.at(-1)!.runId;
+  for (let time = 400; time <= 1400; time += 200) h.frame(time);
+  const submitted = h.scene.submissions.length;
+  h.click('pause-restart'); assert.equal(h.read().phase, 'preparing');
+  h.frame(1600); assert.equal(h.scene.submissions.length, submitted); assert.equal(h.read().tick, 0);
+  h.signal(); h.frame(); assert.equal(h.scene.submissions.length, submitted);
+  h.frame(); assert.equal(h.scene.submissions.length, submitted + 1);
+  assert.notEqual(h.scene.submissions.at(-1)!.runId, previousRun); assert.equal(h.scene.resets, 0);
+  h.frame(); assert.equal(h.read().phase, 'preparing');
+  h.signal(); h.frame(); assert.equal(h.read().phase, 'playing'); assert.equal(h.read().tick, 0);
+});
+
+test('failed live fence leaves reload available and cannot be resumed or resubmitted by paused frames', async () => {
+  const h = await playingPending(); const submitted = h.scene.submissions.length, attempts = h.scene.renderAttempts;
+  h.failWait(); h.frame(); assert.equal(h.read().phase, 'paused');
+  assert.equal(h.read().renderStatus, 'failed'); assert.equal(h.nodes.get('pause-reload').hidden, false);
+  assert.equal(h.nodes.get('resume').disabled, true); h.click('resume'); h.frame();
+  assert.equal(h.read().phase, 'paused'); assert.equal(h.scene.submissions.length, submitted);
+  assert.equal(h.scene.renderAttempts, attempts); assert.equal(h.scene.resets, 0);
+});
+
+
+test('result transition still renders its final scene and can return Home after the paused-render guard', async () => {
+  const h = await playingPending(); const submitted = h.scene.submissions.length;
+  // Explicit simulation fixture: the real next campaign step finalizes defeat.
+  // This reference exists only in the scene double, never in production hooks.
+  h.scene.lastState.livesRemaining = 0;
+  h.signal(); h.frame(217);
+  assert.equal(h.read().phase, 'ended'); assert.equal(h.nodes.get('result').hidden, false);
+  assert.equal(h.nodes.get('pause-screen').hidden, true); assert.equal(h.nodes.get('hud').hidden, true);
+  assert.equal(h.scene.submissions.length, submitted + 1);
+  const tick = h.read().tick;
+  h.signal(); h.frame(233); assert.equal(h.scene.submissions.length, submitted + 2);
+  assert.equal(h.read().tick, tick, 'result presentation must not advance simulation');
+  h.click('result-home'); h.signal(); h.frame(); assert.equal(h.read().phase, 'ready');
+  assert.equal(h.nodes.get('result').hidden, true); assert.equal(h.scene.submissions.at(-1)!.tick, 0);
 });

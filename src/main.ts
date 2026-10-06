@@ -374,9 +374,13 @@ function frame() {
     if (pauseReasons.has('render') && renderStatus === 'ready') el('pause-reason').textContent = '描画が復帰しました。操作して再開できます。この出撃は最速記録には保存しません';
   }
   updateHUD();
-  if (scene && !contextLost) {
+  // A paused scene drains its existing fence without replenishing GPU work.
+  // Check the current screen here: this frame may just have entered safety pause.
+  // Keep rAF/polling and DOM recovery controls alive; resize/context restoration
+  // may clear the canvas, but drawing waits for deliberate Resume/Home/Restart.
+  if (scene && !contextLost && screen !== 'paused') {
     try {
-      scene.setOverlayVisible(screen === 'playing' || screen === 'paused'); scene.render(state, player, state.mode, screen === 'playing' ? dt : 0);
+      scene.setOverlayVisible(screen === 'playing'); scene.render(state, player, state.mode, screen === 'playing' ? dt : 0);
       if (scene.diagnostics().queue.status === 'failed') {
         renderStatus = 'failed'; if (screen === 'home') preparationFailed(new Error('GPU frame completion unavailable')); else if (screen === 'playing') { performanceInterrupted = true; pause('render-failed'); }
       }
