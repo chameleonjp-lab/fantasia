@@ -35,6 +35,13 @@ function traceFactorSchedule() {
   }));
 }
 
+function samplerFactorSchedule() {
+  return [true, false, false, true].map((periodicSample, ordinal) => ({
+    scenario: SCENARIOS[1], profile: 'light' as const, ref: 'main' as const,
+    ordinal, periodicSample, phase: 'sampler-factor' as const, traceEnabled: false,
+  }));
+}
+
 function allowedOrigin(url: string, origin: string) {
   try { return new URL(url).origin === origin; } catch { return false; }
 }
@@ -66,7 +73,7 @@ function installProbe(intervalMs: number) {
     if (!stopped) raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
-  const timer = setInterval(() => take('periodic'), intervalMs);
+  const timer = intervalMs > 0 ? setInterval(() => take('periodic'), intervalMs) : undefined;
   let observer: PerformanceObserver | undefined;
   if (PerformanceObserver.supportedEntryTypes.includes('longtask')) {
     observer = new PerformanceObserver(list => {
@@ -79,7 +86,7 @@ function installProbe(intervalMs: number) {
     take, project,
     stage(value: string) { stage = value; },
     finish() {
-      take('final'); stopped = true; clearInterval(timer); cancelAnimationFrame(raf); observer?.disconnect();
+      take('final'); stopped = true; if (timer !== undefined) clearInterval(timer); cancelAnimationFrame(raf); observer?.disconnect();
       return { timeOrigin: performance.timeOrigin, samples, frames, longTasks,
         limitsReached: { samples: samples.length >= 240, frames: frames.length >= 8000, longTasks: longTasks.length >= 1000 } };
     },
@@ -124,17 +131,18 @@ function safetyProblems(s: any) {
 
 async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], profile: Profile,
   ref: keyof typeof REFS, ordinal: number,
-  options: { phase: 'trace-factor'; traceEnabled: boolean } | undefined = undefined) {
+  options: { phase: 'trace-factor' | 'sampler-factor'; traceEnabled: boolean; periodicSample?: boolean } | undefined = undefined) {
   const phase = options?.phase ?? 'source-load-comparison';
   const traceEnabled = options?.traceEnabled ?? true;
-  const id = options ? `${scenario.name}-${phase}-${profile}-${ordinal}-${ref}-trace-${traceEnabled ? 'on' : 'off'}`
+  const periodicSample = options?.periodicSample ?? true;
+  const id = options ? `${scenario.name}-${phase}-${profile}-${ordinal}-${ref}-trace-${traceEnabled ? 'on' : 'off'}${phase === 'sampler-factor' ? `-sample-${periodicSample ? 'on' : 'off'}` : ''}`
     : `${scenario.name}-${profile}-${ordinal}-${ref}`;
   const origin = REFS[ref].origin, websocketOrigin = origin.replace('http:', 'ws:');
   const blocked: string[] = [], errors: string[] = [], actions: any[] = [];
   const report: any = { id, phase, ref: REFS[ref], order: ordinal, scenario, profile,
     gameAcceptance: 'NOT EVALUATED: diagnostic collection is not a game acceptance pass',
     hostBefore: { epochMs: Date.now(), loadavg: loadavg(), freeMemory: freemem() },
-    requestedWarmupMs: WARMUP_MS, requestedWindowMs: WINDOW_MS, commonSampleMs: SAMPLE_MS,
+    requestedWarmupMs: WARMUP_MS, requestedWindowMs: WINDOW_MS, commonSampleMs: periodicSample ? SAMPLE_MS : null,
     textScale: '100%; this is not the existing 200% reachability test', actions, blocked, errors };
   const context = await browser.newContext({ viewport: { width: scenario.width, height: scenario.height },
     isMobile: scenario.isMobile, hasTouch: scenario.hasTouch, deviceScaleFactor: 1, serviceWorkers: 'block' });
@@ -153,7 +161,7 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
   if (traceEnabled) await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
   report.trace = { enabled: traceEnabled, screenshots: traceEnabled, snapshots: traceEnabled, sources: traceEnabled,
     retained: traceEnabled ? 'every enabled diagnostic cell' : 'intentionally not collected; no trace start or stop call' };
-  await context.addInitScript(installProbe, SAMPLE_MS);
+  await context.addInitScript(installProbe, periodicSample ? SAMPLE_MS : 0);
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
   page.on('pageerror', error => errors.push(String(error)));
@@ -254,7 +262,7 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
     await writeFile(`${OUTPUT}/${id}.json`, JSON.stringify(report, null, 2));
     await context.close();
   }
-  return { id, phase, traceEnabled, traceExpected: traceEnabled, ref, profile, scenario: scenario.name, experimentError: report.experimentError ?? null,
+  return { id, phase, periodicSample, periodicSampleCount: report.timeline?.samples.filter((sample: any) => sample.label === 'periodic').length ?? null, traceEnabled, traceExpected: traceEnabled, ref, profile, scenario: scenario.name, experimentError: report.experimentError ?? null,
     finalObservationError: report.finalObservationError ?? null, traceError: report.traceError ?? null, blockedRequests: blocked.length,
     safety: report.flightSafety ?? null, seed: report.seed ?? null };
 }
@@ -325,5 +333,45 @@ test('PR5 trace factor diagnosis only, four flights, not game acceptance', async
   }
   expect(cells).toHaveLength(4);
   expect(cells.map(cell => cell.traceEnabled)).toEqual([true, false, false, true]);
+  expect(cells.filter(cell => cell.experimentError || cell.finalObservationError || cell.traceError || cell.blockedRequests)).toEqual([]);
+});
+
+
+// Third phase: remove only recurring full-state clones. Initial, final and
+// boundary reads remain identical, as do passive rAF and long-task observation.
+test('PR5 sampler factor diagnosis only, four flights, not game acceptance', async ({ browser }, testInfo) => {
+  test.setTimeout(5 * 60 * 1000);
+  await mkdir(OUTPUT, { recursive: true });
+  const environment = { browserVersion: browser.version(), node: process.version, platform: process.platform,
+    runnerTimeOrigin: performance.timeOrigin, osRelease: release(), cpuModels: [...new Set(cpus().map(cpu => cpu.model))], cpuCount: cpus().length,
+    project: testInfo.project.name, launchOptions: testInfo.project.use.launchOptions,
+    workerIndex: testInfo.workerIndex, startedAt: new Date().toISOString() };
+  const cells: any[] = [];
+  for (const cell of samplerFactorSchedule()) {
+    cells.push(await runCell(browser, cell.scenario, cell.profile, cell.ref, cell.ordinal,
+      { phase: cell.phase, traceEnabled: false, periodicSample: cell.periodicSample }));
+    await writeFile(`${OUTPUT}/summary-sampler-factor.json`, JSON.stringify({
+      phase: 'sampler-factor', environment, cells, expectedCells: 4, gameAcceptance: 'NOT EVALUATED',
+      fixedSource: REFS.main, onlyChangedFactor: 'recurring full-state sampler enabled', order: ['on', 'off', 'off', 'on'],
+      fixedInputs: { viewport: SCENARIOS[1], textScale: '100%', profile: 'light', traceEnabled: false,
+        requestedWarmupMs: WARMUP_MS, requestedWindowMs: WINDOW_MS },
+      interpretation: [
+        'Trace is disabled in every cell; periodic sampling alone changes, including preparation.',
+        'Each cell uses the same source, seed and fresh context without resume or retry.',
+        'Sampler-off still has identical initial, boundary and final state reads and passive rAF/longtask observation.',
+        'Sampler-off has fewer state samples; its allObservedLive does not prove continuous safety.',
+        'Final phase, retained interruption, pause reasons and frame/fence timing are primary outcomes.',
+        'If both sampler-off cells stop, recurring full-state clones are not necessary for those stops.',
+        'Both off cells surviving with both on cells stopping supports sampler contribution in this runner/scene only; mixed results are inconclusive.',
+        'Collection success is not game acceptance or release approval.',
+      ],
+    }, null, 2));
+  }
+  expect(cells).toHaveLength(4);
+  expect(cells.map(cell => cell.periodicSample)).toEqual([true, false, false, true]);
+  expect(cells.every(cell => cell.traceEnabled === false)).toBe(true);
+  expect(cells.every(cell => cell.periodicSample ? cell.periodicSampleCount > 0 : cell.periodicSampleCount === 0)).toBe(true);
+  expect(cells.every(cell => JSON.stringify(cell.seed) === JSON.stringify(cells[0].seed))).toBe(true);
+  expect(cells[0].seed?.seed).toBe(20261005);
   expect(cells.filter(cell => cell.experimentError || cell.finalObservationError || cell.traceError || cell.blockedRequests)).toEqual([]);
 });
