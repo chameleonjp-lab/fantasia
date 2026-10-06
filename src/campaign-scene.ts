@@ -1,11 +1,11 @@
 import {
   ACESFilmicToneMapping, BackSide, BoxGeometry, BufferAttribute, BufferGeometry,
   CircleGeometry, Color, ConeGeometry, CylinderGeometry, DirectionalLight,
-  DoubleSide, DynamicDrawUsage, Fog, Group, HemisphereLight, InstancedMesh,
+  DoubleSide, DynamicDrawUsage, Fog, Frustum, Group, HemisphereLight, InstancedMesh,
   LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshBasicMaterial,
   MeshStandardMaterial, OctahedronGeometry, PerspectiveCamera, PlaneGeometry,
   Points, Quaternion, Scene, ShaderMaterial, SphereGeometry, SRGBColorSpace,
-  TorusGeometry, Vector3, WebGLRenderer, type Material,
+  TorusGeometry, Vector3, WebGLRenderer, type Material, type Sphere,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { AircraftFactory, type AircraftVisual } from './aircraft';
@@ -253,6 +253,44 @@ function roadGeometry(points: readonly { x: number; z: number }[], width = 11): 
 interface SiteVisual { root: Group; flag: Mesh; turret: Group; crystal: Mesh; }
 interface Particle { position: Vector3; velocity: Vector3; born: number; life: number; color: Color; size: number; }
 
+/** Reject only a rigid ground model whose entire bound is outside a side clip plane.
+ * The Frobenius norm bounds any affine scale/shear/reflection conservatively.
+ * Unknown inputs and a scale-relative boundary margin always retain the model.
+ * Depth-only exclusions are retained: Float32 projection can shift the far
+ * clip boundary substantially when the near/far ratio is very small.
+ */
+export function groundInstanceOutsideView(bounds: Sphere | null, matrix: Matrix4, view: Frustum): boolean {
+  if (!bounds || !Number.isFinite(bounds.radius) || bounds.radius < 0
+    || !Number.isFinite(bounds.center.x) || !Number.isFinite(bounds.center.y) || !Number.isFinite(bounds.center.z)) return false;
+  const e = matrix.elements;
+  if (e.length !== 16 || e[3] !== 0 || e[7] !== 0 || e[11] !== 0 || e[15] !== 1 || view.planes.length !== 6) return false;
+  for (const value of e) if (!Number.isFinite(value) || !Number.isFinite(Math.fround(value))) return false;
+  const x = e[0] * bounds.center.x + e[4] * bounds.center.y + e[8] * bounds.center.z + e[12];
+  const y = e[1] * bounds.center.x + e[5] * bounds.center.y + e[9] * bounds.center.z + e[13];
+  const z = e[2] * bounds.center.x + e[6] * bounds.center.y + e[10] * bounds.center.z + e[14];
+  const radius = bounds.radius * Math.hypot(e[0], e[1], e[2], e[4], e[5], e[6], e[8], e[9], e[10]);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !Number.isFinite(radius)) return false;
+  // Also covers rounding the submitted instance matrix to Float32 attributes.
+  // Include uncancelled terms: a large local offset and opposite translation
+  // can lose precision even if the final world-space center is near zero.
+  const margin = 1e-6 * Math.max(1, radius,
+    Math.abs(e[0] * bounds.center.x) + Math.abs(e[4] * bounds.center.y) + Math.abs(e[8] * bounds.center.z) + Math.abs(e[12]),
+    Math.abs(e[1] * bounds.center.x) + Math.abs(e[5] * bounds.center.y) + Math.abs(e[9] * bounds.center.z) + Math.abs(e[13]),
+    Math.abs(e[2] * bounds.center.x) + Math.abs(e[6] * bounds.center.y) + Math.abs(e[10] * bounds.center.z) + Math.abs(e[14]));
+  let outside = false;
+  for (let index = 0; index < view.planes.length; index++) {
+    const plane = view.planes[index];
+    const n = plane.normal, length = Math.hypot(n.x, n.y, n.z);
+    if (!Number.isFinite(length) || length === 0 || !Number.isFinite(plane.constant)) return false;
+    const distance = n.x * x + n.y * y + n.z * z + plane.constant;
+    if (!Number.isFinite(distance)) return false;
+    // Three's first four planes are right/left/bottom/top. Validate near/far
+    // too, but never reject using their numerically sensitive depth boundary.
+    if (index < 4) outside ||= distance < -(radius + margin) * length;
+  }
+  return outside;
+}
+
 /** Presentation adapter. Neither a frame nor a diagnostics read advances the campaign. */
 export class CampaignScene {
   readonly renderer: WebGLRenderer;
@@ -284,6 +322,8 @@ export class CampaignScene {
   private readonly pointOpacity = new Float32Array(EFFECT_CAPACITY + PROJECTILE_CAPACITY);
   private readonly pointGeometry: BufferGeometry;
   private readonly sky: Mesh;
+  private readonly groundView = new Frustum();
+  private readonly viewProjection = new Matrix4();
   private readonly tempMatrix = new Matrix4();
   private readonly tempRotation = new Quaternion();
   private readonly tempPosition = new Vector3();
@@ -474,6 +514,7 @@ export class CampaignScene {
     this.hero.elevator.rotation.x = Math.max(-.26, Math.min(.26, -player.pitch * .32));
     getFlightCameraPose(player, mode, this.camera.position, this.camera.quaternion);
     this.camera.updateMatrixWorld(); this.sky.position.copy(this.camera.position);
+    this.groundView.setFromProjectionMatrix(this.viewProjection.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     this.updateActors(state);
     this.updateProjectiles(state);
     this.updateTelegraphs(state);
@@ -491,7 +532,7 @@ export class CampaignScene {
       ? predictAim(actor.position, target, ACTOR_STATS[actor.class].projectileSpeed) : target.position;
   }
   private updateActors(state: CampaignState) {
-    const counts = new Map<string, number>(); let shadowCount = 0, dragons = 0;
+    const counts = new Map<string, number>(), admitted = new Map<string, number>(); let shadowCount = 0, dragons = 0;
     const actorsById = new Map(state.actors.map(actor => [actor.id, actor]));
     for (const site of state.sites) {
       const visual = this.siteVisuals.get(site.id) ?? this.createSite(site.id, site.position);
@@ -525,13 +566,22 @@ export class CampaignScene {
       }
       const key = `${actor.team}:${actor.class}`, mesh = this.ground.get(key);
       if (!mesh) continue;
-      const count = counts.get(key) ?? 0; if (count >= GROUND_CAPACITY) continue;
+      // Keep the original capacity-limited actor prefix, before view rejection.
+      const admission = admitted.get(key) ?? 0; if (admission >= GROUND_CAPACITY) continue;
+      admitted.set(key, admission + 1);
       const target = this.targetPosition(state, actor);
       let dx = actor.velocity.x, dz = actor.velocity.z;
       if (dx * dx + dz * dz < .01 && target) { dx = target.x - actor.position.x; dz = target.z - actor.position.z; }
       if (dx * dx + dz * dz < .01) { const site = state.sites[actor.assignedSiteId]; dx = site.position.x - actor.position.x; dz = site.position.z - actor.position.z; }
       this.tempRotation.setFromAxisAngle(this.up, Math.atan2(-dx, -dz));
-      this.tempMatrix.compose(this.tempPosition, this.tempRotation, this.tempScale); mesh.setMatrixAt(count, this.tempMatrix); counts.set(key, count + 1);
+      this.tempMatrix.compose(this.tempPosition, this.tempRotation, this.tempScale);
+      // Ground models are rigid opaque geometry, without shader deformation,
+      // reflection passes or shadow maps. Their separate circle shadows below
+      // remain submitted even when the body is wholly outside the camera.
+      if (!groundInstanceOutsideView(mesh.geometry.boundingSphere, this.tempMatrix, this.groundView)) {
+        const count = counts.get(key) ?? 0;
+        mesh.setMatrixAt(count, this.tempMatrix); counts.set(key, count + 1);
+      }
       this.tempPosition.y = heightAt(actor.position.x, actor.position.z) + .14;
       this.tempScale.set(actor.class === 'cavalry' ? 2 : .82, 1, actor.class === 'cavalry' ? 2.5 : .82);
       this.tempMatrix.compose(this.tempPosition, this.tempRotation, this.tempScale); this.shadows.setMatrixAt(shadowCount++, this.tempMatrix);
@@ -790,7 +840,7 @@ export class CampaignScene {
     return { queue: this.renderQueue.diagnostics(performance.now()), calls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles, geometries: this.renderer.info.memory.geometries,
       textures: this.renderer.info.memory.textures, particles: this.particles.length,
-      ground: [...this.ground.values()].reduce((n, mesh) => n + mesh.count, 0), dragons: this.dragonBodies.count,
+      ground: this.shadows.count, groundSubmitted: [...this.ground.values()].reduce((n, mesh) => n + mesh.count, 0), dragons: this.dragonBodies.count,
       sites: this.siteVisuals.size, width: this.width, height: this.height, pixelRatio: this.renderer.getPixelRatio(),
       aircraftTracers: this.aircraftTracers.diagnostics(), hudLayout: this.hudLayout.diagnostics() };
   }

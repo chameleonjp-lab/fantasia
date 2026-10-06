@@ -2,10 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   BoxGeometry, BufferAttribute, BufferGeometry, Color, ConeGeometry,
-  CylinderGeometry, OctahedronGeometry, SphereGeometry, TorusGeometry,
+  CylinderGeometry, Euler, Frustum, InstancedMesh, Matrix4, MeshStandardMaterial,
+  OctahedronGeometry, PerspectiveCamera, Plane, Quaternion, Sphere, SphereGeometry,
+  TorusGeometry, Vector3,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { GeometryBuilder } from '../src/campaign-scene';
+import { CampaignScene, GeometryBuilder, groundInstanceOutsideView } from '../src/campaign-scene';
+import { makeCampaignActor } from '../src/campaign';
+import { heightAt } from '../src/campaign-terrain';
 
 interface Part {
   geometry: BufferGeometry;
@@ -136,4 +140,179 @@ test('campaign builder retains source disposal and can start a fresh geometry af
     assert.equal(a.getAttribute('position').count, firstCount);
     assert.equal(b.getAttribute('position').count, secondCount, 'finish clears the earlier pieces');
   } finally { a.dispose(); b.dispose(); }
+});
+
+function cubeView(): Frustum {
+  return new Frustum(
+    new Plane(new Vector3(1, 0, 0), 1), new Plane(new Vector3(-1, 0, 0), 1),
+    new Plane(new Vector3(0, 1, 0), 1), new Plane(new Vector3(0, -1, 0), 1),
+    new Plane(new Vector3(0, 0, 1), 1), new Plane(new Vector3(0, 0, -1), 1),
+  );
+}
+
+test('ground view rejection retains intersections, tangencies, boundary epsilon and depth-only exclusions', () => {
+  const view = cubeView(), bounds = new Sphere(new Vector3(), .1), matrix = new Matrix4();
+  assert.equal(groundInstanceOutsideView(bounds, matrix, view), false);
+  for (let axis = 0; axis < 3; axis++) for (const sign of [-1, 1]) {
+    const position = new Vector3();
+    for (const distance of [1.05, 1 + Math.sqrt(3) * .1, 1 + Math.sqrt(3) * .1 + 1e-7]) {
+      position.setComponent(axis, sign * distance); matrix.makeTranslation(position);
+      assert.equal(groundInstanceOutsideView(bounds, matrix, view), false, 'keep a crossing/tangent/epsilon-near sphere');
+    }
+    position.setComponent(axis, sign * (1 + Math.sqrt(3) * .1 + .001)); matrix.makeTranslation(position);
+    assert.equal(groundInstanceOutsideView(bounds, matrix, view), axis < 2,
+      'reject only beyond a side plane; retain depth-only exclusions');
+  }
+  const offset = new Sphere(new Vector3(40, 0, 0), .1);
+  assert.equal(groundInstanceOutsideView(offset, new Matrix4().makeTranslation(-40, 0, 0), view), false, 'transform the authored center, not just the actor origin');
+  assert.equal(groundInstanceOutsideView(offset, new Matrix4(), view), true);
+  assert.equal(groundInstanceOutsideView(new Sphere(new Vector3(1e8 + 1.1, 0, 0), .01),
+    new Matrix4().makeTranslation(-1e8, 0, 0), view), false, 'cancellation uncertainty retains the model');
+});
+
+function shaderClip(camera: PerspectiveCamera, matrix: Matrix4, vertex: Vector3): number[] {
+  // Model the uploaded Float32 uniforms/attributes and shader arithmetic,
+  // separately multiplying instance, model-view and projection matrices.
+  const multiply = (transform: Matrix4, input: readonly number[]) => [0, 1, 2, 3].map(row => {
+    let value = 0;
+    for (let column = 0; column < 4; column++) value = Math.fround(value
+      + Math.fround(Math.fround(transform.elements[column * 4 + row]) * input[column]));
+    return value;
+  });
+  return multiply(camera.projectionMatrix, multiply(camera.matrixWorldInverse,
+    multiply(matrix, [Math.fround(vertex.x), Math.fround(vertex.y), Math.fround(vertex.z), 1])));
+}
+
+test('Float32 near/far clip uncertainty never removes depth-only ground models', () => {
+  const camera = new PerspectiveCamera(64, 1440 / 900, .5, 22000); camera.updateMatrixWorld();
+  const view = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+  const bounds = new Sphere(new Vector3(), .001);
+  for (const z of [-.49999999, -.5, -.50000001, -21999, -22000, -22010, -22020, -24000]) {
+    assert.equal(groundInstanceOutsideView(bounds, new Matrix4().makeTranslation(0, 0, z), view), false,
+      `retain uncertain or fully depth-clipped model at ${z}`);
+  }
+  const matrix = new Matrix4().makeTranslation(0, 0, -22010), clip = shaderClip(camera, matrix, new Vector3());
+  assert.ok(view.planes[4].distanceToPoint(new Vector3(0, 0, -22010)) < 0, 'CPU far plane says outside');
+  assert.ok(clip[2] <= clip[3], 'Float32 shader retains a point beyond the CPU far plane');
+  assert.equal(groundInstanceOutsideView(bounds, matrix, view), false);
+});
+
+test('unknown ground bounds, matrices and clip planes fail open', () => {
+  const outside = new Matrix4().makeTranslation(100, 0, 0), valid = new Sphere(new Vector3(), 1);
+  for (const bounds of [null, new Sphere(new Vector3(), NaN), new Sphere(new Vector3(), Infinity),
+    new Sphere(new Vector3(), -1), new Sphere(new Vector3(NaN, 0, 0), 1)]) {
+    assert.equal(groundInstanceOutsideView(bounds, outside, cubeView()), false);
+  }
+  for (const bad of [NaN, Infinity, -Infinity, 1e40]) {
+    const matrix = outside.clone(); matrix.elements[5] = bad;
+    assert.equal(groundInstanceOutsideView(valid, matrix, cubeView()), false);
+  }
+  const projective = outside.clone(); projective.elements[3] = .01;
+  assert.equal(groundInstanceOutsideView(valid, projective, cubeView()), false);
+  for (const bad of [NaN, Infinity]) {
+    const view = cubeView(); view.planes[5].constant = bad;
+    assert.equal(groundInstanceOutsideView(valid, outside, view), false, 'a later invalid plane overrides an earlier outside result');
+  }
+  const noNormal = cubeView(); noNormal.planes[5].normal.set(0, 0, 0);
+  assert.equal(groundInstanceOutsideView(valid, outside, noNormal), false);
+});
+
+test('every rejected transformed primitive is wholly beyond one clip plane, including the uploaded Float32 matrix', () => {
+  let rejected = 0, retained = 0;
+  const poses = [new Euler(), new Euler(.4, .8, .9), new Euler(Math.PI, -.7, -.6)];
+  const positions = [[0, 0, -20], [1000, 0, -20], [-1000, 0, -20], [0, 1000, -20],
+    [0, -1000, -20], [0, 0, 20], [0, 0, -.1], [0, 0, -24000], [0, 0, -21999]];
+  for (const aspect of [320 / 568, 393 / 852, 852 / 393, 1440 / 900]) for (const pose of poses) {
+    const camera = new PerspectiveCamera(64, aspect, .5, 22000);
+    camera.position.set(12, 311, -57); camera.quaternion.setFromEuler(pose); camera.updateMatrixWorld();
+    const view = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    for (const [, make] of primitives) {
+      const geometry = make(); geometry.translate(7, 2, -3); geometry.computeBoundingSphere();
+      const attribute = geometry.getAttribute('position');
+      for (const [i, position] of positions.entries()) {
+        const local = new Matrix4().compose(new Vector3(...position),
+          new Quaternion().setFromEuler(new Euler(i * .13, i * -.17, i * .11)), new Vector3(i % 2 ? -2 : 1, .6, 1.4));
+        // Include affine shear: the norm bound must still enclose every vertex.
+        if (i % 3 === 0) local.elements[4] += .45;
+        const matrix = new Matrix4().multiplyMatrices(camera.matrixWorld, local);
+        if (!groundInstanceOutsideView(geometry.boundingSphere, matrix, view)) { retained++; continue; }
+        rejected++;
+        for (const transform of [matrix, new Matrix4().fromArray(Float32Array.from(matrix.elements))]) {
+          const vertices = Array.from({ length: attribute.count }, (_, vertex) =>
+            new Vector3().fromBufferAttribute(attribute, vertex).applyMatrix4(transform));
+          assert.ok(view.planes.slice(0, 4).some(plane => vertices.every(vertex => plane.distanceToPoint(vertex) < 0)),
+            'every original vertex and hence every triangle is beyond the same clip plane');
+        }
+        const clips = Array.from({ length: attribute.count }, (_, vertex) =>
+          shaderClip(camera, matrix, new Vector3().fromBufferAttribute(attribute, vertex)));
+        const sideDistances = clips.map(([x, y, , w]) => [w - x, w + x, w + y, w - y]);
+        assert.ok([0, 1, 2, 3].some(side => sideDistances.every(distances => distances[side] < 0)),
+          'all original vertices remain outside one common side plane under Float32 shader projection');
+      }
+      geometry.dispose();
+    }
+  }
+  assert.ok(rejected > 0); assert.ok(retained > 0, 'the fixtures exercise both branches');
+});
+
+test('ground compaction preserves original capacity admission, visible matrix order, shadows and campaign state', () => {
+  const geometry = new BoxGeometry(1.7, 2.1, 3.2); geometry.translate(.7, 1.5, -.2); geometry.computeBoundingSphere();
+  const material = new MeshStandardMaterial({ vertexColors: true });
+  const ground = new Map(['friendly:sword', 'friendly:bow'].map(key => [key, new InstancedMesh(geometry, material, 224)]));
+  const shadows = new InstancedMesh(geometry, material, 448);
+  const camera = new PerspectiveCamera(64, 1440 / 900, .5, 22000); camera.updateMatrixWorld();
+  const view = new Frustum().setFromProjectionMatrix(new Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+  const actors = Array.from({ length: 260 }, (_, id) => {
+    const actor = makeCampaignActor(id + 1, 'friendly', 'sword', 0, 0, { x: 0, y: 0, z: id < 200 ? 100 : -100 - id * .01 });
+    actor.velocity.z = -1; return actor;
+  });
+  for (let i = 0; i < 3; i++) {
+    const bow = makeCampaignActor(300 + i, 'friendly', 'bow', 0, 0, { x: i, y: 0, z: -100 }); bow.velocity.z = -1;
+    actors.splice(i * 51, 0, bow);
+  }
+  const dead = makeCampaignActor(400, 'friendly', 'sword', 0, 0, { x: 0, y: 0, z: -100 }); dead.hp = 0; actors.unshift(dead);
+  const state = { actors, sites: [] }, before = JSON.stringify(state);
+  for (const actor of actors) {
+    Object.freeze(actor.position); Object.freeze(actor.previous); Object.freeze(actor.velocity); Object.freeze(actor);
+  }
+  Object.freeze(actors); Object.freeze(state.sites); Object.freeze(state);
+  // Exercise the actual adapter method without constructing a browser/renderer.
+  const scene = Object.assign(Object.create(CampaignScene.prototype), {
+    ground, shadows, groundView: view, siteVisuals: new Map(), dragonBodies: { count: 0, instanceMatrix: {} },
+    dragonWings: { count: 0, instanceMatrix: {} }, tempMatrix: new Matrix4(), tempRotation: new Quaternion(),
+    tempPosition: new Vector3(), tempScale: new Vector3(), up: new Vector3(0, 1, 0),
+  });
+  const admitted = new Map<string, number>(), expected = new Map<string, number[][]>(), expectedShadows: number[][] = [];
+  for (const actor of actors) {
+    if (actor.hp <= 0) continue;
+    const key = `${actor.team}:${actor.class}`, count = admitted.get(key) ?? 0;
+    if (count >= 224) continue;
+    admitted.set(key, count + 1);
+    const position = new Vector3(actor.position.x, actor.position.y, actor.position.z);
+    const rotation = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), Math.atan2(-actor.velocity.x, -actor.velocity.z));
+    const matrix = new Matrix4().compose(position, rotation, new Vector3(1, 1, 1));
+    // Fixture's positive-Z actors are fully behind the camera; negative-Z actors
+    // are fully inside it. This oracle does not call the rejection helper.
+    if (actor.position.z < 0) {
+      const matrices = expected.get(key) ?? []; matrices.push(Array.from(Float32Array.from(matrix.elements))); expected.set(key, matrices);
+    }
+    position.y = heightAt(position.x, position.z) + .14;
+    matrix.compose(position, rotation, new Vector3(.82, 1, .82));
+    expectedShadows.push(Array.from(Float32Array.from(matrix.elements)));
+  }
+  try {
+    scene.updateActors(state);
+    assert.equal(JSON.stringify(state), before, 'rendering never rewrites the campaign or its actors');
+    assert.equal(ground.get('friendly:sword')!.count, 24, 'later visible actors beyond the original 224 limit stay excluded');
+    const matrix = new Matrix4();
+    for (const [key, mesh] of ground) {
+      const matrices = expected.get(key)!; assert.equal(mesh.count, matrices.length);
+      for (let i = 0; i < mesh.count; i++) { mesh.getMatrixAt(i, matrix); assert.deepEqual(matrix.elements, matrices[i], 'unchanged retained matrix/order'); }
+    }
+    assert.equal(shadows.count, expectedShadows.length, 'offscreen bodies retain every originally admitted shadow');
+    assert.equal(shadows.count, 227);
+    for (let i = 0; i < shadows.count; i++) { shadows.getMatrixAt(i, matrix); assert.deepEqual(matrix.elements, expectedShadows[i], 'unchanged shadow matrix/order'); }
+  } finally {
+    for (const mesh of ground.values()) mesh.dispose(); shadows.dispose(); geometry.dispose(); material.dispose();
+  }
 });

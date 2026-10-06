@@ -6,7 +6,8 @@ This is a draft review candidate, not release acceptance. The restored HUD patch
 has been extended to pack every full-size instrument/readout around actual DOM
 controls, site cards, header, safe-area bounds, and the actual aim/reload-ring
 footprint. A blocked result remains a failure and never hides or shrinks content.
-A separate, narrowly reviewed renderer change retains existing geometry indexes;
+Separate, narrowly reviewed renderer changes retain existing geometry indexes
+and reject only wholly off-camera ground bodies beyond side clip planes;
 it does not alter triangles, attributes, materials, quality settings, game rules,
 input settings/persistence, or render/frame safety thresholds.
 
@@ -28,8 +29,8 @@ Use the exact commit containing this document for candidate CI and image checks.
   preservation with unchanged expanded triangle attributes
 - `src/style.css`: narrow-portrait header/readout arrangement, full text wrapping,
   and scene-owned translation offsets that preserve normal flow and transforms
-- `tests/campaign-hud-layout.test.ts`: 18 geometry/cache/DOM-adapter regressions
-- `tests/campaign-geometry.test.ts`: eight index-preservation regressions
+- `tests/campaign-hud-layout.test.ts`: 22 geometry/cache/DOM-adapter regressions
+- `tests/campaign-geometry.test.ts`: 13 index-preservation/conservative ground-rejection regressions
 - `browser-tests/fantasia.spec.ts`: live geometry/content guards and compact
   assertion polling, while preserving every original full-state evidence field
 - this document
@@ -38,19 +39,32 @@ Use the exact commit containing this document for candidate CI and image checks.
 
 Radar radius remains 42 below 360 CSS pixels, and 49 otherwise; range and caption
 are unchanged. The measured box includes the caption and stroke fringe. Health
-bar length remains 118 CSS pixels. Button placement, diameters, opacity, settings,
-and stored values are untouched.
+bar length remains 118 CSS pixels. Flight-control placement, all button diameters,
+opacity, settings and stored values are untouched. Utility pause/sound positions
+follow the approved header reflow.
 
-At 320-pixel portrait width, the header leaves a top-left radar corner. The
-unchanged text is rearranged using the unused eighth site-grid cell, the sides
-of the aiming lane, and the corridor between existing controls. Exact production
-control clamping places the 96-pixel fire button at x=216: after 4-pixel gaps,
-the lower corridor is only 115.6 pixels wide. Its text wraps at 114 pixels. This
-changes text-container widths, never font sizes or the health bar/button sizes.
+At 320-pixel portrait width, the unchanged elapsed-time text becomes a movable
+readout. The top tally bar puts each number beside its labels, retaining the
+44-pixel utility buttons and every original font size. The seven unchanged cards
+keep their four-plus-three row grouping; only inter-row whitespace is removed.
+Measured row positions protect both the actual projected sight and the existing
+84-pixel screen-center lane. Landscape cards that conflict with those regions
+may move individually to another full-size slot; fixed controls never move.
+The planned toolbar height is 46 pixels (44-pixel buttons and two 1-pixel borders),
+but runtime placement always uses its actual measured bounds, including wrapping
+or enlarged text. This new typography/layout still requires second-head CI.
+
+Exact production control clamping places the 96-pixel fire button at x=216:
+after 4-pixel gaps, the lower corridor is only 115.6 pixels wide. Its text wraps
+at 114 pixels. Text-container widths change, never font sizes or gauge/button
+sizes. Radar placement follows the available space instead of assuming a corner
+must fit.
 
 Every readout is packed at its complete measured width and height. The search
 has a deterministic 120,000 candidate/intersection-operation ceiling. Exhaustion
-reports blocked, not a partial success. Stable readouts are not repacked merely
+reports blocked, not a partial success. An already legal preferred position is tried before building alternative grids,
+preventing spacious desktop layouts from exhausting the budget. Fixed-site
+conflicts and out-of-bounds cards are explicit failures. Stable readouts are not repacked merely
 because the sight moved without reaching them. Geometry is remeasured on resize,
 visibility/style changes, font loads, or changed text dimensions. Identical writes
 and same-size changing numeric readouts are coalesced. Same-frame mutation records are flushed before drawing.
@@ -78,6 +92,17 @@ inside the page and JSON.parse in the runner. Original assertions, skips,
 timeouts and render/frame stop conditions remain unchanged. Trace call durations
 included queue/transport cost, so they are not reported as pure JS or GPU time.
 
+The follow-up additionally omits ground-body draw submission only when the full
+transformed bound is strictly outside a side clip plane. It preserves the original
+capacity-limited actor prefix, matrix order, separate ground shadows, gameplay,
+near/far-only exclusions and uncertain inputs. Unknown or boundary cases remain
+submitted. Diagnostics retain ground actor admission separately from the new
+`groundSubmitted` count. Five added regressions cover conservative bounds,
+Float32 boundary behavior, fail-open inputs, transformed geometry and compaction.
+The isolated renderer variant passed 13 focused tests/build and its actual-model
+Float32 oracle. Those component-only results were not integrated acceptance;
+the fresh integrated results are recorded below.
+
 ## Baseline evidence
 
 The unchanged-main [fresh baseline run](https://github.com/chameleonjp-lab/fantasia/actions/runs/37389054418)
@@ -95,23 +120,68 @@ readout/text rectangles are source-derived; default button sizes and positions
 use the real controlDisplaySize/controlBounds functions. Fixture passes are not
 live DOM, screenshot, or physical-device passes.
 
-## Local checks
+## First PR CI and pre-resumption checkpoint
 
-Fresh final unit/build/discovery logs are retained with the isolated candidate.
-The integrated checks pass: 152 tests (126 existing + 18 HUD + eight geometry),
-TypeScript/Vite build, and Playwright discovery of 16 tests. Browser discovery is not
-browser execution. The existing large-bundle build warning remains.
+[PR #6 first-head CI](https://github.com/chameleonjp-lab/fantasia/actions/runs/37390794157)
+ran head `3c2f3b645af108922f7f611c8937b26c35b2994c`: 152 unit passes, build success,
+and eight browser passes, seven failures, one existing headless visibility skip.
+That exact head is preserved as a recoverable checkpoint.
+
+Observed failures include a 6-pixel landscape header/site overlap, the enlarged
+header covering site cards, measurements captured before the first/current-size
+HUD frame, and a desktop pause after screenshot capture. Inspecting the actual
+projected Normal sight also exposed overlap that the older screen-center-only
+site assertion had missed, including a portrait test that had passed its original
+assertions. Those older passes must not be called complete HUD acceptance.
+
+The current follow-up adds both reserved regions, measured card arrangement,
+current-size/text readiness checks, preferred-position fast paths, and numeric
+before/after/final screenshot diagnostics. No original live-flight, placement,
+center-lane or safety-stop assertion is removed. A blocked layout satisfies only
+readiness to be inspected; it still fails acceptance.
+
+Twenty-one HUD-focused tests passed before the final cache correction and ground
+patch integration, including replay of exact
+first-head CI geometry and separately labeled predictions for the new toolbar
+layout. A wide-header timer cache regression and a Normal568 source-derived-sight
+regression were then defined but were not yet executed at that checkpoint. New typography has not
+been measured in a browser yet. At that checkpoint, integrated suite/build
+results still needed refreshing; the
+first head's 152 passes were not evidence for this follow-up. Execution was paused
+and no integrated pass was claimed. The later validation below supersedes that
+paused status.
 
 Local Chromium/socket and cloud localhost access were previously denied. This
 work does not retry them with alternate flags, ports, proxies or environments.
-Candidate live Chromium execution and screenshots remain pending the supported
-CI runner. The former restored-candidate 138-test claim is historical and is not
-used as evidence for this extended code.
+Candidate live Chromium execution and screenshots require the supported CI runner.
+The existing large-bundle build warning is not suppressed.
+
+## Latest integrated validation — 2026-10-06
+
+Fresh checks on the frozen integrated tree
+`fdc4686d9b47bc3d728e7b1c3e02e3bc225b8148` completed successfully:
+
+- Full unit suite: 161 passed, zero failed, cancelled or skipped
+- TypeScript source checking and Vite production build: passed
+- Playwright definition discovery: 16 tests; this is not browser execution
+- Patch applicability and whitespace checks against both pinned main and the
+  first PR #6 head: passed
+- Post-check identity: all 218 source files still matched that frozen tree;
+  all 214 pinned-base files and the recovered candidate backup were unchanged
+
+The existing bundle-size warning remains. Previous build output was retained
+before generating new output. After these checks only this verification document
+was updated; the other six changed source/test files are byte-identical to the
+validated tree. Supported CI must still run the updated PR head, and its real
+browser results/screenshots are pending. No browser pass, merge readiness or
+release acceptance is claimed by these local results.
 
 ## Browser acceptance and remaining work
 
 The browser assertions record actual full-size panels, fixed controls/sites,
-radar/caption, safe bounds, aim footprint, DPR, phase and pause reasons. Every
+radar/caption, safe bounds, actual aim footprint, central flight lane, DPR, phase
+and pause reasons. Separate capture JSON preserves phase, frame gap, queue
+metrics and last-interruption details before/after screenshots and on failures. Every
 panel must avoid fixed controls, aim, radar and other panels, stay within safe
 bounds, match cached geometry, and retain unclipped text. The reflowed header
 must avoid the seven-site strip. Evidence is saved before assertions. Paused

@@ -130,61 +130,109 @@ async function readHudGeometry(page: Page) {
     const selectors = '.hud-top, #campaign-sites .campaign-site[data-site], #hud button';
     const obstacles = Array.from(document.querySelectorAll<HTMLElement>(selectors)).filter(visible)
       .map(node => ({ id: node.id || node.className, ...rect(node) }));
-    const panels = Array.from(document.querySelectorAll<HTMLElement>('.flight-data > *, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip')).filter(visible)
+    const panels = Array.from(document.querySelectorAll<HTMLElement>('.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip')).filter(visible)
+      .filter(node => !node.classList.contains('time-block') || (canvas.width <= 360 && canvas.height > canvas.width))
       .map(node => ({ id: node.id || node.className, ...rect(node),
         overflowX: node.scrollWidth - node.clientWidth, overflowY: node.scrollHeight - node.clientHeight }));
     const threat = document.querySelector('#campaign-threat')!;
     return { phase: observed?.phase, pauseReasons: observed?.pauseReasons, renderStatus: observed?.renderStatus,
-      deviceScaleFactor: devicePixelRatio, layout: observed?.render?.hudLayout, obstacles, panels,
+      deviceScaleFactor: devicePixelRatio, canvas: { x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height },
+      layout: observed?.render?.hudLayout, obstacles, panels,
       threat: visible(threat) ? rect(threat) : null };
   });
 }
+async function waitForCurrentHudLayout(page: Page) {
+  await expect.poll(async () => {
+    const hud = await readHudGeometry(page), layout = hud.layout;
+    if (!layout?.status || !layout.canvas || !layout.panels) return false;
+    const same = (a: Rect, b: Rect) => (['x', 'y', 'width', 'height'] as const).every(key => Math.abs(a[key] - b[key]) < .75);
+    if (!same(layout.canvas, hud.canvas) || layout.panels.length !== hud.panels.length) return false;
+    return hud.obstacles.every((obstacle, index) => layout.obstacles[index] && same(obstacle, layout.obstacles[index]))
+      && hud.panels.every(panel => {
+        const cached = layout.panels.find((item: { id: string }) => item.id === panel.id);
+        return cached && same(panel, cached.rect);
+      });
+  }, { message: 'HUD measurements must match the current viewport and rendered text before capture' }).toBe(true);
+}
+async function captureRenderDiagnostics(page: Page) {
+  const serialized = await page.evaluate(() => {
+    const read = (window as any).__fantasiaReadState, value = typeof read === 'function' ? read(false) : null;
+    if (!value) return JSON.stringify(null);
+    const render = (source: any) => source ? Object.fromEntries(['queue', 'calls', 'triangles', 'ground', 'groundSubmitted', 'dragons', 'width', 'height', 'pixelRatio']
+      .map(key => [key, source[key]])) : null;
+    return JSON.stringify({ capturedAtMs: performance.now(), phase: value.phase, tick: value.tick, activeTicks: value.activeTicks,
+      pauseReasons: value.pauseReasons, renderStatus: value.renderStatus, lastFrameGap: value.lastFrameGap,
+      performanceInterrupted: value.performanceInterrupted, fatalLogicError: value.fatalLogicError, render: render(value.render),
+      lastInterruption: value.lastInterruption ? { reason: value.lastInterruption.reason, gap: value.lastInterruption.gap,
+        render: render(value.lastInterruption.render) } : null });
+  });
+  return JSON.parse(serialized);
+}
 async function expectHudSafeLayout(page: Page, name: string) {
-  const hud = await readHudGeometry(page);
   await mkdir('test-results/evidence', { recursive: true });
-  await page.screenshot({ path: `test-results/evidence/${name}-hud.png` });
-  await writeFile(`test-results/evidence/${name}-hud.json`, JSON.stringify(hud, null, 2));
-  // Record blocked geometry and safety-stop evidence before asserting either.
-  expect(hud.phase, 'HUD acceptance requires live flight').toBe('playing');
-  await expect(page.locator('#pause-screen')).toBeHidden();
-  expect(hud.layout?.status, 'Full-size HUD placement must not be blocked').toBe('placed');
-  const { radar, bounds } = hud.layout;
-  expect(radar.radius).toBe(page.viewportSize()!.width < 360 ? 42 : 49);
-  expect(radar.rect.width).toBe(radar.radius * 2 + 2);
-  expect(radar.rect.height).toBe(radar.radius * 2 + 18);
-  const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && a.x + a.width > b.x
-    && a.y < b.y + b.height && a.y + a.height > b.y;
-  const inBounds = (r: Rect) => {
-    expect(r.x).toBeGreaterThanOrEqual(bounds.x - .5); expect(r.y).toBeGreaterThanOrEqual(bounds.y - .5);
-    expect(r.x + r.width).toBeLessThanOrEqual(bounds.x + bounds.width + .5);
-    expect(r.y + r.height).toBeLessThanOrEqual(bounds.y + bounds.height + .5);
-  };
-  inBounds(radar.rect);
-  const sight = hud.layout.obstacles.find((o: { id: string }) => o.id === 'aim-and-reload-ring');
-  expect(sight).toBeTruthy();
-  const header = hud.obstacles.find(obstacle => obstacle.id === 'hud-top')!;
-  for (const site of hud.obstacles.filter(obstacle => obstacle.id.includes('campaign-site'))) {
-    expect(overlap(site, header), 'reflowed header must avoid the site strip').toBe(false);
-  }
-  for (const obstacle of [...hud.obstacles, sight]) {
-    expect(overlap(radar.rect, obstacle), `radar circle/caption must avoid ${obstacle.id}`).toBe(false);
-    if (hud.threat) expect(overlap(hud.threat, obstacle), `threat must avoid ${obstacle.id}`).toBe(false);
-  }
-  if (hud.threat) {
-    inBounds(hud.threat); expect(overlap(radar.rect, hud.threat), 'radar and threat do not overlap').toBe(false);
-    expect(Math.abs(hud.threat.x - hud.layout.threat.rect.x)).toBeLessThan(.75);
-    expect(Math.abs(hud.threat.y - hud.layout.threat.rect.y)).toBeLessThan(.75);
-  }
-  expect(hud.layout.panels.map((panel: { id: string }) => panel.id).sort()).toEqual(hud.panels.map(panel => panel.id).sort());
-  for (const [index, panel] of hud.panels.entries()) {
-    inBounds(panel);
-    expect(panel.overflowX, `${panel.id} retains readable horizontal content`).toBeLessThanOrEqual(1);
-    expect(panel.overflowY, `${panel.id} retains readable vertical content`).toBeLessThanOrEqual(1);
-    const expected = hud.layout.panels.find((entry: { id: string }) => entry.id === panel.id).rect;
-    for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(panel[key] - expected[key]), `${panel.id} measured ${key}`).toBeLessThan(.75);
-    for (const obstacle of [...hud.obstacles, sight, { ...radar.rect, id: 'radar' }, ...hud.panels.slice(index + 1)]) {
-      expect(overlap(panel, obstacle), `${panel.id} must avoid ${obstacle.id}`).toBe(false);
+  const capture: { before?: unknown; after?: unknown; final?: unknown; diagnosticError?: string } = {};
+  let hudSaved = false;
+  try {
+    await waitForCurrentHudLayout(page);
+    const hud = await readHudGeometry(page);
+    await writeFile(`test-results/evidence/${name}-hud.json`, JSON.stringify(hud, null, 2));
+    hudSaved = true;
+    capture.before = await captureRenderDiagnostics(page);
+    await page.screenshot({ path: `test-results/evidence/${name}-hud.png` });
+    capture.after = await captureRenderDiagnostics(page);
+    // Record blocked geometry and safety-stop evidence before asserting either.
+    expect(hud.phase, 'HUD acceptance requires live flight').toBe('playing');
+    await expect(page.locator('#pause-screen')).toBeHidden();
+    expect(hud.layout?.status, 'Full-size HUD placement must not be blocked').toBe('placed');
+    const { radar, bounds } = hud.layout;
+    expect(radar.radius).toBe(page.viewportSize()!.width < 360 ? 42 : 49);
+    expect(radar.rect.width).toBe(radar.radius * 2 + 2);
+    expect(radar.rect.height).toBe(radar.radius * 2 + 18);
+    const overlap = (a: Rect, b: Rect) => a.x < b.x + b.width && a.x + a.width > b.x
+      && a.y < b.y + b.height && a.y + a.height > b.y;
+    const inBounds = (r: Rect) => {
+      expect(r.x).toBeGreaterThanOrEqual(bounds.x - .5); expect(r.y).toBeGreaterThanOrEqual(bounds.y - .5);
+      expect(r.x + r.width).toBeLessThanOrEqual(bounds.x + bounds.width + .5);
+      expect(r.y + r.height).toBeLessThanOrEqual(bounds.y + bounds.height + .5);
+    };
+    inBounds(radar.rect);
+    const sight = hud.layout.obstacles.find((o: { id: string }) => o.id === 'aim-and-reload-ring');
+    expect(sight).toBeTruthy();
+    const header = hud.obstacles.find(obstacle => obstacle.id === 'hud-top')!;
+    for (const site of hud.obstacles.filter(obstacle => obstacle.id.includes('campaign-site'))) {
+      expect(overlap(site, header), 'reflowed header must avoid the site strip').toBe(false);
+      expect(overlap(site, sight), 'each site must avoid the actual aim and reload-ring footprint').toBe(false);
     }
+    for (const obstacle of [...hud.obstacles, sight]) {
+      expect(overlap(radar.rect, obstacle), `radar circle/caption must avoid ${obstacle.id}`).toBe(false);
+      if (hud.threat) expect(overlap(hud.threat, obstacle), `threat must avoid ${obstacle.id}`).toBe(false);
+    }
+    if (hud.threat) {
+      inBounds(hud.threat); expect(overlap(radar.rect, hud.threat), 'radar and threat do not overlap').toBe(false);
+      expect(Math.abs(hud.threat.x - hud.layout.threat.rect.x)).toBeLessThan(.75);
+      expect(Math.abs(hud.threat.y - hud.layout.threat.rect.y)).toBeLessThan(.75);
+    }
+    expect(hud.layout.panels.map((panel: { id: string }) => panel.id).sort()).toEqual(hud.panels.map(panel => panel.id).sort());
+    for (const [index, panel] of hud.panels.entries()) {
+      inBounds(panel);
+      expect(panel.overflowX, `${panel.id} retains readable horizontal content`).toBeLessThanOrEqual(1);
+      expect(panel.overflowY, `${panel.id} retains readable vertical content`).toBeLessThanOrEqual(1);
+      const expected = hud.layout.panels.find((entry: { id: string }) => entry.id === panel.id).rect;
+      for (const key of ['x', 'y', 'width', 'height'] as const) expect(Math.abs(panel[key] - expected[key]), `${panel.id} measured ${key}`).toBeLessThan(.75);
+      for (const obstacle of [...hud.obstacles, sight, { ...radar.rect, id: 'radar' }, ...hud.panels.slice(index + 1)]) {
+        expect(overlap(panel, obstacle), `${panel.id} must avoid ${obstacle.id}`).toBe(false);
+      }
+    }
+  } finally {
+    // Preserve the original assertion error while retaining numeric evidence
+    // if screenshot capture, startup, or a later safety check interrupts flight.
+    try { capture.final = await captureRenderDiagnostics(page); }
+    catch (error) { capture.diagnosticError = String(error); }
+    if (!hudSaved) {
+      try { await writeFile(`test-results/evidence/${name}-hud.json`, JSON.stringify(await readHudGeometry(page), null, 2)); }
+      catch (error) { capture.diagnosticError = `${capture.diagnosticError ?? ''} ${String(error)}`.trim(); }
+    }
+    await writeFile(`test-results/evidence/${name}-capture.json`, JSON.stringify(capture, null, 2));
   }
 }
 
@@ -468,6 +516,7 @@ test.describe('desktop enlarged-text reachability', () => {
 
     await start(page, 'normal');
     await scaleVisibleText();
+    await waitForCurrentHudLayout(page);
     await expectSevenSiteLayout(page, { width: 1280, height: 800 });
     const overlap = await page.evaluate(() => {
       const header = document.querySelector('#hud .hud-top')!.getBoundingClientRect();

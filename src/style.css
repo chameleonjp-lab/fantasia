@@ -1134,15 +1134,35 @@ p {
 .fantasia-shell [style*="--campaign-hud-x"] {
   translate: var(--campaign-hud-x) var(--campaign-hud-y);
 }
+.fantasia-shell .campaign-site[style*="--campaign-site-x"] {
+  translate: var(--campaign-site-x) var(--campaign-site-y);
+}
 
-/* Narrow portrait has no full-size radar slot beside the sight and the saved
-   Normal controls. Reserve a corner above the sites, then use the unused eighth
-   site cell and the corridor between the controls for the unchanged readouts.
+/* Preserve the measured 44px utility targets while putting each tally's number
+   beside its two labels. The former 64px stack crowded the landscape sight. */
+@media (orientation: landscape) and (max-height: 600px), (max-width: 360px) and (orientation: portrait) {
+  .fantasia-shell .hud-top { top: max(8px, env(safe-area-inset-top)); }
+  .fantasia-shell .time-block { padding-block: 0; }
+  .fantasia-shell .targets { padding-block: 0; }
+  .fantasia-shell .targets .target-tally { display: grid; grid-template-columns: auto auto; gap: 2px 4px; }
+  .fantasia-shell .target-tally > span { grid-column: 1; grid-row: 1; }
+  .fantasia-shell .target-tally > small { grid-column: 1; grid-row: 2; }
+  .fantasia-shell .target-tally > b { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+}
+
+/* Narrow portrait leaves both sight and aircraft-center lanes clear by moving
+   elapsed-time text out of the compact tally bar. Full-size cards keep four
+   plus three rows; the radar and unchanged readouts use measured open slots.
    Text may wrap; no labels, font sizes, or touch-target dimensions are removed. */
 @media (max-width: 360px) and (orientation: portrait) {
+  .fantasia-shell .campaign-sites { row-gap: 0; }
   .fantasia-shell .hud-top {
     top: calc(8px + var(--safe-top));
-    left: calc(max(8px, env(safe-area-inset-left)) + 90px);
+    left: max(12px, env(safe-area-inset-left));
+  }
+  .fantasia-shell .hud-top .time-block {
+    position: absolute; top: 160px; left: calc(100% - 110px); width: 110px;
+    flex: none;
   }
   .fantasia-shell .flight-data { display: contents; }
   .fantasia-shell .flight-data > * {
