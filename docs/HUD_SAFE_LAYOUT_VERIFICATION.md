@@ -1,3 +1,13 @@
+## 2026-10-06: final evidence observation gate correction
+
+The final already-collected HUD snapshot is now checked before a live-layout test can pass. The previous Normal 320×568 artifact showed live `before` and `after` snapshots but a final paused frame (250.3 ms); that final state could be written without failing the test. The saved `liveFlightConfirmed` flag now also requires the final HUD snapshot to remain playing with no pause reasons, no fatal logic error, and ready/pending render and queue states.
+
+No additional screenshot, state read, polling, timeout, retry, resume or skip was added. Earlier assertion failures remain failures and are not replaced. The existing startup-resume behavior is unchanged. Pure regression tests replay the exact retained late-pause capture and exercise the actual extracted evidence function: live→live passes, live→paused fails, the saved live flag is false for the latter, and one full-state plus one HUD read remain.
+
+This corrects a test-reporting gap. It does not repair the still-unresolved SwiftShader render stalls or establish release/physical-device acceptance. Rendering code, geometry, quality, rules and watchdog thresholds are unchanged by this revision. The same-head CI outcome is recorded in PR #6.
+
+---
+
 # HUD placement and indexed geometry: verification and limits
 
 ## Status

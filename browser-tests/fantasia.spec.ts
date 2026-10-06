@@ -101,18 +101,20 @@ async function saveEvidence(page: Page, name: string, note: string) {
   await mkdir('test-results/evidence', { recursive: true });
   await page.screenshot({ path: `test-results/evidence/${name}.png` });
   const observed = await fullEvidenceState(page);
+  const hud = await readHudGeometry(page);
   await writeFile(`test-results/evidence/${name}.json`, JSON.stringify({
     environment: 'Playwright Chromium viewport emulation; not physical-device coverage',
     note,
     viewport: page.viewportSize(),
-    liveFlightConfirmed: observed?.phase === 'playing',
+    liveFlightConfirmed: observed?.phase === 'playing' && hudCaptureProblems(hud).length === 0,
     state: observed,
-    hud: await readHudGeometry(page),
+    hud,
   }, null, 2));
   // Preserve a blocked attempt, but never pass a live-layout test on boxes
   // hidden behind the safety-pause overlay.
   expect(observed?.phase, 'Screenshot must show live flight rather than a safety stop').toBe('playing');
   await expect(page.locator('#pause-screen')).toBeHidden();
+  expect(hudCaptureProblems(hud), 'The last HUD observation in saved evidence must still show live flight and clear safety states').toEqual([]);
 }
 
 type Rect = { x: number; y: number; width: number; height: number };
@@ -136,6 +138,7 @@ async function readHudGeometry(page: Page) {
         overflowX: node.scrollWidth - node.clientWidth, overflowY: node.scrollHeight - node.clientHeight }));
     const threat = document.querySelector('#campaign-threat')!;
     return { phase: observed?.phase, pauseReasons: observed?.pauseReasons, renderStatus: observed?.renderStatus,
+      fatalLogicError: observed?.fatalLogicError, render: { queue: { status: observed?.render?.queue?.status } },
       deviceScaleFactor: devicePixelRatio, canvas: { x: canvas.x, y: canvas.y, width: canvas.width, height: canvas.height },
       layout: observed?.render?.hudLayout, obstacles, panels,
       threat: visible(threat) ? rect(threat) : null };
@@ -168,10 +171,21 @@ async function captureRenderDiagnostics(page: Page) {
   });
   return JSON.parse(serialized);
 }
+function hudCaptureProblems(observed: any): string[] {
+  if (!observed || typeof observed !== 'object') return ['final observation is unavailable'];
+  const problems: string[] = [];
+  if (observed.phase !== 'playing') problems.push(`phase is ${observed.phase}`);
+  if (!Array.isArray(observed.pauseReasons) || observed.pauseReasons.length) problems.push('pause reasons are present or unavailable');
+  if (observed.fatalLogicError !== null) problems.push('logic safety state is not clear');
+  if (!['ready', 'pending'].includes(observed.renderStatus)) problems.push(`render state is ${observed.renderStatus}`);
+  if (!['ready', 'pending'].includes(observed.render?.queue?.status)) problems.push(`render queue is ${observed.render?.queue?.status}`);
+  return problems;
+}
 async function expectHudSafeLayout(page: Page, name: string) {
   await mkdir('test-results/evidence', { recursive: true });
   const capture: { before?: unknown; after?: unknown; final?: unknown; diagnosticError?: string } = {};
   let hudSaved = false;
+  let assertionsFailed = false;
   try {
     await waitForCurrentHudLayout(page);
     const hud = await readHudGeometry(page);
@@ -237,6 +251,9 @@ async function expectHudSafeLayout(page: Page, name: string) {
         expect(overlap(label.rect, obstacle), `${label.id} must avoid fixed controls, sight, radar and readouts`).toBe(false);
       }
     }
+  } catch (error) {
+    assertionsFailed = true;
+    throw error;
   } finally {
     // Preserve the original assertion error while retaining numeric evidence
     // if screenshot capture, startup, or a later safety check interrupts flight.
@@ -247,6 +264,8 @@ async function expectHudSafeLayout(page: Page, name: string) {
       catch (error) { capture.diagnosticError = `${capture.diagnosticError ?? ''} ${String(error)}`.trim(); }
     }
     await writeFile(`test-results/evidence/${name}-capture.json`, JSON.stringify(capture, null, 2));
+    if (!assertionsFailed) expect(hudCaptureProblems(capture.final),
+      'The last HUD observation must still show live flight and clear safety states').toEqual([]);
   }
 }
 
