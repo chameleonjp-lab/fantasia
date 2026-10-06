@@ -81,7 +81,7 @@ jobs:
           node --version > render-comparison-results/toolchain.txt
           npm --version >> render-comparison-results/toolchain.txt
           npx playwright --version >> render-comparison-results/toolchain.txt
-          npx playwright test render-comparison.spec.ts --project=chromium
+          npx playwright test render-comparison.spec.ts --project=chromium --grep 'PR5 trace factor diagnosis only'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -91,7 +91,7 @@ jobs:
             comparison/main/render-comparison-results/source-identity.json
             comparison/main/render-comparison-results/toolchain.txt
             comparison/main/render-comparison-results/pr5-server.log
-            comparison/main/render-comparison-results/summary.json
+            comparison/main/render-comparison-results/summary*.json
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()

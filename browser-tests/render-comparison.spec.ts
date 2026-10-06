@@ -28,6 +28,13 @@ function experimentSchedule() {
   ]);
 }
 
+function traceFactorSchedule() {
+  return [true, false, false, true].map((traceEnabled, ordinal) => ({
+    scenario: SCENARIOS[1], profile: 'light' as const, ref: 'main' as const,
+    ordinal, traceEnabled, phase: 'trace-factor' as const,
+  }));
+}
+
 function allowedOrigin(url: string, origin: string) {
   try { return new URL(url).origin === origin; } catch { return false; }
 }
@@ -116,11 +123,15 @@ function safetyProblems(s: any) {
 }
 
 async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], profile: Profile,
-  ref: keyof typeof REFS, ordinal: number) {
-  const id = `${scenario.name}-${profile}-${ordinal}-${ref}`;
+  ref: keyof typeof REFS, ordinal: number,
+  options: { phase: 'trace-factor'; traceEnabled: boolean } | undefined = undefined) {
+  const phase = options?.phase ?? 'source-load-comparison';
+  const traceEnabled = options?.traceEnabled ?? true;
+  const id = options ? `${scenario.name}-${phase}-${profile}-${ordinal}-${ref}-trace-${traceEnabled ? 'on' : 'off'}`
+    : `${scenario.name}-${profile}-${ordinal}-${ref}`;
   const origin = REFS[ref].origin, websocketOrigin = origin.replace('http:', 'ws:');
   const blocked: string[] = [], errors: string[] = [], actions: any[] = [];
-  const report: any = { id, ref: REFS[ref], order: ordinal, scenario, profile,
+  const report: any = { id, phase, ref: REFS[ref], order: ordinal, scenario, profile,
     gameAcceptance: 'NOT EVALUATED: diagnostic collection is not a game acceptance pass',
     hostBefore: { epochMs: Date.now(), loadavg: loadavg(), freeMemory: freemem() },
     requestedWarmupMs: WARMUP_MS, requestedWindowMs: WINDOW_MS, commonSampleMs: SAMPLE_MS,
@@ -139,8 +150,9 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
   });
   // Match the original config's trace collection work; retain all traces as
   // diagnosis evidence rather than deleting successful-cell traces.
-  await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
-  report.trace = { screenshots: true, snapshots: true, sources: true, retained: 'every diagnostic cell' };
+  if (traceEnabled) await context.tracing.start({ screenshots: true, snapshots: true, sources: true });
+  report.trace = { enabled: traceEnabled, screenshots: traceEnabled, snapshots: traceEnabled, sources: traceEnabled,
+    retained: traceEnabled ? 'every enabled diagnostic cell' : 'intentionally not collected; no trace start or stop call' };
   await context.addInitScript(installProbe, SAMPLE_MS);
   const page = await context.newPage();
   page.setDefaultTimeout(10000);
@@ -235,12 +247,14 @@ async function runCell(browser: Browser, scenario: typeof SCENARIOS[number], pro
         firstUnsafe: flightSamples.find((s: any) => safetyProblems(s.state).length > 0) ?? null };
     } catch (error) { report.finalObservationError = String(error); }
     report.hostAfter = { epochMs: Date.now(), loadavg: loadavg(), freeMemory: freemem() };
-    try { await context.tracing.stop({ path: `${OUTPUT}/${id}-trace.zip` }); }
-    catch (error) { report.traceError = String(error); }
+    if (traceEnabled) {
+      try { await context.tracing.stop({ path: `${OUTPUT}/${id}-trace.zip` }); }
+      catch (error) { report.traceError = String(error); }
+    }
     await writeFile(`${OUTPUT}/${id}.json`, JSON.stringify(report, null, 2));
     await context.close();
   }
-  return { id, ref, profile, scenario: scenario.name, experimentError: report.experimentError ?? null,
+  return { id, phase, traceEnabled, traceExpected: traceEnabled, ref, profile, scenario: scenario.name, experimentError: report.experimentError ?? null,
     finalObservationError: report.finalObservationError ?? null, traceError: report.traceError ?? null, blockedRequests: blocked.length,
     safety: report.flightSafety ?? null, seed: report.seed ?? null };
 }
@@ -274,5 +288,42 @@ test('PR5 matched rendering diagnosis only, not game acceptance', async ({ brows
   // Only completeness/security gates. Runtime safety is reported without
   // changing the original acceptance spec or treating an interruption as pass.
   expect(cells).toHaveLength(24);
+  expect(cells.filter(cell => cell.experimentError || cell.finalObservationError || cell.traceError || cell.blockedRequests)).toEqual([]);
+});
+
+
+// Second phase: a single changed factor on one fixed executable revision.
+// Keep the original 24-cell definition above reproducible; CI explicitly greps
+// this separate test so it cannot accidentally execute both experiments.
+test('PR5 trace factor diagnosis only, four flights, not game acceptance', async ({ browser }, testInfo) => {
+  test.setTimeout(5 * 60 * 1000);
+  await mkdir(OUTPUT, { recursive: true });
+  const environment = { browserVersion: browser.version(), node: process.version, platform: process.platform,
+    runnerTimeOrigin: performance.timeOrigin, osRelease: release(), cpuModels: [...new Set(cpus().map(cpu => cpu.model))], cpuCount: cpus().length,
+    project: testInfo.project.name, launchOptions: testInfo.project.use.launchOptions,
+    workerIndex: testInfo.workerIndex, startedAt: new Date().toISOString() };
+  const cells: any[] = [];
+  for (const cell of traceFactorSchedule()) {
+    cells.push(await runCell(browser, cell.scenario, cell.profile, cell.ref, cell.ordinal,
+      { phase: cell.phase, traceEnabled: cell.traceEnabled }));
+    await writeFile(`${OUTPUT}/summary-trace-factor.json`, JSON.stringify({
+      phase: 'trace-factor', environment, cells, expectedCells: 4, gameAcceptance: 'NOT EVALUATED',
+      fixedSource: REFS.main, onlyChangedFactor: 'manual trace enabled', order: ['on', 'off', 'off', 'on'],
+      fixedInputs: { viewport: SCENARIOS[1], textScale: '100%', profile: 'light',
+        commonSampleMs: SAMPLE_MS, requestedWarmupMs: WARMUP_MS, requestedWindowMs: WINDOW_MS },
+      interpretation: [
+        'Only main at the already verified shared runtime is tested; PR6 is not included.',
+        'Each cell has a fresh context/flight, the same seed and no resume or retry.',
+        'Trace-off means no trace start/stop calls and no trace artifact is expected for those cells.',
+        'Trace-on uses the same manual screenshots/snapshots/sources categories as the prior phase.',
+        'The common full-clone sampler and other diagnostic reads are unchanged; this does not isolate their overhead.',
+        'Both off cells surviving while both on cells stop supports a trace contribution in this scene/runner only.',
+        'Both groups stopping leaves shared observer, renderer and environment unresolved; mixed results are inconclusive.',
+        'All metrics include the final observation. Collection success is not game acceptance or release approval.',
+      ],
+    }, null, 2));
+  }
+  expect(cells).toHaveLength(4);
+  expect(cells.map(cell => cell.traceEnabled)).toEqual([true, false, false, true]);
   expect(cells.filter(cell => cell.experimentError || cell.finalObservationError || cell.traceError || cell.blockedRequests)).toEqual([]);
 });
