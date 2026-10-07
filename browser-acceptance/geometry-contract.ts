@@ -17,3 +17,10 @@ export function createVisibilityPredicate() { return (node: HTMLElement): boolea
   const rect=node.getBoundingClientRect();
   return rect.width>0&&rect.height>0;
 }; }
+
+/** DOMRect subtraction can lose a few Float32 ULPs at fractional positions.
+ * This 0.001 CSS-px numeric allowance is independent of the 0.75px geometry
+ * tolerance. The required target remains 44 CSS px; genuine undersize fails. */
+export function meetsMinimumTarget(size:number):boolean {
+  return Number.isFinite(size)&&size>=44-0.001;
+}

@@ -68,3 +68,44 @@ test('persistent clipping and same-detail-owner text collision remain failures i
  let d=detailFixture();d.runs[0].fragments[0].x=-10;assert.ok(textGeometryIssues(detailGeometrySnapshot(d).projected).some(s=>s.includes('outside-viewport')));
  d=detailFixture();d.runs.push({...d.runs[1],text:'another text',fragments:[{x:155,y:31,width:30,height:18}]});assert.ok(textGeometryIssues(detailGeometrySnapshot(d).projected).some(s=>s.includes('text-owner-collision')));
 });
+
+test('detail ancestry clips panel-first announcement/flight-tip obstacles and preserves raw evidence',()=>{
+ const d=detailFixture();d.regions[2].kind='panel';d.regions[2].key='announcement';d.runs[1].owner='announcement';d.runs[1].ancestorRegions=['announcement','details'];
+ d.regions[2].rect={x:40,y:110,width:200,height:80};
+ // This owner has overflow-visible text inside the viewport despite its own
+ // offscreen box. The raw border box must not obstruct the fixed button label.
+ const before=JSON.stringify(d),s=detailGeometrySnapshot(d);
+ assert.deepEqual(textGeometryIssues(s.projected),[]);assert.equal(JSON.stringify(d),before);
+ assert.equal(s.projected.regions.find(r=>r.key==='announcement')!.rect.height,0);
+ assert.equal(s.expected.length,2);assert.equal(s.visible.length,1);
+ d.regions.push({key:'flight-tip',kind:'panel',ancestorRegions:['details'],rect:{x:40,y:90,width:100,height:50}});
+ assert.deepEqual(textGeometryIssues(detailGeometrySnapshot(d).projected),[],'DOM ancestry also handles text-free regions');
+});
+test('partially visible detail panel keeps its visible obstacle, but its clipped tail is not an obstacle',()=>{
+ const d=detailFixture();d.regions[2].kind='panel';d.regions[2].ancestorRegions=['details'];d.regions[2].rect={x:140,y:80,width:130,height:80};
+ let s=detailGeometrySnapshot(d);assert.deepEqual(s.projected.regions.find(r=>r.key==='entry')!.rect,{x:151,y:80,width:98,height:19});
+ d.runs[0].fragments=[{x:155,y:84,width:20,height:10}];
+ assert.ok(textGeometryIssues(detailGeometrySnapshot(d).projected).some(s=>s.includes('text-overlaps-panel entry')),'visible foreign overlap still fails');
+ d.runs[0].fragments=[{x:155,y:110,width:20,height:10}];
+ assert.deepEqual(textGeometryIssues(detailGeometrySnapshot(d).projected),[],'clipped tail has no visible ink or obstacle');
+});
+test('fixed critical panels and controls never gain scroll permission from their kind or position',()=>{
+ for(const kind of ['panel','persistent','control','detail-entry']) {
+  const d=detailFixture();d.regions.push({key:'critical',kind,ancestorRegions:[],rect:{x:50,y:90,width:30,height:10}});
+  assert.ok(textGeometryIssues(detailGeometrySnapshot(d).projected).some(s=>s.includes(`text-overlaps-${kind} critical`)));
+ }
+ const d=detailFixture();d.regions[2].ancestorRegions=[];
+ assert.deepEqual(detailGeometrySnapshot(d).projected.regions.find(r=>r.key==='entry')!.rect,d.regions[2].rect,'explicit DOM ancestry is authoritative over legacy fallback');
+});
+
+test('collector records actual viewport ancestry even when panel selector wins deduplication',()=>{
+ const viewport:any={id:'campaign-hud-details',className:'',getBoundingClientRect:()=>({x:10,y:10,width:100,height:80})};
+ const announcement:any={id:'announcement',className:'',getBoundingClientRect:()=>({x:10,y:120,width:100,height:20})};
+ const fixed:any={id:'warning',className:'',getBoundingClientRect:()=>({x:10,y:120,width:100,height:20})};
+ viewport.contains=(n:any)=>n===viewport||n===announcement;announcement.contains=(n:any)=>n===announcement;fixed.contains=(n:any)=>n===fixed;
+ const document={querySelectorAll:(selector:string)=>selector==='#campaign-hud-details'?[viewport]:selector==='#campaign-hud-details [data-campaign-detail]'?[announcement]:selector.startsWith('.flight-data')?[announcement,fixed]:[],createTreeWalker:()=>({nextNode:()=>null})};
+ const result=runInNewContext(`(${collectHudTextGeometry.toString()})(()=>true)`,{document,NodeFilter:{SHOW_TEXT:4},innerWidth:300,innerHeight:200});
+ const detail=result.regions.find((r:any)=>r.kind==='detail-viewport'),panel=result.regions.find((r:any)=>r.key.startsWith('panel:announcement:')),warning=result.regions.find((r:any)=>r.key.startsWith('panel:warning:'));
+ assert.equal(panel.kind,'panel');assert.equal(panel.ancestorRegions.length,1);assert.equal(panel.ancestorRegions[0],detail.key);
+ assert.equal(warning.ancestorRegions.length,0);assert.equal(result.regions.length,3);
+});

@@ -1,5 +1,5 @@
 export interface TextRect {x:number;y:number;width:number;height:number}
-export interface TextRegion {key:string;kind:string;rect:TextRect}
+export interface TextRegion {key:string;kind:string;rect:TextRect;ancestorRegions?:string[]}
 export interface TextStyleEvidence {
   key:string;rect:TextRect;clipRect:TextRect;overflowX:string;overflowY:string;textOverflow:string;
   scrollWidth:number;clientWidth:number;scrollHeight:number;clientHeight:number;whiteSpace:string;
@@ -53,7 +53,7 @@ export function collectHudTextGeometry(visible:(node:HTMLElement)=>boolean):Text
     const styleKeys:string[]=[];let ancestor:HTMLElement|null=parent;while(ancestor){styleKeys.push(inspect.node(ancestor));ancestor=ancestor.parentElement;}
     runs.push({text:raw.slice(start,end),owner:owner.key,ancestorRegions:ancestors.map(a=>a.key),fragments,styleKeys});
   }
-  return {viewport:{width:innerWidth,height:innerHeight},regions:regionNodes.map(({key,kind,rect})=>({key,kind,rect})),styles,runs};
+  return {viewport:{width:innerWidth,height:innerHeight},regions:regionNodes.map(({key,kind,rect,node})=>({key,kind,rect,ancestorRegions:regionNodes.filter(r=>r.node!==node&&r.node.contains(node)).map(r=>r.key)})),styles,runs};
 }
 
 /** Text may extend outside its own visible-overflow circle; it may never be lost or cover unrelated content. */
@@ -105,17 +105,34 @@ export function detailGeometrySnapshot(data:TextGeometry) {
   const box=viewportStyle.clipRect, tolerance=.75;
   const inside=(r:TextRect)=>r.x>=box.x-tolerance&&r.y>=box.y-tolerance&&r.x+r.width<=box.x+box.width+tolerance&&r.y+r.height<=box.y+box.height+tolerance;
   const expected:string[]=[],visible:string[]=[];
-  const detailKeys=new Set(data.regions.filter(r=>r.kind==='detail-entry').map(r=>r.key));
+  // Membership comes from DOM ancestry, never the first selector's kind.
+  // Older raw artifacts did not record region ancestry; an owned text run's
+  // ancestor chain still proves that owner's DOM membership without guessing
+  // from coordinates or suppressing unrelated fixed/critical regions.
+  const detailKeys=new Set(data.regions.filter(r=>r.ancestorRegions
+    ?r.ancestorRegions.includes(viewport.key)
+    :data.runs.some(run=>run.owner===r.key&&run.ancestorRegions.includes(viewport.key))).map(r=>r.key));
+  const intersect=(r:TextRect):TextRect=>{
+    const x=Math.max(r.x,box.x,0),y=Math.max(r.y,box.y,0);
+    return {x,y,width:Math.max(0,Math.min(r.x+r.width,box.x+box.width,data.viewport.width)-x),height:Math.max(0,Math.min(r.y+r.height,box.y+box.height,data.viewport.height)-y)};
+  };
   const runs=data.runs.flatMap((run,index)=>{
     if(!run.ancestorRegions.includes(viewport.key))return [run];
     const fragments=run.fragments.filter((r,i)=>{const id=`${run.owner}:${index}:${i}`;expected.push(id);if(inside(r)){visible.push(id);return true;}return false;});
     return fragments.length?[{...run,fragments}]:[];
   });
-  const projected:TextGeometry={...data,runs,regions:data.regions.filter(r=>!detailKeys.has(r.key)),
+  const projected:TextGeometry={...data,runs,regions:data.regions.flatMap(r=>{
+      if(!detailKeys.has(r.key))return [r];
+      const rect=intersect(r.rect);
+      return rect.width>0&&rect.height>0?[{...r,rect}]:[];
+    }),
     styles:data.styles.map(s=>s===viewportStyle?{...s,scrollHeight:s.clientHeight}:s)};
-  // Keep owners present without treating offscreen detail entry rectangles as
-  // visible obstacles. Text-to-text checks still include distinct same-owner runs.
-  for(const run of projected.runs)if(detailKeys.has(run.owner))run.owner=viewport.key;
+  // Overflow-visible text may remain visible even when its owner's border box
+  // is wholly clipped. Preserve ownership without inventing a visible obstacle.
+  for(const run of projected.runs)if(detailKeys.has(run.owner)&&!projected.regions.some(r=>r.key===run.owner)) {
+    const owner=data.regions.find(r=>r.key===run.owner)!;
+    projected.regions.push({...owner,rect:intersect(owner.rect)});
+  }
   const completenessIssues:string[]=[];
   for(const run of data.runs.filter(r=>r.ancestorRegions.includes(viewport.key))){
     if(!run.fragments.length)completenessIssues.push(`missing-detail-fragments: ${run.text}`);

@@ -1239,15 +1239,15 @@ p {
   width: max-content; min-width: 44px; min-height: 44px; height: auto; padding: 2px;
 }
 #app[data-campaign-hud="compact"] #hud button { white-space: nowrap; }
-#app[data-campaign-hud="compact"] #loop,
-#app[data-campaign-hud="compact"] #bomb,
-#app[data-campaign-hud="compact"] #fire,
-#app[data-campaign-hud="compact"] #accelerate,
-#app[data-campaign-hud="compact"] #brake {
+#app.fantasia-shell #hud button[data-flight-control] {
   width: max-content; height: auto; min-width: max(44px, var(--control-size, 44px));
   min-height: max(44px, var(--control-size, 44px)); padding: 2px;
 }
-#app[data-campaign-hud="compact"] #loop > span { display: inline; }
+/* Text is part of the measured target, including its font's ascent/descent.
+   Never let flex shrinking squeeze a glyph into its neighbouring label. */
+#app.fantasia-shell #hud #loop > * { flex-shrink: 0; }
+#app.fantasia-shell #hud #loop > span { line-height: 1.3; }
+#app[data-campaign-hud="compact"] #loop > span { display: block; }
 #app[data-campaign-hud="compact"] #loop b { margin: 0; }
 #campaign-hud-details {
   position: absolute; left: 8px; top: 220px; width: 114px; height: 96px;
@@ -1281,4 +1281,12 @@ p {
 
 #app[data-campaign-hud="compact"] .campaign-site-state {
   display: block; white-space: normal; overflow-wrap: anywhere;
+}
+
+/* At 320px with enlarged type, two padded pixels on either side forced the
+   four-character site status onto a second line and into the sight reserve.
+   Recover padding, never type size or status text. */
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"] .campaign-site { padding: 0; }
+  #campaign-hud-details { height: 80px; }
 }

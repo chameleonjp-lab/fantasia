@@ -60,24 +60,43 @@ export function layoutCampaignSites(canvas: HudRect, bounds: HudRect, header: Hu
   }
   return result;
 }
+/** Compact cards stay permanently visible, but may move around the actual
+ * sight. Unlike the full header layout, there is no enclosing header rectangle
+ * to anchor them to. Keep every already-safe card at its natural position. */
+export function layoutCompactCampaignSites(canvas: HudRect, bounds: HudRect, cards: readonly HudRect[], sight: HudRect): HudRect[] {
+  const fixed = [sight, { x: canvas.width / 2 - 42, y: canvas.height / 2 - 42, width: 84, height: 84 }];
+  const result = cards.map(card => ({ ...card }));
+  const deferred: number[] = [], occupied: HudRect[] = [...fixed];
+  for (const [index, card] of cards.entries()) {
+    if (card.x < bounds.x || card.y < bounds.y || card.x + card.width > bounds.x + bounds.width || card.y + card.height > bounds.y + bounds.height
+      || occupied.some(obstacle => intersects(card, obstacle))) deferred.push(index);
+    else occupied.push(card);
+  }
+  for (const index of deferred) {
+    const placement = placeRectangle({ bounds, size: cards[index], preferred: cards[index], obstacles: occupied, gap: 2 });
+    if (placement.status === 'placed') result[index] = placement.rect;
+    occupied.push(result[index]);
+  }
+  return result;
+}
 interface PlacementInput { bounds: HudRect; size: Pick<HudRect, 'width' | 'height'>; preferred: Pick<HudRect, 'x' | 'y'>; obstacles: readonly HudRect[]; gap?: number }
-function candidates({ bounds, size, preferred, obstacles, gap = 4 }: PlacementInput, work?: { remaining: number }): HudRect[] | null {
+/** Enumerate edge-aligned positions in preference order, then inspect collisions
+ * lazily. Eagerly testing the entire coordinate grid exhausted the bounded
+ * search even when its first candidate led directly to a complete packing. */
+function candidatePositions({ bounds, size, preferred, obstacles, gap = 4 }: PlacementInput): HudRect[] | null {
   if (!valid(bounds) || !valid({ x: preferred.x, y: preferred.y, width: size.width, height: size.height }) || !Number.isFinite(gap) || gap < 0 || !obstacles.every(valid)) return null;
   const xs = new Set([preferred.x, bounds.x, bounds.x + bounds.width - size.width]);
   const ys = new Set([preferred.y, bounds.y, bounds.y + bounds.height - size.height]);
   for (const o of obstacles) { xs.add(o.x - size.width - gap); xs.add(o.x + o.width + gap); ys.add(o.y - size.height - gap); ys.add(o.y + o.height + gap); }
   const out: HudRect[] = [];
   for (const x of xs) for (const y of ys) {
-    if (work && --work.remaining < 0) return [];
-    const r = { x, y, width: size.width, height: size.height };
     if (x < bounds.x || y < bounds.y || x + size.width > bounds.x + bounds.width || y + size.height > bounds.y + bounds.height) continue;
-    if (!obstacles.some(o => {
-      if (work && --work.remaining < 0) return true;
-      return intersects(r, o, gap);
-    })) out.push(r);
-    if (work && work.remaining < 0) return [];
+    out.push({ x, y, width: size.width, height: size.height });
   }
   return out.sort((a, b) => Math.hypot(a.x - preferred.x, a.y - preferred.y) - Math.hypot(b.x - preferred.x, b.y - preferred.y) || a.y - b.y || a.x - b.x);
+}
+function candidates(input: PlacementInput): HudRect[] | null {
+  return candidatePositions(input)?.filter(rect => !input.obstacles.some(obstacle => intersects(rect, obstacle, input.gap ?? 4))) ?? null;
 }
 export function placeRectangle(input: PlacementInput): Placement {
   const choices = candidates(input);
@@ -154,6 +173,7 @@ export function layoutCampaignHud(measurement: HudMeasurement, sight: HudRect): 
 
 /** Pack the full measured readouts, preserving controls and the actual sight.
  * The bounded search can report blocked; it never shrinks or drops a panel. */
+const isFixedControl = (id: string) => ['game-sound', 'pause', 'bomb', 'loop', 'fire', 'accelerate', 'brake'].includes(id);
 function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudLayout {
   const { canvas, bounds } = measurement, radius = canvas.width < 360 ? 42 : 49;
   const radar = { id: 'radar', x: canvas.width - radius * 2 - 19,
@@ -168,7 +188,17 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
   const sites = obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-'));
   const fixedConflicts = sites.flatMap(site => obstacles.filter(other => other !== site && intersects(site, other))
     .map(other => ({ first: site.id, second: other.id })));
-  for (const site of sites) if (site.x < bounds.x || site.y < bounds.y || site.x + site.width > bounds.x + bounds.width || site.y + site.height > bounds.y + bounds.height) {
+  // Utility buttons may be children of the header, so their overlap with that
+  // containing box is intentional. Distinct button targets are not: enlarged
+  // text can grow a full-mode control into its neighbour or past a safe edge.
+  const fixedControls = obstacles.filter(item => isFixedControl(item.id));
+  for (let i = 0; i < fixedControls.length; i++) for (let j = i + 1; j < fixedControls.length; j++) {
+    if (intersects(fixedControls[i], fixedControls[j])) fixedConflicts.push({ first: fixedControls[i].id, second: fixedControls[j].id });
+  }
+  for (const control of fixedControls) for (const reserve of obstacles.filter(item => ['central-flight-lane', 'aim-and-reload-ring'].includes(item.id))) {
+    if (intersects(control, reserve)) fixedConflicts.push({ first: control.id, second: reserve.id });
+  }
+  for (const site of [...sites, ...fixedControls]) if (site.x < bounds.x || site.y < bounds.y || site.x + site.width > bounds.x + bounds.width || site.y + site.height > bounds.y + bounds.height) {
     fixedConflicts.push({ first: site.id, second: 'safe-bounds' });
   }
   const placed = new Map<string, HudRect>();
@@ -187,10 +217,12 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
       if (search(index + 1)) return true;
       placed.delete(item.id);
     }
-    const choices = candidates({ bounds, size: item, preferred: item, obstacles: occupied }, work);
+    const choices = candidatePositions({ bounds, size: item, preferred: item, obstacles: occupied });
     if (!choices) { invalid = true; return false; }
     for (const rect of choices) {
       if (preferredFits && rect.x === item.x && rect.y === item.y) continue;
+      if (--work.remaining < 0) break;
+      if (occupied.some(obstacle => --work.remaining < 0 || intersects(rect, obstacle, 4))) continue;
       placed.set(item.id, rect);
       if (search(index + 1)) return true;
       placed.delete(item.id);
@@ -236,14 +268,14 @@ export class CampaignHudLayout {
     if (!this.dirty && key === this.sightKey) return this.layout;
     if (!this.dirty && valid(sight) && this.layout?.status === 'placed' && this.layout.panels
       && [this.layout.radar.rect, ...this.layout.panels.map(panel => panel.rect), ...(this.layout.controls ?? []).map(control => control.rect)].every(rect => !intersects(rect, sight, 4))
-      && this.measurement!.obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-')).every(rect => !intersects(rect, sight))) {
+      && this.measurement!.obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-') || isFixedControl(item.id)).every(rect => !intersects(rect, sight))) {
       // A moving sight need not repack unchanged DOM. Keep stable labels until
       // its real footprint reaches one, while updating the diagnostic reserve.
       this.sightKey = key;
       this.layout = { ...this.layout, obstacles: [...this.layout.obstacles.filter(item => item.id !== 'aim-and-reload-ring'), { ...sight, id: 'aim-and-reload-ring' }] };
       return this.layout;
     }
-    if (this.measurement?.panels && this.measurement.obstacles.some(item => item.id.includes('campaign-site') && intersects(item, sight))) this.dirty = true;
+    if (this.measurement?.panels && this.measurement.obstacles.some(item => (item.id.includes('campaign-site') || item.id.startsWith('site-') || isFixedControl(item.id)) && intersects(item, sight))) this.dirty = true;
     if (this.dirty || !this.measurement) { this.measurement = this.host.measure(sight); this.measurements++; this.dirty = false; }
     this.sightKey = key;
     this.layout = layoutCampaignHud(this.measurement, sight);
@@ -370,10 +402,11 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       const left = inset(safe.paddingLeft), right = inset(safe.paddingRight), top = inset(safe.paddingTop), bottom = inset(safe.paddingBottom);
       const bounds = { x: left, y: top, width: c.width - left - right, height: c.height - top - bottom };
       const headerRect = header && visibleRect(header);
-      if (!compact && headerRect && siteNodes.length) {
+      if (siteNodes.length && (compact || headerRect)) {
         const cards = siteNodes.map(node => toCanvasRect(node.getBoundingClientRect(), canvasRect));
         const controls = [...app.querySelectorAll<HTMLElement>('#hud button')].map(visibleRect).filter((rect): rect is HudRect => Boolean(rect)).map(rect => toCanvasRect(rect, canvasRect));
-        const positions = layoutCampaignSites(canvasRect, bounds, toCanvasRect(headerRect, canvasRect), cards, sight, controls);
+        const positions = compact ? layoutCompactCampaignSites(canvasRect, bounds, cards, sight)
+          : layoutCampaignSites(canvasRect, bounds, toCanvasRect(headerRect!, canvasRect), cards, sight, controls);
         for (const [index, node] of siteNodes.entries()) {
           node.style.setProperty('--campaign-site-x', `${positions[index].x - cards[index].x}px`);
           node.style.setProperty('--campaign-site-y', `${positions[index].y - cards[index].y}px`);

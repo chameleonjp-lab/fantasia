@@ -5,6 +5,7 @@ import { assertCaptureCancelled, type CaptureEvent } from './capture-contract';
 import { collectHudTextGeometry, textGeometryIssues, type TextGeometry, type TextRegion } from './text-geometry';
 import { verifyDetailScroll } from './detail-scroll';
 import { detailGeometrySnapshot } from './text-geometry';
+import { meetsMinimumTarget } from './geometry-contract';
 import { CASES } from './acceptance-cases';
 
 export async function runCase(driver: RealRendererDriver, info: TestInfo, id: string, body: () => Promise<void>) {
@@ -96,7 +97,7 @@ export async function liveGeometry(driver: RealRendererDriver) {
     // Raw scroll/client metrics remain in evidence. Visible text outside its own
     // circle is judged by fragments/clipping/foreign collisions below, not by
     // an invented requirement that every label fit inside the circle.
-    if(node.button) { expect(node.width).toBeGreaterThanOrEqual(44); expect(node.height).toBeGreaterThanOrEqual(44); }
+    if(node.button) { expect(meetsMinimumTarget(node.width),`${node.id} width ${node.width}: requires 44 CSS px`).toBe(true); expect(meetsMinimumTarget(node.height),`${node.id} height ${node.height}: requires 44 CSS px`).toBe(true); }
   }
   expect(textIssues, 'Full visible text must be complete, unclipped and unobscured').toEqual([]);
   const overlap = (a:any,b:any) => Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x)>1 && Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y)>1;

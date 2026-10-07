@@ -23,3 +23,9 @@ test('exact in-page visibility predicate retains full positive rectangles',()=>{
 test('empty threat/payload widths with zero height, zero width, missing rects and hidden nodes are not visible boxes',()=>{
  for(const override of [{height:0},{width:0},{rects:0},{hidden:true},{display:'none'},{visibility:'hidden'}]) assert.equal(visible(node(override)),false);
 });
+
+import { meetsMinimumTarget } from '../browser-acceptance/geometry-contract';
+test('44 CSS px targets allow only sub-millipixel DOMRect numeric noise',()=>{
+ for(const size of [44,44.1,43.99998474121094,43.9995])assert.equal(meetsMinimumTarget(size),true);
+ for(const size of [43.9989,43.99,43.9,43,0,-1,NaN,Infinity,-Infinity])assert.equal(meetsMinimumTarget(size),false);
+});
