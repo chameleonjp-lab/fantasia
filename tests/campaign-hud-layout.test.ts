@@ -226,7 +226,8 @@ test('DOM adapter catches wrapped text before draw, caches repeated writes and r
   }
   const makeNode = (id: string, box: HudRect) => {
     const style = new Styles();
-    return { id, className: id, style, hidden: false, textContent: 'notice', box,
+    return { id, className: id, style, hidden: false, textContent: 'notice', box, dataset: {} as Record<string, string>,
+      ownerDocument: null as any, parentElement: null as any, append() {}, before() {}, after() {}, querySelector() { return null; }, querySelectorAll() { return []; }, removeAttribute() {},
       getAttribute(name: string) { return name === 'style' ? [...style.values].map(([key, value]) => `${key}:${value}`).join(';') || null : this.hidden && name === 'hidden' ? '' : null; },
       setAttribute() {}, closest() { return this.hidden ? this : null; }, contains(other: unknown) { return other === this; },
       getClientRects() { return this.hidden ? [] : [this.box]; },
@@ -243,11 +244,12 @@ test('DOM adapter catches wrapped text before draw, caches repeated writes and r
   const probe = makeNode('probe', { x: 0, y: 0, width: 0, height: 0 });
   const app = { ...makeNode('app', { x: 40, y: 60, width: 800, height: 600 }), append() {},
     querySelectorAll(selector: string) { return selector.includes('.flight-data > *') ? [announcement, instrument, elapsed] : []; },
-    querySelector(selector: string) { return selector === '.hud-top .time-block' ? elapsed : null; } };
+    querySelector(selector: string) { return selector === '#hud' ? app : selector === '.hud-top .time-block' ? elapsed : null; } };
   const win = { getComputedStyle() { return { visibility: 'visible', display: 'block', paddingLeft: '0', paddingRight: '0', paddingTop: '0', paddingBottom: '0' }; },
     addEventListener(name: string) { listeners.add(name); }, removeEventListener(name: string) { listeners.delete(name); } };
-  const doc = { defaultView: win, documentElement: makeNode('html', app.box), body: makeNode('body', app.box), createElement() { return probe; },
+  const doc = { defaultView: win, documentElement: makeNode('html', app.box), body: makeNode('body', app.box), createElement() { const node = makeNode('created', { x: 0, y: 0, width: 0, height: 0 }); node.ownerDocument = doc; return node; }, createComment() { return { parentNode: app, after() {}, remove() {} }; },
     fonts: { addEventListener(name: string) { listeners.add(name); }, removeEventListener(name: string) { listeners.delete(name); } } };
+  for (const node of [app, announcement, instrument, elapsed]) node.ownerDocument = doc;
   const canvas = { ...makeNode('flight', app.box), ownerDocument: doc, closest() { return app; }, parentElement: app };
   globalThis.ResizeObserver = class { observe() {} disconnect() { resizeDisconnected++; } } as unknown as typeof ResizeObserver;
   globalThis.MutationObserver = class { observe() {} disconnect() { mutationDisconnected++; } takeRecords() { return records.splice(0); } } as unknown as typeof MutationObserver;
@@ -277,7 +279,7 @@ test('DOM adapter catches wrapped text before draw, caches repeated writes and r
     assert.equal(announcement.style.getPropertyValue('--campaign-hud-y'), '6px');
     assert.equal(announcement.style.getPropertyValue('color'), 'plum');
     assert.equal(announcement.style.getPropertyValue('outline'), '2px solid gold');
-    assert.equal(resizeDisconnected, 1); assert.equal(mutationDisconnected, 1); assert.equal(removed, 1); assert.equal(listeners.size, 0);
+    assert.equal(resizeDisconnected, 1); assert.equal(mutationDisconnected, 1); assert.equal(removed, 3); assert.equal(listeners.size, 0);
   } finally { globalThis.ResizeObserver = previousResize; globalThis.MutationObserver = previousMutation; }
 });
 
@@ -688,4 +690,47 @@ test('blocked canvas labels remain full-size and explicit, including absence of 
   assert.deepEqual(layoutCampaignCanvasLabel(null, preferred), { status: 'blocked', rect: preferred });
   assert.equal(layoutCampaignCanvasLabel({ ...layout, obstacles: [{ ...bounds, x: NaN, id: 'invalid-control' }] }, preferred).status, 'invalid');
   assert.equal(layoutCampaignCanvasLabel({ ...layout, bounds: { ...bounds, width: Infinity } }, preferred).status, 'invalid');
+});
+
+test('compact packing reserves the complete detail viewport and preserves movable control dimensions', () => {
+  const source: HudMeasurement = {
+    canvas: { x: 0, y: 0, width: 800, height: 600 }, bounds: { x: 8, y: 8, width: 784, height: 584 },
+    obstacles: [], flightData: null, threat: null,
+    panels: [{ id: 'campaign-hud-details', x: 8, y: 150, width: 114, height: 96 },
+      { id: 'campaign-mode-status', x: 8, y: 120, width: 70, height: 18 }],
+    movableControls: [{ id: 'fire', x: 8, y: 450, width: 88, height: 88 },
+      { id: 'pause', x: 100, y: 450, width: 44, height: 44 }],
+  };
+  const out = layoutCampaignHud(source, { x: 350, y: 250, width: 100, height: 100 });
+  assert.equal(out.status, 'placed'); assert.equal(out.compact, true);
+  const rectangles = [out.radar.rect, ...out.panels!.map(item => item.rect), ...out.controls!.map(item => item.rect)];
+  for (let i = 0; i < rectangles.length; i++) for (let j = i + 1; j < rectangles.length; j++) assert(!intersects(rectangles[i], rectangles[j], 4));
+  for (const item of source.movableControls!) {
+    const actual = out.controls!.find(control => control.id === item.id)!;
+    assert.equal(actual.rect.width, item.width); assert.equal(actual.rect.height, item.height);
+    assert(out.obstacles.some(obstacle => obstacle.id === item.id && obstacle.x === actual.rect.x));
+  }
+  assert.equal(out.panels!.find(item => item.id === 'campaign-hud-details')!.rect.height, 96);
+});
+
+test('compact no-fit retains every viewport and control instead of shrinking or dropping content', () => {
+  const out = layoutCampaignHud({ canvas: { x: 0, y: 0, width: 320, height: 568 }, bounds,
+    obstacles: [], flightData: null, threat: null,
+    panels: [{ id: 'campaign-hud-details', x: 8, y: 8, width: 310, height: 96 }],
+    movableControls: [{ id: 'pause', x: 8, y: 450, width: 44, height: 44 }],
+  }, sight);
+  assert.equal(out.status, 'blocked'); assert.equal(out.panels![0].rect.width, 310);
+  assert.equal(out.controls![0].rect.width, 44); assert(out.searchChecks! <= 120_000);
+});
+
+test('moving sight rechecks movable controls instead of accepting the stale cached location', () => {
+  const source: HudMeasurement = { canvas: { x: 0, y: 0, width: 800, height: 600 }, bounds: { x: 8, y: 8, width: 784, height: 584 },
+    obstacles: [], flightData: null, threat: null, panels: [],
+    movableControls: [{ id: 'fire', x: 30, y: 450, width: 88, height: 88 }] };
+  const adapter = new CampaignHudLayout({ measure: () => source, observe: () => () => {}, applyThreat() {}, applyPanels() {} });
+  const first = adapter.update({ x: 350, y: 250, width: 100, height: 100 })!;
+  const oldControl = first.controls![0].rect;
+  const next = adapter.update({ ...oldControl })!;
+  assert.equal(next.status, 'placed'); assert(!intersects(next.controls![0].rect, oldControl, 4));
+  adapter.dispose();
 });

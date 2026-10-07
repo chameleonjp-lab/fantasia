@@ -65,7 +65,7 @@ export function campaignThreatReadout(state: CampaignState): string {
   return '';
 }
 
-interface SiteElements { root: HTMLElement; owner: HTMLElement; progress: HTMLElement; force: HTMLElement; wave: HTMLElement }
+interface SiteElements { root: HTMLElement; owner: HTMLElement; progress: HTMLElement; force: HTMLElement; wave: HTMLElement; state: HTMLElement; timing: HTMLElement }
 const stripElements = new WeakMap<HTMLElement, Map<number, SiteElements>>();
 const detailElements = new WeakMap<HTMLElement, Map<number, HTMLElement>>();
 
@@ -81,7 +81,10 @@ function createStrip(container: HTMLElement, sites: readonly CampaignSiteReadout
     const progress = document.createElement('i'); track.append(progress);
     const force = document.createElement('span'); force.className = 'campaign-site-force';
     const wave = document.createElement('span'); wave.className = 'campaign-site-wave';
-    root.append(heading, track, force, wave); fragment.append(root); elements.set(site.id, { root, owner, progress, force, wave });
+    const status = document.createElement('span'); status.className = 'campaign-site-state';
+    const timing = document.createElement('span'); timing.className = 'campaign-site-timing';
+    wave.append(status, timing);
+    root.append(heading, track, force, wave); fragment.append(root); elements.set(site.id, { root, owner, progress, force, wave, state: status, timing });
   }
   container.replaceChildren(fragment); stripElements.set(container, elements); return elements;
 }
@@ -99,7 +102,8 @@ export function updateCampaignHud(state: CampaignState, _player: Aircraft): void
       setText(entry.owner, `${site.ownerLabel}${site.contested ? ' ⚔' : site.depleted ? ' !' : ''}`);
       const width = `${site.progress}%`; if (entry.progress.style.width !== width) entry.progress.style.width = width;
       setText(entry.force, `友${site.friendly} / 予${site.reserves}`);
-      setText(entry.wave, `${site.stateLabel} · ${site.friendlyDispatch ? '派' : '補'}${site.friendlyWaveSeconds}s`);
+      setText(entry.state, site.stateLabel);
+      setText(entry.timing, ` · ${site.friendlyDispatch ? '派' : '補'}${site.friendlyWaveSeconds}s`);
     }
   }
   const details = document.getElementById('pause-site-details');

@@ -10,6 +10,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CampaignScene, GeometryBuilder, groundInstanceOutsideView } from '../src/campaign-scene';
 import { makeCampaignActor } from '../src/campaign';
 import { heightAt } from '../src/campaign-terrain';
+import { layoutCampaignCanvasLabel, type HudLayout, type HudRect } from '../src/campaign-hud-layout';
 
 interface Part {
   geometry: BufferGeometry;
@@ -330,7 +331,10 @@ test('bomb-label diagnostics match drawing and clear for inactive, dead, offscre
   const layout = { status: 'placed', canvas: { x: 0, y: 0, width: 568, height: 320 }, bounds: { x: 8, y: 8, width: 552, height: 304 },
     radar: { status: 'placed', rect: { x: 341.84375, y: 101.875, width: 100, height: 116 }, radius: 49, center: { x: 391.84375, y: 151.875 } },
     obstacles: [], panels: [], threat: null };
-  scene.drawBombGuide(state, layout);
+  scene.hudLayout = { placeCanvasLabel(id: string, preferred: HudRect) {
+    assert.equal(id, 'bomb-guide'); return layoutCampaignCanvasLabel(layout as HudLayout, preferred);
+  } };
+  scene.drawBombGuide(state);
   const drawn = scene.bombGuideLabel;
   assert.equal(drawn.status, 'placed');
   assert.deepEqual(rectangles, [[drawn.rect.x, drawn.rect.y, 121.5, 20]], 'diagnostics match the actual full-size background draw');
@@ -340,7 +344,7 @@ test('bomb-label diagnostics match drawing and clear for inactive, dead, offscre
   for (const state of [{ player: { ...player, bombs: 0 } }, { player: { ...player, hp: 0 } }, { player },
     { player: { ...player, position: { x: 0, y: 100000, z: 0 } } }]) {
     scene.bombGuideLabel = { id: 'bomb-guide', status: 'placed', text: 'previous label', rect: { x: 20, y: 20, width: 120, height: 20 } };
-    scene.drawBombGuide(state, null);
+    scene.drawBombGuide(state);
     assert.equal(scene.bombGuideLabel, null, 'do not retain an earlier drawn box after any early return');
   }
 });

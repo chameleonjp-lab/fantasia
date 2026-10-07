@@ -18,9 +18,9 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
-      - name: Report clean-sheet driver proof (acceptance incomplete)
+      - name: Report clean-sheet acceptance (release remains blocked)
         if: always()
-        run: node scripts/report-browser-proof.mjs
+        run: node --import tsx scripts/report-clean-acceptance.ts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

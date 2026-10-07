@@ -9,7 +9,7 @@ class ElementStub extends EventTarget {
   getAttribute(k:string){return this.attributes.get(k)??null;}
   setAttribute(k:string,v:string){this.attributes.set(k,v);}
   getBoundingClientRect(){return {left:0,top:0};}
-  closest(){return this;}
+  closest(selector?: string) { return selector === '#campaign-hud-details' ? null : this; }
   querySelector(){return this;}
   setPointerCapture(){throw new Error('Simulated capture unavailable');}
   hasPointerCapture(){return false;}

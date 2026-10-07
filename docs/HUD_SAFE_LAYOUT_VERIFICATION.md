@@ -255,3 +255,37 @@ The three existing files can be compared with the pinned base; four files are
 new. Preserve later user edits and obtain approval for changed restoration scope.
 No main rewrite, force push, merge, release-gate override or deployment is part
 of this candidate.
+
+## Approved responsive detail fallback (2026-10-07; native verification pending)
+
+The user approved keeping all seven site states, aim, critical warnings and
+operation controls persistently visible while allowing only secondary details
+to scroll at small sizes/enlarged text. This supersedes the earlier requirement
+above to show every secondary readout simultaneously; it does not weaken text
+size, minimum 44 CSS-pixel operation targets, safe bounds or collision checks.
+
+The DOM adapter first measures full mode. It retains it only when full packing
+succeeds and site force/wave text is not clipped. Otherwise, compact mode moves
+original live nodes into `#campaign-hud-details`, a keyboard-focusable, touch
+scrollable bounded region. The visible viewport is a full layout obstacle.
+Font size, line height and letter spacing are preserved across reparenting.
+Seven number/owner/alert/progress/state-label summaries remain live and fixed (4+3 on narrow
+screens); health, speed, ammunition, countdown, mode and lives stay persistent.
+Critical announcement priority >= 1 and friendly-blast/protection bomb hints
+remain outside scrolling details. Controls can move as full-size measured boxes
+in compact mode; the radar is unchanged. No whole-HUD scroll, carousel, hidden
+text replacement or ARIA-only substitute is introduced.
+
+Secondary elapsed time, tallies, wingmen, score, flight guidance, loop readiness,
+noncritical notices, remaining-life explanation and each site's original force
+and wave timing text are retained in the region. Each short state label (including
+rescue, reorganization, turret, capture and defense states) remains on its fixed card. Focusing or touching it clears flight
+holds; keyboard browsing does not become flight input. Disposal restores original
+positions, attributes and typography. Failed packing remains `blocked`; a compact
+flag is not evidence of valid geometry or readable content.
+
+Native acceptance must independently verify all persistent boxes and full text,
+actual font sizes and control targets, keyboard and touch access to every full
+Range fragment in the detail region, safe last-item visibility, and transitions
+back to full mode. Local Chromium was not relaunched because its existing EPERM
+restriction remains. Pure tests and type/build results are not native evidence.

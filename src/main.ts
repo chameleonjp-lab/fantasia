@@ -191,7 +191,7 @@ function setScreen(next: typeof screen) {
 }
 function announce(text: string, duration = 3, priority = 0) {
   if (state.activeTicks < announcementUntil && priority < announcementPriority) return;
-  announcementPriority = priority; el('announcement').textContent = text; announcementUntil = state.activeTicks + duration * 60;
+  announcementPriority = priority; el('announcement').dataset.campaignCritical = String(priority >= 1); el('announcement').textContent = text; announcementUntil = state.activeTicks + duration * 60;
 }
 function syncAudio() {
   audio.active = state.status === 'running' && screen === 'playing' && !document.hidden; audio.sync();
@@ -314,7 +314,7 @@ function updateBombCue() {
   const enemy = affected.some(actor => actor.team === 'enemy'), friendly = affected.some(actor => actor.team === 'friendly');
   const text = !ready ? state.player.protectionTicks > 0 ? '復活保護中' : player.bombReloadTicks > 0 ? '補給中' : '投下待機'
     : friendly && state.mode === 'normal' ? '味方が爆風圏内' : enemy ? '敵が爆風圏内' : '落下地点の予測';
-  el('bomb').dataset.ready = String(ready && enemy && !(friendly && state.mode === 'normal')); el('bomb-hint').textContent = text;
+  el('bomb').dataset.ready = String(ready && enemy && !(friendly && state.mode === 'normal')); el('bomb-hint').dataset.campaignCritical = String(state.player.protectionTicks > 0 || (friendly && state.mode === 'normal')); el('bomb-hint').textContent = text;
   el('bomb').setAttribute('aria-label', `爆弾を投下・${player.bombs}発・${text}（予測）`);
 }
 function positionReloadStatus() {
@@ -410,6 +410,8 @@ el('pause').addEventListener('click', () => pause('manual')); el('resume').addEv
 document.addEventListener('visibilitychange', () => { if (document.hidden) pause('hidden'); else { clearInput(); if (screen === 'preparing') syncStartPreparation(); } }); window.addEventListener('blur', () => pause('blur'));
 document.addEventListener('keydown', event => {
   if (settings.isOpen || rules?.isOpen) return;
+  // Detail browsing owns native navigation even when a user bound that key to pause.
+  if (event.code !== 'Escape' && event.target instanceof HTMLElement && event.target.closest('#campaign-hud-details')) return;
   if (keyboardSettings.matchesPause(event)) { event.preventDefault(); if (screen === 'playing') pause('manual'); else if (screen === 'paused') resume(); }
   if (event.key === 'Tab' && screen === 'paused') {
     const items = Array.from(el('pause-screen').querySelectorAll<HTMLElement>('button:not([hidden]):not(:disabled), summary')).filter(item => item.offsetParent !== null);
