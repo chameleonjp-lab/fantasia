@@ -13,6 +13,8 @@ class ElementStub extends EventTarget {
   querySelector() { return this; }
   setPointerCapture() {}
   hasPointerCapture() { return false; }
+  focusOptions: FocusOptions[] = [];
+  focus(options: FocusOptions) { this.focusOptions.push(options); }
 }
 
 function pointer(type: string, pointerId: number, pointerType: string, x = 100, button = 0) {
@@ -49,6 +51,11 @@ test('primary mouse or pen pointers cannot erase a live touch steering owner or 
     assert.equal(controls.sample().turn, 0, 'a recycled ID starts a new neutral drag');
     win.dispatchEvent(pointer('pointermove', 1, 'touch', 170));
     assert.ok(controls.sample().turn < -.7, 'movement is relative to the new contact origin');
+    assert.deepEqual(surface.focusOptions, [], 'touch and rejected mixed pointers do not steal keyboard focus');
+    win.dispatchEvent(pointer('pointerup', 1, 'touch'));
+    surface.dispatchEvent(pointer('pointerdown', 4, 'mouse'));
+    assert.equal(controls.peek().steerPointer, 4);
+    assert.deepEqual(surface.focusOptions, [{ preventScroll: true }], 'accepted mouse steering restores keyboard ownership');
   } finally {
     controls.dispose();
     for (const [key, descriptor] of original) {

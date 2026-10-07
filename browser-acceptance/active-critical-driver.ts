@@ -19,7 +19,7 @@ export function criticalRuntimeEvidence(raw: any) {
       reloadTicksRemaining: raw.player.reloadTicksRemaining, bombReloadTicks: raw.player.bombReloadTicks },
     campaign: { runId: s.runId, seed: s.seed, simTick: s.simTick, activeTicks: s.activeTicks, status: s.status,
       livesRemaining: s.livesRemaining, selfLosses: s.selfLosses, player: s.player, events: s.events,
-      actorCount: s.actors.length, actors: s.actors.filter((a: any) => a.team === 'enemy' && a.phase === 'telegraph' && a.targetRef?.id === s.player.id)
+      actorCount: s.actorCount ?? s.actors.length, actors: s.actors.filter((a: any) => a.team === 'enemy' && a.phase === 'telegraph' && a.targetRef?.id === s.player.id)
         .map((a: any) => ({ id: a.id, generation: a.generation, hp: a.hp, team: a.team, class: a.class, phase: a.phase, targetRef: a.targetRef, fireAtTick: a.fireAtTick })),
       sites: s.sites.map((a: any) => ({ id: a.id, owner: a.owner, contested: a.contested, progress: a.progress })) },
     render: raw.render, controlsInput: raw.controlsInput, respawnRemaining: raw.respawnRemaining };
@@ -27,6 +27,18 @@ export function criticalRuntimeEvidence(raw: any) {
 
 export class CriticalAcquisitionDriver extends RealRendererDriver {
   override readonly budget = new RunBudget(120000, 1800);
+  override async full(): Promise<any> {
+    // Project inside the browser before transport. Acquisition still reads the
+    // actual state each native step; the separate atomic display capture keeps
+    // the full geometry. Do not transfer 350 actors and layout search diagnostics
+    // on every frame of a long natural flight.
+    return this.call('read critical source observation', () => this.page.evaluate(`(() => {
+      const raw = window.__fantasiaReadState(false);
+      const value = (${criticalRuntimeEvidence.toString()})(raw);
+      value.render = { calls: raw.render.calls, triangles: raw.render.triangles, queue: raw.render.queue };
+      return value;
+    })()`));
+  }
 }
 
 export async function acquireCritical(d: CriticalAcquisitionDriver, kind: CriticalKind): Promise<CriticalWitness> {

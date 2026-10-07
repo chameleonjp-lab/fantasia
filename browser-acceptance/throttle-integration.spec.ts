@@ -113,7 +113,7 @@ test('[throttle-save] Explicit v2 Save preserves legacy bytes and reloads the le
     await page.locator('#control-mode').selectOption('normal');await page.locator('#control-target').selectOption('throttle');
     await opacityTo(d,60);await d.click('#control-cancel');
     expect(await page.evaluate(()=>localStorage.getItem('fantasia-controls-v2'))).toBe(saved.current);
-    await page.reload();await d.waitState('reload ready',s=>s.phase==='ready',80);
+    await page.reload();await d.waitState('reload ready',s=>s.phase==='ready'&&s.graphicsReady,80);
     await d.start('normal');await expect(page.locator('#throttle')).toHaveCSS('opacity','0.7');await neutral(d);
   });
 });

@@ -38,7 +38,7 @@ Input sample → FlightInput.throttle → CampaignFlightController → advanceTh
 
 既存workflowの標準ubuntu-latestを使います。verify jobは既存34件とレバー4件、active-critical jobは警告12件・39状態を別実行します。警告suiteは25分、個別case12分の上限、jobは35分です。verify jobは40分上限です。新しい有料runner・サービスは使いません。
 
-既存34のartifact経路は維持します。追加4/12の原JSON・画像等は `supplemental-results` に分離し、新artifactを作らずjob logへ原bytesを無圧縮base64チャンクで記録します。FILE/CHUNK/END識別、byte数、SHA-256、原JSON-pointer参照を持ち、同じ内容hashの重複だけを参照化します。取得後に全チャンクとhashを復元照合するまで、回収済み証拠とは呼びません。欠落・打切りは失敗として残します。
+既存34のartifact経路は維持します。追加4/12の原JSON・画像等は `supplemental-results` に分離し、新artifactを作らずjob logへgzipによる可逆圧縮後のbase64チャンクで記録します。FILE/CHUNK/END識別、原本と圧縮後それぞれのbyte数・SHA-256、原JSON-pointer参照を持ち、同じ内容hashの重複だけを参照化します。取得後に全チャンクを結合し、圧縮後のhashとgzip展開した原本のhashを両方照合するまで、回収済み証拠とは呼びません。欠落・打切りは失敗として残します。PR #9の最初の警告結果が223MBとなり、無圧縮ログの記録が長引いたため、原本bytesを変えず転送量を減らしました。
 
 追加reportは4件/12件のregistryを別集計し、retry/skip/重複/欠落/壊れた添付/誤ったoutcome/欠けた観測値を合格にしません。警告はbefore/afterの実状態と文字geometryも再判定します。復活待機はcallerが明示した時だけ別phaseを許可し、既存34のplaying既定は変更しません。
 
@@ -53,3 +53,11 @@ Input sample → FlightInput.throttle → CampaignFlightController → advanceTh
 次の入力修正版では、W/S・再割当キー・短いタッチレバーも、実tickを消費するまで保留し、一度だけ速度へ反映します。解放した表示は中央へ戻り、clear/blur/mode/設定/世代交代、cancel/lostcaptureでは未消費調整を破棄します。すでに実tickで消費したholdは、解放で再生しません。共通純関数と35fixtureは同一bytesを保持し、DOM helperはこの契約補完を含む派生差分として識別します。44px高でhandle中心の移動長が0になるレバーは配置不可とし、入力可能と案内しません。
 
 入力修正版のDOM制御 SHA-256: `90ab345e800df435f236abf7fb8e014c7b471f65fe04640d3f4d36be518bdefe`。
+
+## PR #9の失敗修正（2026-10-08）
+
+READMEの統合済み見出しと由来検査の期待値を一致させました。run `37695023486` の320×568・文字200%・Normalでは、実寸64×128のレバーが配置探索の最後に残り、120,000回上限に達していました。レバーの縦の場所を先に確保する順序へ修正し、原寸・隙間・探索上限を維持した実測fixtureの回帰検査を追加しています。
+
+設定を保存してreloadした後の検査は、Homeのphaseだけでなく実rendererの準備完了を待ちます。キャンバスのmouse pointerdownで既定処理を止めた結果、詳細欄にkeyboard focusが残る問題は、受理したmouse操縦開始時にscrollを動かさずfocusを戻します。生きている別pointerやtouch/penからfocusを奪わない所有権検査を維持します。
+
+復活待機中は作戦tickが止まるため、自機喪失の優先度5の案内が残り、復活保護の優先度4の案内を遮っていました。復活保護も優先度5にし、自然な墜落から実mainの3秒待機を経た表示交代を検査しています。活動警告の取得は実状態の必要な値をbrowser内で投影してから転送し、350actor全体と配置探索診断を毎frame転送する負担を減らしました。実native step、120秒/1,800frameの取得上限、45秒/120stepの表示上限、GPU fence、安全中断、期待文字・geometry判定は維持しています。同一headのCIで実画面の合否を確認します。

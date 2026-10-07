@@ -133,3 +133,19 @@ test('acquisition allowance does not change the original 45-second display or na
   assert.equal(acquisition.budget.wallMs, 120000); assert.equal(acquisition.budget.maxSteps, 1800);
   assert.equal(display.budget.wallMs, 45000); assert.equal(display.budget.maxSteps, 120);
 });
+
+test('browser-side acquisition projection retains real targeting activation and original actor count', async () => {
+  const s = sortie(); s.reach('enemy-targeting');
+  const raw = { ...s.read(), mode: 'normal', tick: s.campaign.state.simTick, activeTicks: s.campaign.state.activeTicks,
+    player: s.flight.player, render: { calls: 1, triangles: 2, queue: { failure: null }, hudLayout: { large: 'diagnostics' } }, controlsInput: {} };
+  const before = JSON.stringify(raw); let reads = 0;
+  const page = { on() {}, evaluate(source: string) { return Promise.resolve(runInNewContext(source, {
+    window: { __fantasiaReadState(argument: unknown) { assert.equal(argument, false); reads++; return raw; } },
+  })); } } as any;
+  const driver = new CriticalAcquisitionDriver(page), observed = await driver.full();
+  assert.equal(reads, 1); assert.equal(criticalStateActive('enemy-targeting', observed), true);
+  assert.equal(observed.campaign.actorCount, 350); assert.ok(observed.campaign.actors.length > 0);
+  assert.equal(criticalRuntimeEvidence(observed).campaign.actorCount, 350);
+  assert.equal(observed.render.hudLayout, undefined); assert.equal(observed.render.queue.failure, null);
+  assert.equal(JSON.stringify(raw), before); assert.equal(driver.budget.steps, 0);
+});

@@ -74,12 +74,12 @@ async function appHarness() {
     dispose() { this.disposed = true; this.queue.dispose(); }
   }
   class Controls {
-    pending = false;
+    pending = false; climb = 0;
     constructor(_canvas: unknown, _buttons: unknown, readonly active: () => boolean) { controls = this; }
     clear() { this.pending = false; } clearPending() {} setMode() {} dispose() {}
     peek() { return { pending: this.pending }; }
     sampleThrottle() { return 0; }
-    sample() { sampleCalls++; return { turn: 0, climb: 0, loop: this.pending, fire: false, bomb: this.pending }; }
+    sample() { sampleCalls++; return { turn: 0, climb: this.climb, loop: this.pending, fire: false, bomb: this.pending }; }
   }
   class Settings { isOpen = false; setActiveMode() {} open() { this.isOpen = true; } close() { this.isOpen = false; } dispose() {} }
   class Keys { describe() { return ''; } subscribe() { return () => {}; } matchesPause(e: any) { return e.key === 'Escape'; } }
@@ -123,6 +123,20 @@ async function selectedPending(mode = 'normal') {
   const h = await appHarness(); h.frame(); h.mode(mode); h.click('start');
   h.signal(); h.frame(); h.frame(); return h;
 }
+
+test('real crash and frozen respawn countdown replace self-loss announcement with active protection', async () => {
+  const h = await selectedPending(); h.signal(); h.frame(); h.frame();
+  assert.equal(h.read().phase, 'playing'); h.controls.climb = -1;
+  for (let n = 0; n < 250 && h.read().phase === 'playing'; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'respawning');
+  assert.match(h.nodes.get('announcement').textContent, /自機喪失/);
+  const frozen = h.read().activeTicks; h.controls.climb = 0;
+  for (let n = 0; n < 200 && h.read().phase === 'respawning'; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'playing'); assert.equal(h.read().activeTicks, frozen);
+  assert.ok(h.read().campaign.player.protectionTicks > 0);
+  assert.equal(h.nodes.get('announcement').textContent, '復活 · 2秒の保護中は自機も攻撃できません');
+  assert.equal(h.nodes.get('announcement').dataset.campaignCritical, 'true');
+});
 
 test('actual main wiring stays preparing without ticks/sampling until selected frame acknowledgment, then resets clock/input once', async () => {
   const h = await appHarness(); h.frame(); h.mode('normal'); h.click('start'); h.click('start');

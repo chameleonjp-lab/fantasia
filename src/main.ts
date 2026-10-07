@@ -359,7 +359,7 @@ function frame() {
     } else if (state.status === 'respawning') {
       respawnRemaining -= dt;
       if (respawnRemaining <= 0) {
-        campaign.resumeRespawn(); flight.sync(state, true); bombPredictionTick = -1; clearInput(); audio.resetFlight(); syncAudio(); announce('復活 · 2秒の保護中は自機も攻撃できません', 2, 4);
+        campaign.resumeRespawn(); flight.sync(state, true); bombPredictionTick = -1; clearInput(); audio.resetFlight(); syncAudio(); announce('復活 · 2秒の保護中は自機も攻撃できません', 2, 5);
       }
     } else if (state.status === 'running') {
       if (accumulator + dt > .25) {

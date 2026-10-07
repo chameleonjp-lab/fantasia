@@ -225,6 +225,10 @@ export class FlightControls {
     if (this.steerPointer !== null) return;
     if (this.throttle?.pointer === event.pointerId || this.buttonPointerTypes.has(event.pointerId)) return;
     event.preventDefault();
+    // Preventing the pointer default also prevents native click focus. Return
+    // keyboard ownership after an accepted mouse click, without stealing it
+    // from another touch/pen gesture or a focused throttle.
+    if (event.pointerType === 'mouse') this.surface.focus({ preventScroll: true });
     this.steerPointer = event.pointerId;
     this.steerPointerType = event.pointerType;
     this.origin = { x: event.clientX, y: event.clientY };

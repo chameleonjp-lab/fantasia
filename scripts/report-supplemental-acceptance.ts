@@ -1,6 +1,7 @@
 import {readFile,realpath,writeFile,mkdir} from 'node:fs/promises';
 import {resolve,relative,isAbsolute,sep,dirname,basename} from 'node:path';
 import {createHash} from 'node:crypto';
+import {gzipSync} from 'node:zlib';
 import {supplementalReport,type SupplementalSuite} from './supplemental-acceptance-report';
 const suite=process.argv[2] as SupplementalSuite;
 if(!['throttle','active-critical'].includes(suite))throw Error('Expected explicit supplemental suite');
@@ -9,10 +10,12 @@ const source=resolve(root,suite==='throttle'?'throttle-integration-results.json'
 const seen=new Set<string>();
 function preserve(bytes:Buffer,label:string){
   const sha256=createHash('sha256').update(bytes).digest('hex');
-  const ref={label,bytes:bytes.length,sha256,encoding:'base64',compressed:false,chunks:Math.ceil(bytes.length/12000)};
+  const encoded=gzipSync(bytes);
+  const ref={label,bytes:bytes.length,sha256,encoding:'base64',compressed:true,compression:'gzip',
+    encodedBytes:encoded.length,encodedSha256:createHash('sha256').update(encoded).digest('hex'),chunks:Math.ceil(encoded.length/12000)};
   if(!seen.has(sha256)) {
     console.log('FANTASIA_EVIDENCE_FILE '+JSON.stringify(ref));
-    for(let offset=0,index=0;offset<bytes.length;offset+=12000,index++)console.log(`FANTASIA_EVIDENCE_CHUNK ${sha256} ${index} ${bytes.subarray(offset,offset+12000).toString('base64')}`);
+    for(let offset=0,index=0;offset<encoded.length;offset+=12000,index++)console.log(`FANTASIA_EVIDENCE_CHUNK ${sha256} ${index} ${encoded.subarray(offset,offset+12000).toString('base64')}`);
     console.log('FANTASIA_EVIDENCE_END '+sha256);seen.add(sha256);
   }
   return ref;

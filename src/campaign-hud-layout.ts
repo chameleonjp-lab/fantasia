@@ -186,8 +186,11 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
     { ...sight, id: 'aim-and-reload-ring' }];
   // Short wide warnings otherwise come last by area and lose every full-width
   // slot to tall controls. Reserve their actual rectangle before area packing.
+  // The long throttle travel needs a continuous vertical slot. Place it before
+  // other readouts divide those slots, then keep the existing area order.
   const items = [...(measurement.canvasLabels ?? []), ...[radar, ...measurement.panels!, ...(measurement.movableControls ?? [])]
-    .sort((a, b) => b.width * b.height - a.width * a.height || a.id.localeCompare(b.id))];
+    .sort((a, b) => Number(b.id === 'throttle') - Number(a.id === 'throttle')
+      || b.width * b.height - a.width * a.height || a.id.localeCompare(b.id))];
   const work = { remaining: 120_000 };
   let invalid = !valid(canvas) || !valid(bounds) || !items.every(valid) || !obstacles.every(valid);
   const sites = obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-'));
