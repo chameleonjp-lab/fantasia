@@ -1,11 +1,11 @@
 import {
   ACESFilmicToneMapping, BackSide, BoxGeometry, BufferAttribute, BufferGeometry,
   CircleGeometry, Color, ConeGeometry, CylinderGeometry, DirectionalLight,
-  DoubleSide, DynamicDrawUsage, Fog, Group, HemisphereLight, InstancedMesh,
+  DoubleSide, DynamicDrawUsage, Fog, Frustum, Group, HemisphereLight, InstancedMesh,
   LineBasicMaterial, LineSegments, Matrix4, Mesh, MeshBasicMaterial,
   MeshStandardMaterial, OctahedronGeometry, PerspectiveCamera, PlaneGeometry,
   Points, Quaternion, Scene, ShaderMaterial, SphereGeometry, SRGBColorSpace,
-  TorusGeometry, Vector3, WebGLRenderer, type Material,
+  TorusGeometry, Vector3, WebGLRenderer, type Material, type Sphere,
 } from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { AircraftFactory, type AircraftVisual } from './aircraft';
@@ -16,6 +16,7 @@ import { aimRadius, AIM_COLORS } from './aim-indicator';
 import { FLIGHT_FOV, getFlightCameraPose, projectFlightTarget } from './flight-view';
 import { projectGunSight } from './gun-sight';
 import { RenderQueue } from './render-queue';
+import { createCampaignHudLayout, layoutCampaignCanvasLabel, type CampaignHudLayout } from './campaign-hud-layout';
 import type { Aircraft, Bullet, Team } from './types';
 import type { CampaignActor, CampaignState, Vec } from './campaign-types';
 import { heightAt, radialPosition, route, sweepSphere, TERRAIN_OBSTACLES } from './campaign-terrain';
@@ -33,12 +34,19 @@ const TEAM_COLORS = { friendly: 0x27aaa4, enemy: 0xe29b55 };
 const UNIT_NAMES = { sword: '剣', bow: '弓', mage: '魔', cavalry: '騎', dragon: '竜' };
 
 /** All geometry here is generated locally; it has no external texture dependency. */
-class GeometryBuilder {
+export class GeometryBuilder {
   private pieces: BufferGeometry[] = [];
   add(geometry: BufferGeometry, color: number, position: readonly number[] = [0, 0, 0],
     scale: readonly number[] = [1, 1, 1], rotation: readonly number[] = [0, 0, 0]) {
-    const part = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+    const part = geometry.clone();
     geometry.dispose();
+    // Preserve the authored vertex sharing and every triangle/attribute. All
+    // pieces must be indexed to merge; an unindexed fan only needs an identity
+    // index, not welding, simplification, or recomputed normals.
+    if (!part.index) {
+      const count = part.getAttribute('position').count;
+      part.setIndex(Array.from({ length: count }, (_, vertex) => vertex));
+    }
     part.deleteAttribute('uv');
     part.scale(scale[0], scale[1], scale[2]);
     part.rotateX(rotation[0]); part.rotateY(rotation[1]); part.rotateZ(rotation[2]);
@@ -245,12 +253,52 @@ function roadGeometry(points: readonly { x: number; z: number }[], width = 11): 
 interface SiteVisual { root: Group; flag: Mesh; turret: Group; crystal: Mesh; }
 interface Particle { position: Vector3; velocity: Vector3; born: number; life: number; color: Color; size: number; }
 
+/** Reject only a rigid ground model whose entire bound is outside a side clip plane.
+ * The Frobenius norm bounds any affine scale/shear/reflection conservatively.
+ * Unknown inputs and a scale-relative boundary margin always retain the model.
+ * Depth-only exclusions are retained: Float32 projection can shift the far
+ * clip boundary substantially when the near/far ratio is very small.
+ */
+export function groundInstanceOutsideView(bounds: Sphere | null, matrix: Matrix4, view: Frustum): boolean {
+  if (!bounds || !Number.isFinite(bounds.radius) || bounds.radius < 0
+    || !Number.isFinite(bounds.center.x) || !Number.isFinite(bounds.center.y) || !Number.isFinite(bounds.center.z)) return false;
+  const e = matrix.elements;
+  if (e.length !== 16 || e[3] !== 0 || e[7] !== 0 || e[11] !== 0 || e[15] !== 1 || view.planes.length !== 6) return false;
+  for (const value of e) if (!Number.isFinite(value) || !Number.isFinite(Math.fround(value))) return false;
+  const x = e[0] * bounds.center.x + e[4] * bounds.center.y + e[8] * bounds.center.z + e[12];
+  const y = e[1] * bounds.center.x + e[5] * bounds.center.y + e[9] * bounds.center.z + e[13];
+  const z = e[2] * bounds.center.x + e[6] * bounds.center.y + e[10] * bounds.center.z + e[14];
+  const radius = bounds.radius * Math.hypot(e[0], e[1], e[2], e[4], e[5], e[6], e[8], e[9], e[10]);
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !Number.isFinite(radius)) return false;
+  // Also covers rounding the submitted instance matrix to Float32 attributes.
+  // Include uncancelled terms: a large local offset and opposite translation
+  // can lose precision even if the final world-space center is near zero.
+  const margin = 1e-6 * Math.max(1, radius,
+    Math.abs(e[0] * bounds.center.x) + Math.abs(e[4] * bounds.center.y) + Math.abs(e[8] * bounds.center.z) + Math.abs(e[12]),
+    Math.abs(e[1] * bounds.center.x) + Math.abs(e[5] * bounds.center.y) + Math.abs(e[9] * bounds.center.z) + Math.abs(e[13]),
+    Math.abs(e[2] * bounds.center.x) + Math.abs(e[6] * bounds.center.y) + Math.abs(e[10] * bounds.center.z) + Math.abs(e[14]));
+  let outside = false;
+  for (let index = 0; index < view.planes.length; index++) {
+    const plane = view.planes[index];
+    const n = plane.normal, length = Math.hypot(n.x, n.y, n.z);
+    if (!Number.isFinite(length) || length === 0 || !Number.isFinite(plane.constant)) return false;
+    const distance = n.x * x + n.y * y + n.z * z + plane.constant;
+    if (!Number.isFinite(distance)) return false;
+    // Three's first four planes are right/left/bottom/top. Validate near/far
+    // too, but never reject using their numerically sensitive depth boundary.
+    if (index < 4) outside ||= distance < -(radius + margin) * length;
+  }
+  return outside;
+}
+
 /** Presentation adapter. Neither a frame nor a diagnostics read advances the campaign. */
 export class CampaignScene {
   readonly renderer: WebGLRenderer;
   readonly camera = new PerspectiveCamera(FLIGHT_FOV, 1, .5, 22000);
   private readonly scene = new Scene();
   private readonly renderQueue: RenderQueue;
+  private readonly hudLayout: CampaignHudLayout;
+  private bombGuideLabel: (ReturnType<typeof layoutCampaignCanvasLabel> & { id: 'bomb-guide'; text: string }) | null = null;
   private readonly aircraftFactory = new AircraftFactory();
   private readonly aircraftBatches = new AircraftBatchFactory();
   private readonly aircraftTracers = new AircraftTracers();
@@ -275,6 +323,8 @@ export class CampaignScene {
   private readonly pointOpacity = new Float32Array(EFFECT_CAPACITY + PROJECTILE_CAPACITY);
   private readonly pointGeometry: BufferGeometry;
   private readonly sky: Mesh;
+  private readonly groundView = new Frustum();
+  private readonly viewProjection = new Matrix4();
   private readonly tempMatrix = new Matrix4();
   private readonly tempRotation = new Quaternion();
   private readonly tempPosition = new Vector3();
@@ -311,6 +361,7 @@ export class CampaignScene {
     this.hero = this.aircraftBatches.optimize(this.aircraftFactory.create('hero'), 'hero');
     this.scene.add(this.hero.root, this.aircraftTracers.root);
     this.ctx = overlay?.getContext('2d') ?? null;
+    this.hudLayout = createCampaignHudLayout(canvas);
 
     const solid = this.material(new MeshStandardMaterial({ vertexColors: true, roughness: .84, metalness: .06 }));
     for (const geometry of terrainChunks(createCampaignTerrainGeometry())) this.scene.add(new Mesh(this.geometry(geometry), solid));
@@ -413,7 +464,7 @@ export class CampaignScene {
   resize() {
     if (this.disposed) return;
     const bounds = this.canvas.getBoundingClientRect(); if (bounds.width <= 0 || bounds.height <= 0) return;
-    this.width = bounds.width; this.height = bounds.height;
+    this.width = bounds.width; this.height = bounds.height; this.hudLayout.invalidate();
     this.renderer.setSize(bounds.width, bounds.height, false);
     this.camera.aspect = bounds.width / bounds.height; this.camera.updateProjectionMatrix();
     if (this.overlay) { this.overlay.width = Math.round(bounds.width); this.overlay.height = Math.round(bounds.height); }
@@ -464,6 +515,7 @@ export class CampaignScene {
     this.hero.elevator.rotation.x = Math.max(-.26, Math.min(.26, -player.pitch * .32));
     getFlightCameraPose(player, mode, this.camera.position, this.camera.quaternion);
     this.camera.updateMatrixWorld(); this.sky.position.copy(this.camera.position);
+    this.groundView.setFromProjectionMatrix(this.viewProjection.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse));
     this.updateActors(state);
     this.updateProjectiles(state);
     this.updateTelegraphs(state);
@@ -481,7 +533,7 @@ export class CampaignScene {
       ? predictAim(actor.position, target, ACTOR_STATS[actor.class].projectileSpeed) : target.position;
   }
   private updateActors(state: CampaignState) {
-    const counts = new Map<string, number>(); let shadowCount = 0, dragons = 0;
+    const counts = new Map<string, number>(), admitted = new Map<string, number>(); let shadowCount = 0, dragons = 0;
     const actorsById = new Map(state.actors.map(actor => [actor.id, actor]));
     for (const site of state.sites) {
       const visual = this.siteVisuals.get(site.id) ?? this.createSite(site.id, site.position);
@@ -515,13 +567,22 @@ export class CampaignScene {
       }
       const key = `${actor.team}:${actor.class}`, mesh = this.ground.get(key);
       if (!mesh) continue;
-      const count = counts.get(key) ?? 0; if (count >= GROUND_CAPACITY) continue;
+      // Keep the original capacity-limited actor prefix, before view rejection.
+      const admission = admitted.get(key) ?? 0; if (admission >= GROUND_CAPACITY) continue;
+      admitted.set(key, admission + 1);
       const target = this.targetPosition(state, actor);
       let dx = actor.velocity.x, dz = actor.velocity.z;
       if (dx * dx + dz * dz < .01 && target) { dx = target.x - actor.position.x; dz = target.z - actor.position.z; }
       if (dx * dx + dz * dz < .01) { const site = state.sites[actor.assignedSiteId]; dx = site.position.x - actor.position.x; dz = site.position.z - actor.position.z; }
       this.tempRotation.setFromAxisAngle(this.up, Math.atan2(-dx, -dz));
-      this.tempMatrix.compose(this.tempPosition, this.tempRotation, this.tempScale); mesh.setMatrixAt(count, this.tempMatrix); counts.set(key, count + 1);
+      this.tempMatrix.compose(this.tempPosition, this.tempRotation, this.tempScale);
+      // Ground models are rigid opaque geometry, without shader deformation,
+      // reflection passes or shadow maps. Their separate circle shadows below
+      // remain submitted even when the body is wholly outside the camera.
+      if (!groundInstanceOutsideView(mesh.geometry.boundingSphere, this.tempMatrix, this.groundView)) {
+        const count = counts.get(key) ?? 0;
+        mesh.setMatrixAt(count, this.tempMatrix); counts.set(key, count + 1);
+      }
       this.tempPosition.y = heightAt(actor.position.x, actor.position.z) + .14;
       this.tempScale.set(actor.class === 'cavalry' ? 2 : .82, 1, actor.class === 'cavalry' ? 2.5 : .82);
       this.tempMatrix.compose(this.tempPosition, this.tempRotation, this.tempScale); this.shadows.setMatrixAt(shadowCount++, this.tempMatrix);
@@ -619,10 +680,14 @@ export class CampaignScene {
     return { x: (p.x * .5 + .5) * this.width, y: (.5 - p.y * .5) * this.height, depth, nx: p.x, ny: p.y, z: p.z };
   }
   private drawOverlay(state: CampaignState, player: Aircraft, mode: 'normal' | 'easy') {
+    this.bombGuideLabel = null;
     const c = this.ctx, w = this.width, h = this.height; if (!c) return;
     c.shadowBlur = 0; c.clearRect(0, 0, w, h); if (!this.overlayVisible) return;
     const sight = mode === 'normal' ? this.gunSight(player) : { x: w / 2, y: h / 2 };
     const radius = aimRadius(mode, w, h);
+    // Reserve the actual sight, crosshair and reload-ring fringe without changing them.
+    const sightExtent = radius + 10;
+    this.hudLayout.update({ x: sight.x - sightExtent, y: sight.y - sightExtent, width: sightExtent * 2, height: sightExtent * 2 });
     let indicator: keyof typeof AIM_COLORS = 'clear';
     for (const actor of state.actors) {
       if (actor.hp <= 0) continue;
@@ -689,6 +754,7 @@ export class CampaignScene {
     c.shadowBlur = 0; this.drawRadar(state, player);
   }
   private drawBombGuide(state: CampaignState) {
+    this.bombGuideLabel = null;
     const c = this.ctx!; if (state.player.bombs <= 0 || state.player.hp <= 0) return;
     const guide = predictBombImpact(state.player.position, state.player.velocity, state.player.quaternion); if (!guide) return;
     const point = this.projection(guide.position);
@@ -714,8 +780,10 @@ export class CampaignScene {
     const labelWidth = c.measureText(label).width + 12;
     const labelX = point.x + 32 + labelWidth < this.width - 12 ? point.x + 32 : Math.max(12, point.x - 32 - labelWidth);
     const labelY = Math.max(76, Math.min(this.height - 60, point.y - 36));
-    c.fillStyle = 'rgba(4,24,34,.78)'; c.fillRect(labelX, labelY, labelWidth, 20);
-    c.fillStyle = friendlyRisk ? '#b2d8ff' : '#d1ffe3'; c.fillText(label, labelX + 6, labelY + 14); c.restore();
+    const placed = this.hudLayout.placeCanvasLabel('bomb-guide', { x: labelX, y: labelY, width: labelWidth, height: 20 });
+    this.bombGuideLabel = { id: 'bomb-guide', text: label, ...placed };
+    c.fillStyle = 'rgba(4,24,34,.78)'; c.fillRect(placed.rect.x, placed.rect.y, labelWidth, 20);
+    c.fillStyle = friendlyRisk ? '#b2d8ff' : '#d1ffe3'; c.fillText(label, placed.rect.x + 6, placed.rect.y + 14); c.restore();
   }
   private drawThreats(state: CampaignState) {
     const c = this.ctx!, w = this.width, h = this.height;
@@ -741,7 +809,8 @@ export class CampaignScene {
   }
   private drawRadar(state: CampaignState, player: Aircraft) {
     const c = this.ctx!, r = this.width < 360 ? 42 : 49;
-    const x = this.width - r - 18, y = Math.min(this.height * .33, 180), range = 2400;
+    const layout = this.hudLayout.diagnostics();
+    const x = layout.radar?.center.x ?? this.width - r - 18, y = layout.radar?.center.y ?? Math.min(this.height * .33, 180), range = 2400;
     const cy = Math.cos(player.yaw), sy = Math.sin(player.yaw);
     const point = (position: Vec) => {
       const dx = position.x - player.position.x, dz = position.z - player.position.z;
@@ -773,16 +842,18 @@ export class CampaignScene {
   }
 
   diagnostics() {
+    const hud = this.hudLayout.diagnostics();
+    const hudStatus = hud.status === 'placed' && this.bombGuideLabel && this.bombGuideLabel.status !== 'placed' ? this.bombGuideLabel.status : hud.status;
     return { queue: this.renderQueue.diagnostics(performance.now()), calls: this.renderer.info.render.calls,
       triangles: this.renderer.info.render.triangles, geometries: this.renderer.info.memory.geometries,
       textures: this.renderer.info.memory.textures, particles: this.particles.length,
-      ground: [...this.ground.values()].reduce((n, mesh) => n + mesh.count, 0), dragons: this.dragonBodies.count,
+      ground: this.shadows.count, groundSubmitted: [...this.ground.values()].reduce((n, mesh) => n + mesh.count, 0), dragons: this.dragonBodies.count,
       sites: this.siteVisuals.size, width: this.width, height: this.height, pixelRatio: this.renderer.getPixelRatio(),
-      aircraftTracers: this.aircraftTracers.diagnostics() };
+      aircraftTracers: this.aircraftTracers.diagnostics(), hudLayout: { ...hud, status: hudStatus, canvasLabels: this.bombGuideLabel ? [this.bombGuideLabel] : [] } };
   }
   dispose() {
     if (this.disposed) return; this.disposed = true;
-    this.renderQueue.dispose(); this.scene.remove(this.hero.root); this.aircraftBatches.dispose(); this.aircraftTracers.dispose(); this.aircraftFactory.dispose();
+    this.hudLayout.dispose(); this.renderQueue.dispose(); this.scene.remove(this.hero.root); this.aircraftBatches.dispose(); this.aircraftTracers.dispose(); this.aircraftFactory.dispose();
     this.scene.traverse(object => { if (object instanceof InstancedMesh) object.dispose(); });
     for (const geometry of this.geometries) geometry.dispose(); for (const material of this.materials) material.dispose();
     this.geometries.clear(); this.materials.clear(); this.ground.clear(); this.projectileBodies.clear(); this.siteVisuals.clear(); this.particles = [];

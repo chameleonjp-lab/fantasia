@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Vector3 } from 'three';
 import { CAMPAIGN_RECORDS_KEY, CampaignRecords } from '../src/campaign-records';
+import { SUSPENDED_CAMPAIGN_RULES_VERSION } from '../src/campaign-config';
 import type { CampaignResult } from '../src/campaign-types';
 import { getFlightAssist } from '../src/flight-assist';
 import { makeAircraft } from '../src/mission';
@@ -61,6 +62,26 @@ test('future or malformed records remain untouched including a version written b
   assert.equal(records.save(result(), 0), 'unavailable');
   assert.equal(storage.values.get(CAMPAIGN_RECORDS_KEY), '{broken');
   assert.equal(storage.writes, 1);
+});
+
+test('temporary dragon-fireball suspension writes no best and preserves every existing record byte', () => {
+  const storage = new MemoryStorage(), records = new CampaignRecords(storage), original = result();
+  assert.equal(records.save(original, 1), 'saved');
+  const before = storage.values.get(CAMPAIGN_RECORDS_KEY), writes = storage.writes;
+  const temporary = result({ rulesVersion: SUSPENDED_CAMPAIGN_RULES_VERSION, activeTicks: 1, respawnPenaltyTicks: 0, recordTicks: 1 });
+  assert.equal(records.save(temporary, 0), 'ineligible');
+  assert.equal(records.useSessionOnly(temporary, 0), 'ineligible');
+  assert.equal(storage.writes, writes);
+  assert.equal(storage.values.get(CAMPAIGN_RECORDS_KEY), before);
+  assert.equal(records.best(temporary), null);
+  assert.equal(records.best(original)?.recordTicks, original.recordTicks);
+  for (const prior of ['{"version":2,"records":[],"futureField":true}', '{broken']) {
+    storage.values.set(CAMPAIGN_RECORDS_KEY, prior);
+    assert.equal(records.save(temporary, 0), 'ineligible');
+    assert.equal(records.useSessionOnly(temporary, 0), 'ineligible');
+    assert.equal(storage.values.get(CAMPAIGN_RECORDS_KEY), prior);
+    assert.equal(storage.writes, writes);
+  }
 });
 
 test('denied storage keeps play possible and session saving requires an explicit choice', () => {

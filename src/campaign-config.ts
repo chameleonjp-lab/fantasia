@@ -1,6 +1,19 @@
-import type { ActorClass, ClassCounts, GroundClass } from './campaign-types';
+import type { ActorClass, CampaignFeatures, ClassCounts, GroundClass } from './campaign-types';
 
-export const CAMPAIGN_RULES_VERSION = 'fantasia-capture-v1';
+export const BASE_CAMPAIGN_RULES_VERSION = 'fantasia-capture-v1';
+export const SUSPENDED_CAMPAIGN_RULES_VERSION = 'fantasia-capture-v1-dragon-fireballs-suspended';
+// Temporary mitigation while the reported iPhone freeze remains unresolved.
+// Restoring dragonFireballs also restores the original, separate rules identity.
+export const DEFAULT_CAMPAIGN_FEATURES: CampaignFeatures = Object.freeze({ dragonFireballs: false });
+export function campaignRulesVersion(features: CampaignFeatures): string {
+  return features.dragonFireballs ? BASE_CAMPAIGN_RULES_VERSION : SUSPENDED_CAMPAIGN_RULES_VERSION;
+}
+export const CAMPAIGN_RULES_VERSION = campaignRulesVersion(DEFAULT_CAMPAIGN_FEATURES);
+export function validateCampaignFeatures(features: CampaignFeatures): void {
+  if (!features || typeof features !== 'object' || Array.isArray(features)
+    || Reflect.ownKeys(features).length !== 1 || !Object.hasOwn(features, 'dragonFireballs')
+    || typeof features.dragonFireballs !== 'boolean') throw new RangeError('Invalid campaign features');
+}
 export const CAMPAIGN_MAP_VERSION = 'fantasia-sevenfold-v1';
 export const CAMPAIGN_DT = 1 / 60;
 export const SITE_COUNT = 7;

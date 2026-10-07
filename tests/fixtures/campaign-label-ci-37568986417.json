@@ -1,0 +1,509 @@
+{
+  "sourceRun": "37568986417",
+  "case": "text-200-small-portrait-dpr2-normal",
+  "layout": {
+    "status": "blocked",
+    "canvas": {
+      "x": 0,
+      "y": 0,
+      "width": 320,
+      "height": 568
+    },
+    "bounds": {
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552
+    },
+    "obstacles": [
+      {
+        "x": 8,
+        "y": 8,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 84.5,
+        "y": 8,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 161,
+        "y": 8,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 237.5,
+        "y": 8,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 8,
+        "y": 72.59375,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 84.5,
+        "y": 72.59375,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 161,
+        "y": 72.59375,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "id": "central-flight-lane",
+        "x": 118,
+        "y": 242,
+        "width": 84,
+        "height": 84
+      },
+      {
+        "x": 122.79999999999994,
+        "y": 169.07084915470614,
+        "width": 74.4,
+        "height": 74.4,
+        "id": "aim-and-reload-ring"
+      },
+      {
+        "x": 206,
+        "y": 200,
+        "width": 81.296875,
+        "height": 44,
+        "id": "game-sound"
+      },
+      {
+        "x": 239.5,
+        "y": 74.59375,
+        "width": 44,
+        "height": 50,
+        "id": "pause"
+      },
+      {
+        "x": 126,
+        "y": 347.3125,
+        "width": 72.53125,
+        "height": 62.6875,
+        "id": "bomb"
+      },
+      {
+        "x": 222.4921875,
+        "y": 315.578125,
+        "width": 86.203125,
+        "height": 118.59375,
+        "id": "loop"
+      },
+      {
+        "x": 216,
+        "y": 438.171875,
+        "width": 96,
+        "height": 96,
+        "id": "fire"
+      },
+      {
+        "x": 16.390625,
+        "y": 439.109375,
+        "width": 76,
+        "height": 76,
+        "id": "accelerate"
+      },
+      {
+        "x": 16.390625,
+        "y": 250,
+        "width": 76,
+        "height": 76,
+        "id": "brake"
+      }
+    ],
+    "panels": [
+      {
+        "id": "health-label",
+        "status": "placed",
+        "rect": {
+          "x": 8,
+          "y": 523,
+          "width": 122.375,
+          "height": 35
+        }
+      },
+      {
+        "id": "health-track",
+        "status": "placed",
+        "rect": {
+          "x": 134.375,
+          "y": 538.171875,
+          "width": 110,
+          "height": 3
+        }
+      },
+      {
+        "id": "instrument",
+        "status": "placed",
+        "rect": {
+          "x": 96.390625,
+          "y": 469,
+          "width": 110,
+          "height": 50
+        }
+      },
+      {
+        "id": "campaign-limit",
+        "status": "placed",
+        "rect": {
+          "x": 96.390625,
+          "y": 414,
+          "width": 110,
+          "height": 51
+        }
+      },
+      {
+        "id": "ammo",
+        "status": "placed",
+        "rect": {
+          "x": 201.19999999999993,
+          "y": 140,
+          "width": 110,
+          "height": 56
+        }
+      },
+      {
+        "id": "campaign-hud-details",
+        "status": "placed",
+        "rect": {
+          "x": 8,
+          "y": 330,
+          "width": 114,
+          "height": 80
+        }
+      },
+      {
+        "id": "campaign-mode-status",
+        "status": "placed",
+        "rect": {
+          "x": 98,
+          "y": 140,
+          "width": 72,
+          "height": 24
+        }
+      },
+      {
+        "id": "target-tally",
+        "status": "placed",
+        "rect": {
+          "x": 206,
+          "y": 248,
+          "width": 70.625,
+          "height": 44
+        }
+      }
+    ],
+    "controls": [
+      {
+        "id": "game-sound",
+        "rect": {
+          "x": 206,
+          "y": 200,
+          "width": 81.296875,
+          "height": 44
+        }
+      },
+      {
+        "id": "pause",
+        "rect": {
+          "x": 239.5,
+          "y": 74.59375,
+          "width": 44,
+          "height": 50
+        }
+      },
+      {
+        "id": "bomb",
+        "rect": {
+          "x": 126,
+          "y": 347.3125,
+          "width": 72.53125,
+          "height": 62.6875
+        }
+      },
+      {
+        "id": "loop",
+        "rect": {
+          "x": 222.4921875,
+          "y": 315.578125,
+          "width": 86.203125,
+          "height": 118.59375,
+          "id": "loop"
+        }
+      },
+      {
+        "id": "fire",
+        "rect": {
+          "x": 216,
+          "y": 438.171875,
+          "width": 96,
+          "height": 96
+        }
+      },
+      {
+        "id": "accelerate",
+        "rect": {
+          "x": 16.390625,
+          "y": 439.109375,
+          "width": 76,
+          "height": 76,
+          "id": "accelerate"
+        }
+      },
+      {
+        "id": "brake",
+        "rect": {
+          "x": 16.390625,
+          "y": 250,
+          "width": 76,
+          "height": 76
+        }
+      }
+    ],
+    "compact": true,
+    "fixedConflicts": [],
+    "searchChecks": 27711,
+    "radar": {
+      "status": "placed",
+      "rect": {
+        "x": 8,
+        "y": 139.1875,
+        "width": 86,
+        "height": 102
+      },
+      "radius": 42,
+      "center": {
+        "x": 51,
+        "y": 182.1875
+      }
+    },
+    "threat": null,
+    "measurements": 3,
+    "disposed": false,
+    "canvasLabels": [
+      {
+        "id": "bomb-guide",
+        "text": "爆弾の落下目安 · 7.6秒",
+        "status": "blocked",
+        "rect": {
+          "x": 12,
+          "y": 310.78537487344295,
+          "width": 120.4765625,
+          "height": 20
+        }
+      }
+    ]
+  },
+  "measurement": {
+    "canvas": {
+      "x": 0,
+      "y": 0,
+      "width": 320,
+      "height": 568
+    },
+    "bounds": {
+      "x": 8,
+      "y": 8,
+      "width": 304,
+      "height": 552
+    },
+    "obstacles": [
+      {
+        "x": 8,
+        "y": 8,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 84.5,
+        "y": 8,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 161,
+        "y": 8,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 237.5,
+        "y": 8,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 8,
+        "y": 72.59375,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 84.5,
+        "y": 72.59375,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      },
+      {
+        "x": 161,
+        "y": 72.59375,
+        "width": 74.5,
+        "height": 62.59375,
+        "id": "campaign-site"
+      }
+    ],
+    "flightData": null,
+    "threat": null,
+    "panels": [
+      {
+        "x": 8,
+        "y": 523,
+        "width": 122.375,
+        "height": 35,
+        "id": "health-label"
+      },
+      {
+        "x": 134.375,
+        "y": 538.171875,
+        "width": 110,
+        "height": 3,
+        "id": "health-track"
+      },
+      {
+        "x": 96.390625,
+        "y": 469,
+        "width": 110,
+        "height": 50,
+        "id": "instrument"
+      },
+      {
+        "x": 96.390625,
+        "y": 414,
+        "width": 110,
+        "height": 51,
+        "id": "campaign-limit"
+      },
+      {
+        "x": 201.19999999999993,
+        "y": 140,
+        "width": 110,
+        "height": 56,
+        "id": "ammo"
+      },
+      {
+        "x": 8,
+        "y": 330,
+        "width": 114,
+        "height": 80,
+        "id": "campaign-hud-details"
+      },
+      {
+        "x": 98,
+        "y": 140,
+        "width": 72,
+        "height": 24,
+        "id": "campaign-mode-status"
+      },
+      {
+        "x": 206,
+        "y": 248,
+        "width": 70.625,
+        "height": 44,
+        "id": "target-tally"
+      }
+    ],
+    "movableControls": [
+      {
+        "x": 206,
+        "y": 200,
+        "width": 81.296875,
+        "height": 44,
+        "id": "game-sound"
+      },
+      {
+        "x": 239.5,
+        "y": 74.59375,
+        "width": 44,
+        "height": 50,
+        "id": "pause"
+      },
+      {
+        "x": 126,
+        "y": 347.3125,
+        "width": 72.53125,
+        "height": 62.6875,
+        "id": "bomb"
+      },
+      {
+        "x": 222.4921875,
+        "y": 315.578125,
+        "width": 86.203125,
+        "height": 118.59375,
+        "id": "loop"
+      },
+      {
+        "x": 216,
+        "y": 438.171875,
+        "width": 96,
+        "height": 96,
+        "id": "fire"
+      },
+      {
+        "x": 16.390625,
+        "y": 439.109375,
+        "width": 76,
+        "height": 76,
+        "id": "accelerate"
+      },
+      {
+        "x": 16.390625,
+        "y": 250,
+        "width": 76,
+        "height": 76,
+        "id": "brake"
+      }
+    ]
+  },
+  "sight": {
+    "x": 122.79999999999994,
+    "y": 169.07084915470614,
+    "width": 74.4,
+    "height": 74.4,
+    "id": "aim-and-reload-ring"
+  },
+  "label": {
+    "id": "bomb-guide",
+    "text": "爆弾の落下目安 · 7.6秒",
+    "status": "blocked",
+    "rect": {
+      "x": 12,
+      "y": 310.78537487344295,
+      "width": 120.4765625,
+      "height": 20
+    }
+  }
+}

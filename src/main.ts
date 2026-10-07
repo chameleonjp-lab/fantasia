@@ -2,12 +2,13 @@ import './style.css';
 import './control-settings.css';
 import { Vector3 } from 'three';
 import { Campaign, campaignScore, formatCampaignTicks } from './campaign';
-import { CAMPAIGN_DT, CAMPAIGN_LIMIT_TICKS } from './campaign-config';
+import { CAMPAIGN_DT, CAMPAIGN_LIMIT_TICKS, SUSPENDED_CAMPAIGN_RULES_VERSION } from './campaign-config';
 import { predictBombImpact, type BombPrediction } from './campaign-combat';
 import { CampaignRecords, type RecordSaveStatus } from './campaign-records';
 import { CampaignFlightController } from './campaign-flight';
 import { terrainHeight, distanceSquared, sweepSphere } from './campaign-terrain';
 import { CampaignScene } from './campaign-scene';
+import { CampaignStartPreparation, type StartPreparationFailure } from './campaign-start';
 import { updateCampaignHud } from './campaign-hud';
 import type { CampaignEvent } from './campaign-types';
 import { forwardOf } from './flight';
@@ -28,7 +29,7 @@ const STANDARD_SEED = 20261005;
 let selectedMode: GameMode = 'easy';
 let campaign = new Campaign(selectedMode, STANDARD_SEED), state = campaign.state;
 let flight = new CampaignFlightController(state), player = flight.player;
-let screen: 'home' | 'playing' | 'paused' | 'result' = 'home';
+let screen: 'home' | 'preparing' | 'playing' | 'paused' | 'result' = 'home';
 let scene: CampaignScene | null = null;
 let graphicsReady = false, contextLost = false, disposed = false;
 let accumulator = 0, lastFrame = 0, frameId = 0;
@@ -59,6 +60,65 @@ const controls = new FlightControls(canvas, buttons, () => screen === 'playing' 
 let bombPrediction: BombPrediction | null = null, bombPredictionTick = -1;
 const modeName = (mode: GameMode) => mode === 'easy' ? 'イージー' : 'ノーマル';
 const formatTicks = formatCampaignTicks;
+const startPreparation = new CampaignStartPreparation<{ mode: GameMode; runId: string }>({
+  now: () => performance.now(),
+  poll: () => {
+    if (!scene || contextLost) throw new Error('Renderer unavailable');
+    renderStatus = scene.pollRender(); return scene.diagnostics().queue;
+  },
+  submit: selection => {
+    if (!scene || selection.runId !== state.runId || selection.mode !== state.mode) return null;
+    // The staged HUD has real layout boxes, but remains transparent/inert.
+    // Prepare its initial text, layout and Canvas2D drawing before live time.
+    updateHUD(); scene.setOverlayVisible(true);
+    if (!scene.render(state, player, selection.mode)) return null;
+    const rendered = scene.diagnostics();
+    if (!rendered.hudLayout.measurements || (rendered.hudLayout.canvas?.width ?? 0) <= 0 || (rendered.hudLayout.canvas?.height ?? 0) <= 0) {
+      throw new Error('Initial HUD preparation unavailable');
+    }
+    return rendered.queue;
+  },
+  schedule: (callback, delay) => { const timer = setTimeout(callback, delay); return () => clearTimeout(timer); },
+  complete: selection => {
+    if (disposed || contextLost || document.hidden || settings.isOpen || rules?.isOpen
+      || screen !== 'preparing' || selection.runId !== state.runId || selection.mode !== selectedMode) {
+      home(); return;
+    }
+    // This is the playing boundary, after acknowledgment of the selected view.
+    // Drop preparation time and all stale input; the next rAF starts with dt=0.
+    setScreen('playing'); syncAudio(); scene?.setOverlayVisible(true);
+    updateHUD();
+  },
+  failed: reason => {
+    if (reason === 'render-failed') renderStatus = 'failed';
+    if (screen === 'playing') setScreen('preparing');
+    clearInput(); syncStartPreparation(reason); syncAudio();
+  },
+});
+function syncStartPreparation(reason: StartPreparationFailure | null = startPreparation.snapshot().failure) {
+  const preparing = screen === 'preparing', contextWaiting = contextLost && screen === 'home';
+  const failed = preparing && reason !== null;
+  el('start-cancel').hidden = !preparing;
+  el('start-retry').hidden = !failed || reason === 'render-failed';
+  el<HTMLButtonElement>('start-retry').disabled = contextLost || renderStatus === 'failed' || document.hidden;
+  el('start-status').hidden = !preparing && !contextWaiting;
+  el('start-status').textContent = contextWaiting ? '描画が中断されました。復帰を待つか、再読み込みしてください' : !failed ? `${modeName(state.mode)}の出撃画面を準備しています。作戦時間はまだ進みません（最大15秒）`
+    : reason === 'timeout' ? '準備が15秒以内に完了しませんでした。時間は進んでいません。再試行するか、ホームへ戻れます'
+      : reason === 'context-lost' ? contextLost ? '描画が中断されました。復帰を待つか、再読み込みしてください'
+        : '描画が復帰しました。「準備を再試行」で出撃画面を準備できます'
+        : reason === 'render-failed' ? '出撃画面を準備できませんでした。再読み込みしてお試しください'
+          : '表示や操作が切り替わったため準備を止めました。「準備を再試行」で再開できます';
+  el('reload').hidden = !(contextWaiting || failed && (reason === 'render-failed' || reason === 'context-lost'));
+  el<HTMLButtonElement>('start').disabled = !graphicsReady || contextLost || preparing || renderStatus === 'failed';
+  if (graphicsReady) {
+    if (contextWaiting || preparing) el('start').textContent = contextWaiting ? '描画の復帰を待っています' : failed ? '出撃の準備を停止しました' : '出撃画面を準備しています';
+    else el('start').innerHTML = '出撃する <span aria-hidden="true">↗</span>';
+  }
+}
+function leavePreparation() {
+  if (screen !== 'preparing') return;
+  startPreparation.cancel(); setScreen('home'); syncAudio();
+}
 
 function clearInput() {
   controls.clear(); pendingLoop = false; pendingBomb = false; flight.clearPending(); accumulator = 0; lastFrame = 0;
@@ -73,6 +133,10 @@ function syncInstructions() {
   el('keyboard-guide').hidden = touch; el('keyboard-guide').textContent = keyboardDescription();
 }
 function updateBestRecord() {
+  if (state.rulesVersion === SUSPENDED_CAMPAIGN_RULES_VERSION) {
+    el('best-record').textContent = '暫定版では最速記録を保存しません（既存記録は保持）';
+    return;
+  }
   const best = records.best(state);
   el('best-record').textContent = best ? `この端末の最速 ${formatTicks(best.recordTicks)} · ${best.score.toLocaleString('ja-JP')}点`
     : records.status === 'future-version' ? '新しい形式の記録を保護しています'
@@ -80,6 +144,7 @@ function updateBestRecord() {
 }
 function syncMode() {
   clearInput(); app.dataset.mode = state.mode; controls.setMode(state.mode); settings.setActiveMode(state.mode);
+  el('rules-variant').textContent = state.rulesVersion === SUSPENDED_CAMPAIGN_RULES_VERSION ? '暫定版 · 竜火球停止' : '7陣地占領戦';
   el('normal-controls').hidden = state.mode !== 'normal'; el('friendly-fire-guide').hidden = state.mode !== 'normal';
   el('hud-mode').textContent = modeName(state.mode); el('result-mode').textContent = modeName(state.mode);
   syncInstructions(); updateBestRecord();
@@ -96,28 +161,37 @@ const unsubscribeKeyboard = keyboardSettings.subscribe(() => { clearInput(); syn
 const unsubscribePresentation = inputPresentation.subscribe(syncInstructions);
 rules = new RulesGuide(() => ({ mode: state.mode, input: inputPresentation.value, keyboardDescription: keyboardDescription() }), clearInput);
 for (const id of ['home-rules', 'pause-rules']) {
-  const button = el(id); button.addEventListener('click', () => { clearInput(); rules?.open(button); });
+  const button = el(id); button.addEventListener('click', () => { leavePreparation(); clearInput(); rules?.open(button); });
 }
 for (const [id, allowBoth] of [['home-controls', true], ['pause-controls', false], ['result-controls', true]] as const) {
-  const button = el(id); button.addEventListener('click', () => { clearInput(); settings.open(button, screen === 'home' ? selectedMode : state.mode, allowBoth); });
+  const button = el(id); button.addEventListener('click', () => { leavePreparation(); clearInput(); settings.open(button, screen === 'home' ? selectedMode : state.mode, allowBoth); });
 }
 el('control-settings').addEventListener('close', clearInput);
 for (const radio of document.querySelectorAll<HTMLInputElement>('input[name="game-mode"]')) {
   radio.addEventListener('change', () => {
-    if (screen !== 'home' || !radio.checked) return;
-    selectedMode = radio.value === 'normal' ? 'normal' : 'easy'; resetCampaign(); syncMode(); updateHUD(); scene?.render(state, player, state.mode);
+    if ((screen !== 'home' && screen !== 'preparing') || !radio.checked) return;
+    leavePreparation(); selectedMode = radio.value === 'normal' ? 'normal' : 'easy'; resetCampaign(); syncMode(); updateHUD();
   });
 }
 function setScreen(next: typeof screen) {
   settings.close(); rules?.close(); screen = next; app.dataset.screen = next;
-  el('home').hidden = next !== 'home'; el('hud').hidden = next !== 'playing' && next !== 'paused';
-  el('pause-screen').hidden = next !== 'paused'; el('result').hidden = next !== 'result'; clearInput();
-  const focus = next === 'home' ? 'start' : next === 'paused' ? 'resume' : next === 'result' ? 'retry' : null;
+  el('home').hidden = next !== 'home' && next !== 'preparing';
+  const hud = el('hud');
+  hud.hidden = next !== 'preparing' && next !== 'playing' && next !== 'paused';
+  hud.inert = next === 'preparing';
+  for (const node of [hud, el('announcement')]) {
+    if (next === 'preparing') node.setAttribute('aria-hidden', 'true'); else node.removeAttribute('aria-hidden');
+  }
+  if (next === 'home') el('announcement').textContent = '';
+  el('pause-screen').hidden = next !== 'paused'; el('result').hidden = next !== 'result';
+  el('start-cancel').hidden = next !== 'preparing'; clearInput();
+  if (next === 'home') syncStartPreparation();
+  const focus = next === 'preparing' ? 'start-cancel' : next === 'home' ? 'start' : next === 'paused' ? 'resume' : next === 'result' ? 'retry' : null;
   if (focus) el<HTMLButtonElement>(focus).focus({ preventScroll: true }); else canvas.focus({ preventScroll: true });
 }
 function announce(text: string, duration = 3, priority = 0) {
   if (state.activeTicks < announcementUntil && priority < announcementPriority) return;
-  announcementPriority = priority; el('announcement').textContent = text; announcementUntil = state.activeTicks + duration * 60;
+  announcementPriority = priority; el('announcement').dataset.campaignCritical = String(priority >= 1); el('announcement').textContent = text; announcementUntil = state.activeTicks + duration * 60;
 }
 function syncAudio() {
   audio.active = state.status === 'running' && screen === 'playing' && !document.hidden; audio.sync();
@@ -131,19 +205,24 @@ async function toggleAudio() {
 }
 for (const id of ['home-sound', 'game-sound']) el(id).addEventListener('click', () => void toggleAudio());
 function begin() {
-  if (!scene || !graphicsReady || contextLost || document.hidden || screen === 'playing' || settings.isOpen || rules?.isOpen) return;
+  if (!scene || !graphicsReady || disposed || contextLost || document.hidden || screen === 'playing'
+    || startPreparation.active || renderStatus === 'failed' || settings.isOpen || rules?.isOpen) return;
+  // AudioContext.resume must run synchronously inside this click's user gesture.
+  // Audio stays inactive until the selected frame actually completes.
+  void audio.unlock().then(() => { if (!disposed) syncAudio(); });
   resetCampaign(); announcementUntil = 0; announcementPriority = 0; pauseReasons.clear(); audio.resetFlight(); syncMode(); frameIntervals = []; updateTimes = [];
   if (import.meta.env.DEV) { inputAudit = []; inputAuditSignature = ''; inputAuditDropped = 0; }
-  setScreen('playing'); syncAudio(); void audio.unlock().then(syncAudio);
-  announce('7軍の進軍開始 · 砲台と竜を排除し、旗をそろえよう', 5); updateHUD();
-  scene.setOverlayVisible(true); scene.render(state, player, state.mode); lastFrame = 0;
+  setScreen('preparing'); announce('7軍の進軍開始 · 砲台と竜を排除し、旗をそろえよう', 5);
+  startPreparation.begin({ mode: state.mode, runId: state.runId });
+  syncStartPreparation(); syncAudio(); updateHUD();
 }
 function home() {
-  audio.resetFlight(); resetCampaign(); syncMode(); pauseReasons.clear(); setScreen('home');
-  el('announcement').textContent = ''; syncAudio(); updateHUD(); scene?.setOverlayVisible(false); scene?.render(state, player, state.mode);
+  startPreparation.cancel(); audio.resetFlight(); resetCampaign(); syncMode(); pauseReasons.clear(); setScreen('home');
+  el('announcement').textContent = ''; syncAudio(); updateHUD(); scene?.setOverlayVisible(false);
 }
 function pause(reason: string) {
-  clearInput(); if (screen !== 'playing' && screen !== 'paused') return;
+  clearInput(); if (screen === 'preparing') { startPreparation.interrupt('interrupted'); return; }
+  if (screen !== 'playing' && screen !== 'paused') return;
   if (screen === 'playing') pauseCount++; pauseReasons.add(reason); if (screen !== 'paused') setScreen('paused');
   el('pause-reason').textContent = contextLost ? '描画が中断されました。復帰を待っています'
     : fatalLogicError ? '作戦の処理を続けられません。再読み込みしてお試しください'
@@ -165,7 +244,8 @@ function showRecordStatus(status: RecordSaveStatus) {
       : status === 'session-only' ? '今回の記録を、このタブを閉じるまで残しました'
         : status === 'future-version' ? '新しい形式の記録を保護するため保存しません。「このタブだけ」で今回の記録を残せます'
           : status === 'unavailable' ? '記録を保存できませんでした。「このタブだけ」で今回の記録を残せます'
-            : performanceInterrupted ? '性能停止があったため、通常の最速記録には保存しません' : '敗北した出撃はクリア記録へ保存しません';
+            : state.rulesVersion === SUSPENDED_CAMPAIGN_RULES_VERSION ? '竜火球を停止した暫定版のため、最速記録には保存しません'
+              : performanceInterrupted ? '性能停止があったため、通常の最速記録には保存しません' : '敗北した出撃はクリア記録へ保存しません';
 }
 function finish() {
   const result = state.resultSnapshot; if (!result || screen === 'result') return;
@@ -228,13 +308,13 @@ function updateBombCue() {
   if (bombPredictionTick !== state.simTick) {
     bombPrediction = predictBombImpact(player.position, forwardOf(player).multiplyScalar(player.speed), player.quaternion); bombPredictionTick = state.simTick;
   }
-  const ready = screen === 'playing' && state.status === 'running' && state.player.bombs > 0 && state.player.protectionTicks === 0;
+  const ready = (screen === 'playing' || screen === 'preparing') && state.status === 'running' && state.player.bombs > 0 && state.player.protectionTicks === 0;
   const affected = bombPrediction ? state.actors.filter(actor => actor.hp > 0 && distanceSquared(actor.position, bombPrediction!.position) < 45 ** 2
     && sweepSphere({ ...bombPrediction!.position, y: bombPrediction!.position.y + .1 }, actor.position, 0) === null) : [];
   const enemy = affected.some(actor => actor.team === 'enemy'), friendly = affected.some(actor => actor.team === 'friendly');
   const text = !ready ? state.player.protectionTicks > 0 ? '復活保護中' : player.bombReloadTicks > 0 ? '補給中' : '投下待機'
     : friendly && state.mode === 'normal' ? '味方が爆風圏内' : enemy ? '敵が爆風圏内' : '落下地点の予測';
-  el('bomb').dataset.ready = String(ready && enemy && !(friendly && state.mode === 'normal')); el('bomb-hint').textContent = text;
+  el('bomb').dataset.ready = String(ready && enemy && !(friendly && state.mode === 'normal')); el('bomb-hint').dataset.campaignCritical = String(state.player.protectionTicks > 0 || (friendly && state.mode === 'normal')); el('bomb-hint').textContent = text;
   el('bomb').setAttribute('aria-label', `爆弾を投下・${player.bombs}発・${text}（予測）`);
 }
 function positionReloadStatus() {
@@ -266,6 +346,11 @@ function updateHUD() {
 }
 function frame() {
   const now = performance.now(); if (disposed) return; frameId = requestAnimationFrame(frame);
+  // Preparation owns submission, including its failed state until a deliberate
+  // retry/cancel. Home rendering must not replenish the queue while it drains.
+  if (startPreparation.ownsRendering) {
+    clearInput(); startPreparation.step(); updateHUD(); return;
+  }
   const dt = lastFrame ? Math.max(0, (now - lastFrame) / 1000) : 0; lastFrame = now; lastFrameGap = dt;
   if (scene && !contextLost) renderStatus = scene.pollRender(now);
   if (screen === 'playing') {
@@ -304,9 +389,13 @@ function frame() {
     if (pauseReasons.has('render') && renderStatus === 'ready') el('pause-reason').textContent = '描画が復帰しました。操作して再開できます。この出撃は最速記録には保存しません';
   }
   updateHUD();
-  if (scene && !contextLost) {
+  // A paused scene drains its existing fence without replenishing GPU work.
+  // Check the current screen here: this frame may just have entered safety pause.
+  // Keep rAF/polling and DOM recovery controls alive; resize/context restoration
+  // may clear the canvas, but drawing waits for deliberate Resume/Home/Restart.
+  if (scene && !contextLost && screen !== 'paused') {
     try {
-      scene.setOverlayVisible(screen === 'playing' || screen === 'paused'); scene.render(state, player, state.mode, screen === 'playing' ? dt : 0);
+      scene.setOverlayVisible(screen === 'playing'); scene.render(state, player, state.mode, screen === 'playing' ? dt : 0);
       if (scene.diagnostics().queue.status === 'failed') {
         renderStatus = 'failed'; if (screen === 'home') preparationFailed(new Error('GPU frame completion unavailable')); else if (screen === 'playing') { performanceInterrupted = true; pause('render-failed'); }
       }
@@ -315,12 +404,14 @@ function frame() {
     }
   }
 }
-for (const id of ['start', 'retry', 'pause-restart']) el(id).addEventListener('click', begin);
-for (const id of ['result-home', 'pause-home']) el(id).addEventListener('click', home);
+for (const id of ['start', 'start-retry', 'retry', 'pause-restart']) el(id).addEventListener('click', begin);
+for (const id of ['start-cancel', 'result-home', 'pause-home']) el(id).addEventListener('click', home);
 el('pause').addEventListener('click', () => pause('manual')); el('resume').addEventListener('click', resume);
-document.addEventListener('visibilitychange', () => { if (document.hidden) pause('hidden'); else clearInput(); }); window.addEventListener('blur', () => pause('blur'));
+document.addEventListener('visibilitychange', () => { if (document.hidden) pause('hidden'); else { clearInput(); if (screen === 'preparing') syncStartPreparation(); } }); window.addEventListener('blur', () => pause('blur'));
 document.addEventListener('keydown', event => {
   if (settings.isOpen || rules?.isOpen) return;
+  // Detail browsing owns native navigation even when a user bound that key to pause.
+  if (event.code !== 'Escape' && event.target instanceof HTMLElement && event.target.closest('#campaign-hud-details')) return;
   if (keyboardSettings.matchesPause(event)) { event.preventDefault(); if (screen === 'playing') pause('manual'); else if (screen === 'paused') resume(); }
   if (event.key === 'Tab' && screen === 'paused') {
     const items = Array.from(el('pause-screen').querySelectorAll<HTMLElement>('button:not([hidden]):not(:disabled), summary')).filter(item => item.offsetParent !== null);
@@ -328,16 +419,21 @@ document.addEventListener('keydown', event => {
     if (event.shiftKey && index <= 0) { event.preventDefault(); items.at(-1)?.focus(); } else if (!event.shiftKey && index === items.length - 1) { event.preventDefault(); items[0]?.focus(); }
   }
 });
-canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); contextLost = true; scene?.resetRenderQueue(); pause('context'); });
+canvas.addEventListener('webglcontextlost', event => {
+  event.preventDefault(); contextLost = true; renderStatus = 'failed';
+  if (screen === 'preparing') { startPreparation.interrupt('context-lost'); clearInput(); syncStartPreparation(); }
+  else { pause('context'); if (screen === 'home' && graphicsReady) syncStartPreparation(); }
+});
 canvas.addEventListener('webglcontextrestored', () => {
   contextLost = false; clearInput(); scene?.resetRenderQueue(); renderStatus = 'ready'; el<HTMLButtonElement>('resume').disabled = !!fatalLogicError; el('pause-reason').textContent = '描画が復帰しました。操作して再開できます';
+  if (graphicsReady && (screen === 'preparing' || screen === 'home')) syncStartPreparation();
 });
 function resize() { pause('resize'); scene?.resize(); }
 window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
 window.addEventListener('pageshow', event => { clearInput(); if (event.persisted) pause('restored'); });
 let preparationGeneration = 0;
 function preparationFailed(error: unknown) {
-  preparationGeneration++; graphicsReady = false; cancelAnimationFrame(frameId); scene?.dispose(); scene = null;
+  preparationGeneration++; startPreparation.cancel(); graphicsReady = false; cancelAnimationFrame(frameId); scene?.dispose(); scene = null;
   el<HTMLButtonElement>('start').disabled = true; el('start').textContent = '出撃の準備ができませんでした'; el('startup-error').hidden = false;
   el('startup-error').textContent = '3D画面の準備が完了しませんでした。再読み込みしてお試しください'; el('reload').hidden = false; console.error('Fantasia renderer preparation failed', error);
 }
@@ -358,8 +454,8 @@ if (import.meta.env.DEV) {
     value: (history: boolean | 'audit' = true) => JSON.parse(JSON.stringify(history === 'audit'
       ? { mode: state.mode, seed: state.seed, rulesVersion: state.rulesVersion, mapVersion: state.mapVersion, startHeading: state.startHeading, entries: inputAudit, dropped: inputAuditDropped }
       : {
-        phase: screen === 'home' ? 'ready' : screen === 'paused' ? 'paused' : screen === 'result' ? 'ended' : state.status === 'respawning' ? 'respawning' : 'playing',
-        screen, mode: state.mode, selectedMode, status: state.status, graphicsReady, tick: state.simTick, elapsed: state.activeTicks / 60, activeTicks: state.activeTicks,
+        phase: screen === 'preparing' ? 'preparing' : screen === 'home' ? 'ready' : screen === 'paused' ? 'paused' : screen === 'result' ? 'ended' : state.status === 'respawning' ? 'respawning' : 'playing',
+        screen, startPreparation: startPreparation.snapshot(), mode: state.mode, selectedMode, status: state.status, graphicsReady, tick: state.simTick, elapsed: state.activeTicks / 60, activeTicks: state.activeTicks,
         player, campaignPlayer: state.player, campaign: campaign.snapshot(), sites: state.sites, armies: state.armies, actors: state.actors, projectiles: state.projectiles.length, result: state.resultSnapshot,
         bombGuide: bombPrediction, respawnRemaining, controlsInput: controls.peek(), settingsOpen: settings.isOpen, rulesOpen: rules?.isOpen ?? false,
         render: scene?.diagnostics(), renderStatus, lastFrameGap, lastInterruption, pauseReasons: [...pauseReasons], pauseCount, performanceInterrupted, fatalLogicError,
@@ -369,6 +465,6 @@ if (import.meta.env.DEV) {
   });
 }
 window.addEventListener('pagehide', event => {
-  pause('hidden'); if (event.persisted || disposed) return; disposed = true; preparationGeneration++; cancelAnimationFrame(frameId);
+  pause('hidden'); if (event.persisted || disposed) return; disposed = true; preparationGeneration++; startPreparation.dispose(); cancelAnimationFrame(frameId);
   controls.dispose(); settings.dispose(); rules?.dispose(); unsubscribeKeyboard(); unsubscribePresentation(); inputPresentation.dispose(); audio.dispose(); scene?.dispose(); campaign.dispose();
 });

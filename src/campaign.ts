@@ -1,5 +1,5 @@
-import type { ActorClass, CampaignActor, CampaignEvent, CampaignInput, CampaignMode, CampaignResult, CampaignState, CampaignTeam, ClassCounts, Origin, ScoreBreakdown, Vec } from './campaign-types';
-import { ACTOR_STATS, CAMPAIGN_DT, CAMPAIGN_LIMIT_TICKS, CAMPAIGN_MAP_VERSION, CAMPAIGN_RULES_VERSION, CAPTURE_MAX, countClasses, GROUND_CLASSES, INITIAL_CLASSES, validateClassCounts } from './campaign-config';
+import type { ActorClass, CampaignActor, CampaignEvent, CampaignFeatures, CampaignInput, CampaignMode, CampaignResult, CampaignState, CampaignTeam, ClassCounts, Origin, ScoreBreakdown, Vec } from './campaign-types';
+import { ACTOR_STATS, CAMPAIGN_DT, CAMPAIGN_LIMIT_TICKS, CAMPAIGN_MAP_VERSION, campaignRulesVersion, CAPTURE_MAX, countClasses, DEFAULT_CAMPAIGN_FEATURES, GROUND_CLASSES, INITIAL_CLASSES, validateCampaignFeatures, validateClassCounts } from './campaign-config';
 import { addVec, copyVec, distanceSquared, laneBasis, radialPosition, scaleVec, terrainHeight } from './campaign-terrain';
 import { aircraftTerrainContact } from './campaign-airframe';
 import { applyDamages, collectCombat, commitActorFire, commitPlayerFire, moveActors, tickPlayerAmmo, type CampaignEmit } from './campaign-combat';
@@ -64,6 +64,8 @@ export function campaignStateHash(state: CampaignState): string {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 export function validateCampaignState(state: CampaignState): void {
+  validateCampaignFeatures(state.features);
+  if (state.rulesVersion !== campaignRulesVersion(state.features)) throw new Error('Campaign features and rules version disagree');
   if (state.sites.length !== 7 || state.armies.length !== 7) throw new Error('Campaign needs seven sites and armies');
   const ids = new Set<number>([state.player.id]);
   for (const actor of state.actors) {
@@ -99,13 +101,15 @@ export function validateCampaignState(state: CampaignState): void {
 export class Campaign {
   readonly state: CampaignState;
   private emit: CampaignEmit;
-  constructor(mode: CampaignMode = 'normal', seed = 20261005) {
+  constructor(mode: CampaignMode = 'normal', seed = 20261005, features: CampaignFeatures = DEFAULT_CAMPAIGN_FEATURES) {
     if (mode !== 'normal' && mode !== 'easy') throw new RangeError('Unknown campaign mode');
     if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff) throw new RangeError('Seed must be a uint32');
+    validateCampaignFeatures(features);
     const heading = { x: 0, y: -Math.SQRT1_2, z: 0, w: Math.SQRT1_2 };
     const initialReserve = Object.fromEntries(GROUND_CLASSES.map(c => [c, INITIAL_CLASSES[c] * (mode === 'easy' ? 2 : 1)])) as ClassCounts;
     this.state = {
-      runId: `fantasia:${seed}:${++runOrdinal}`, rulesVersion: CAMPAIGN_RULES_VERSION, mapVersion: CAMPAIGN_MAP_VERSION,
+      runId: `fantasia:${seed}:${++runOrdinal}`, rulesVersion: campaignRulesVersion(features), mapVersion: CAMPAIGN_MAP_VERSION,
+      features: Object.freeze({ ...features }),
       seed, rngState: seed || 1, mode, startHeading: 0, status: 'running', simTick: 0, activeTicks: 0, respawnPenaltyTicks: 0, livesRemaining: 3,
       player: { id: 0, generation: 1, hp: 100, maxHp: 100, position: { x: 0, y: 300, z: 0 }, previous: { x: 0, y: 300, z: 0 }, velocity: { x: 110, y: 0, z: 0 }, radius: 8, mg: 288, cannon: 96, bombs: 2, reloadUntilTick: null, bombReloadUntilTick: null, nextMgTick: 0, nextCannonTick: 0, protectionTicks: 0, boundaryTicks: 600, quaternion: { ...heading }, previousQuaternion: { ...heading } },
       sites: Array.from({ length: 7 }, (_, id) => ({ id, position: radialPosition(id, 1000), owner: 'enemy', ownerGeneration: 1, challenger: null, progress: 0, captureProgress: 0, turretId: -1, contested: false, firstFriendlyCaptureTick: null, lastOwnerChangeTick: 0, depletedSinceTick: null, rescueCooldownUntilTick: 0 })),
