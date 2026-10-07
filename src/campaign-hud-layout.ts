@@ -108,6 +108,7 @@ export interface HudMeasurement {
   flightData: HudRect | null; threat: HudRect | null;
   panels?: HudObstacle[];
   movableControls?: HudObstacle[];
+  canvasLabels?: HudObstacle[];
 }
 export interface HudLayout {
   status: 'placed' | 'blocked' | 'invalid';
@@ -116,6 +117,7 @@ export interface HudLayout {
   threat: { status: Placement['status']; rect: HudRect } | null;
   panels?: Array<{ id: string; status: Placement['status']; rect: HudRect }>;
   controls?: Array<{ id: string; rect: HudRect }>;
+  canvasLabels?: Array<{ id: string; status: Placement['status']; rect: HudRect }>;
   compact?: boolean;
   searchChecks?: number;
   fixedConflicts?: Array<{ first: string; second: string }>;
@@ -182,7 +184,10 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
   const obstacles = [...measurement.obstacles,
     { id: 'central-flight-lane', x: canvas.width / 2 - 42, y: canvas.height / 2 - 42, width: 84, height: 84 },
     { ...sight, id: 'aim-and-reload-ring' }];
-  const items = [radar, ...measurement.panels!, ...(measurement.movableControls ?? [])].sort((a, b) => b.width * b.height - a.width * a.height || a.id.localeCompare(b.id));
+  // Short wide warnings otherwise come last by area and lose every full-width
+  // slot to tall controls. Reserve their actual rectangle before area packing.
+  const items = [...(measurement.canvasLabels ?? []), ...[radar, ...measurement.panels!, ...(measurement.movableControls ?? [])]
+    .sort((a, b) => b.width * b.height - a.width * a.height || a.id.localeCompare(b.id))];
   const work = { remaining: 120_000 };
   let invalid = !valid(canvas) || !valid(bounds) || !items.every(valid) || !obstacles.every(valid);
   const sites = obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-'));
@@ -236,9 +241,10 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
   const radarRect = rectFor(radar);
   const panels = measurement.panels!.map(item => ({ id: item.id, status, rect: rectFor(item) }));
   const controls = measurement.movableControls?.map(item => ({ id: item.id, rect: rectFor(item) }));
+  const canvasLabels = measurement.canvasLabels?.map(item => ({ id: item.id, status, rect: rectFor(item) }));
   const finalObstacles = controls ? [...obstacles, ...controls.map(item => ({ ...item.rect, id: item.id }))] : obstacles;
   const threat = panels.find(panel => panel.id === 'campaign-threat');
-  return { status, canvas, bounds, obstacles: finalObstacles, panels, controls, compact: Boolean(controls), fixedConflicts, searchChecks: 120_000 - Math.max(0, work.remaining),
+  return { status, canvas, bounds, obstacles: finalObstacles, panels, controls, canvasLabels, compact: Boolean(controls), fixedConflicts, searchChecks: 120_000 - Math.max(0, work.remaining),
     radar: { status, rect: radarRect, radius, center: { x: radarRect.x + radius + 1, y: radarRect.y + radius + 1 } },
     threat: threat ? { status, rect: threat.rect } : null };
 }
@@ -267,7 +273,7 @@ export class CampaignHudLayout {
     const key = [sight.x, sight.y, sight.width, sight.height].map(value => value.toFixed(6)).join(',');
     if (!this.dirty && key === this.sightKey) return this.layout;
     if (!this.dirty && valid(sight) && this.layout?.status === 'placed' && this.layout.panels
-      && [this.layout.radar.rect, ...this.layout.panels.map(panel => panel.rect), ...(this.layout.controls ?? []).map(control => control.rect)].every(rect => !intersects(rect, sight, 4))
+      && [this.layout.radar.rect, ...this.layout.panels.map(panel => panel.rect), ...(this.layout.canvasLabels ?? []).map(label => label.rect), ...(this.layout.controls ?? []).map(control => control.rect)].every(rect => !intersects(rect, sight, 4))
       && this.measurement!.obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-') || isFixedControl(item.id)).every(rect => !intersects(rect, sight))) {
       // A moving sight need not repack unchanged DOM. Keep stable labels until
       // its real footprint reaches one, while updating the diagnostic reserve.
@@ -283,6 +289,32 @@ export class CampaignHudLayout {
     if (this.layout.panels) this.host.applyPanels?.([...this.layout.panels, ...(this.layout.controls ?? []).map(control => ({ ...control, status: this.layout!.status }))]);
     else this.host.applyThreat(this.layout.threat?.rect ?? null, this.layout.canvas);
     return this.layout;
+  }
+  /** A canvas warning is part of the packing, not an afterthought in whatever
+   * slivers the DOM panels leave behind. Keep the cheap independent placement
+   * when it fits; otherwise repack all measured full-size items together. */
+  placeCanvasLabel(id: string, preferred: HudRect): { status: Placement['status']; rect: HudRect } {
+    const initial = layoutCampaignCanvasLabel(this.layout, preferred);
+    if (initial.status === 'invalid' || !this.measurement?.panels || !this.layout || this.disposed) return initial;
+    if (initial.status === 'placed') { this.layout.canvasLabels = [{ id, ...initial }]; return initial; }
+    const sight = this.layout.obstacles.find(item => item.id === 'aim-and-reload-ring');
+    if (!sight) return initial;
+    // A broad, short label belongs just below the measured fixed site strip
+    // when its projected point has no free slot. Start at the safe left edge;
+    // a center preference fragments that narrow band around the actual sight.
+    const sites = this.measurement.obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-'));
+    const labelTop = sites.length ? Math.max(...sites.map(site => site.y + site.height)) + 4 : this.layout.bounds.y;
+    const joint = layoutCampaignHud({ ...this.measurement,
+      // Keep existing placements as preferences while making room for the label.
+      panels: this.layout.panels!.map(panel => ({ ...panel.rect, id: panel.id })),
+      movableControls: this.layout.controls?.map(control => ({ ...control.rect, id: control.id })),
+      canvasLabels: [{ ...preferred, id, x: this.layout.bounds.x, y: labelTop }],
+    }, sight);
+    const label = joint.canvasLabels?.find(panel => panel.id === id);
+    if (joint.status !== 'placed' || !label) return initial;
+    this.layout = joint;
+    this.host.applyPanels?.([...joint.panels!, ...(joint.controls ?? []).map(control => ({ ...control, status: joint.status }))]);
+    return { status: label.status, rect: label.rect };
   }
   diagnostics() { return { ...this.layout, measurements: this.measurements, disposed: this.disposed }; }
   dispose() { if (this.disposed) return; this.disposed = true; this.disconnect(); }

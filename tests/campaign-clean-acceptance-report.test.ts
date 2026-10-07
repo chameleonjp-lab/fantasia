@@ -1,3 +1,4 @@
+import {detailScrollMeasurement} from '../browser-acceptance/detail-scroll-observation';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CASES, titleFor } from '../browser-acceptance/acceptance-cases';
@@ -93,8 +94,8 @@ test('compact report recomputes raw consumed neutral input and rejects every act
    const fragments=['entry:0:0'],samples=['keyboard','touch'].flatMap(method=>[0,100].map(scrollTop=>({method,scrollTop,phase:'playing',neutralInput:true,persistentIds,fullyVisibleFragments:fragments,fullHudScroll:{windowX:0,windowY:0,appLeft:0,appTop:0,hudLeft:0,hudTop:0}})));
    e.observations.find((o:any)=>o.label==='full-text-geometry-before-assertions').textGeometry=geometry;
    e.observations.push({label:'authorized-detail-scroll-proof',active:true,viewportId:'campaign-hud-details',expectedEntryIds:['entry'],actualEntryIds:['entry'],expectedFragments:fragments,persistentIds,samples},
-    ...samples.map(sample=>({label:'detail-scroll-snapshot',...sample,geometry,reservations:[],statusEvidence:{screen:'playing',status:'running',position:{x:0,y:400,z:0},protectionTicks:0,reloadTicksRemaining:0,text:{}}})),
-    {label:'detail-scroll-native-events',events:['keydown','keyup','pointerdown','touchstart','touchend'].map(type=>({type,isTrusted:true,key:type==='keydown'?'ArrowDown':undefined,pointerType:type==='pointerdown'?'touch':undefined}))},
+    ...samples.map(sample=>{const atomic={label:'detail-scroll-snapshot',...sample,geometry,reservations:[],scrollTopBefore:sample.scrollTop,scrollHeight:200,clientHeight:98,motion:{sequence:1,endedSequence:1,trusted:true},input:{keys:[],steerPointer:null,turn:0,climb:0,heldPointers:{}},statusEvidence:{screen:'playing',status:'running',position:{x:0,y:400,z:0},protectionTicks:0,reloadTicksRemaining:0,text:{}}};return {...atomic,settling:{first:detailScrollMeasurement(atomic as any),elapsedWallMs:32}};}),
+    {label:'detail-scroll-native-events',events:['keydown','keyup','pointerdown','touchstart','touchend','scroll','scrollend'].map(type=>({type,isTrusted:true,key:type==='keydown'?'ArrowDown':undefined,pointerType:type==='pointerdown'?'touch':undefined}))},
     ...Array.from({length:4},(_,i)=>({label:'detail-scroll-consumed-neutral-input',tick:i+1,input:{turn:0,climb:0,fire:false,bomb:false,loop:false,accelerate:false,brake:false}})));
   });return raw;
  };
@@ -102,6 +103,10 @@ test('compact report recomputes raw consumed neutral input and rejects every act
  for(const key of ['turn','climb','fire','bomb','loop','accelerate','brake']){
   const raw=make();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{e.observations.find((o:any)=>o.label==='detail-scroll-consumed-neutral-input').input[key]=['turn','climb'].includes(key)?1:true;});
   assert.equal((await report(raw)).browserAcceptance,'not-passed',key);
+ }
+ for(const corrupt of [(s:any)=>{delete s.settling;},(s:any)=>{s.settling.elapsedWallMs=0;},(s:any)=>{s.scrollTopBefore=7;},(s:any)=>{s.motion.endedSequence=0;},(s:any)=>{s.settling.first.fragments[0].fragments[0].y+=18;},(s:any)=>{s.input.turn=1;},(s:any)=>{s.phase='paused';},(s:any)=>{s.fullHudScroll.hudTop=4;}]){
+  const raw=make();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>corrupt(e.observations.find((o:any)=>o.label==='detail-scroll-snapshot')));
+  assert.equal((await report(raw)).browserAcceptance,'not-passed','unsettled, inconsistent or non-neutral snapshot fails closed');
  }
  const hidden=make();changeEvidence(hidden,CASES.findIndex(c=>c[1]===8),e=>{e.observations.find((o:any)=>o.label==='detail-scroll-snapshot').statusEvidence.protectionTicks=60;});
  assert.equal((await report(hidden)).browserAcceptance,'not-passed','active warning cannot disappear from raw persistent evidence');

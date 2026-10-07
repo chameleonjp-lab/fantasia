@@ -16,7 +16,7 @@ import { aimRadius, AIM_COLORS } from './aim-indicator';
 import { FLIGHT_FOV, getFlightCameraPose, projectFlightTarget } from './flight-view';
 import { projectGunSight } from './gun-sight';
 import { RenderQueue } from './render-queue';
-import { createCampaignHudLayout, layoutCampaignCanvasLabel, type CampaignHudLayout, type HudLayout } from './campaign-hud-layout';
+import { createCampaignHudLayout, layoutCampaignCanvasLabel, type CampaignHudLayout } from './campaign-hud-layout';
 import type { Aircraft, Bullet, Team } from './types';
 import type { CampaignActor, CampaignState, Vec } from './campaign-types';
 import { heightAt, radialPosition, route, sweepSphere, TERRAIN_OBSTACLES } from './campaign-terrain';
@@ -687,7 +687,7 @@ export class CampaignScene {
     const radius = aimRadius(mode, w, h);
     // Reserve the actual sight, crosshair and reload-ring fringe without changing them.
     const sightExtent = radius + 10;
-    const hudLayout = this.hudLayout.update({ x: sight.x - sightExtent, y: sight.y - sightExtent, width: sightExtent * 2, height: sightExtent * 2 });
+    this.hudLayout.update({ x: sight.x - sightExtent, y: sight.y - sightExtent, width: sightExtent * 2, height: sightExtent * 2 });
     let indicator: keyof typeof AIM_COLORS = 'clear';
     for (const actor of state.actors) {
       if (actor.hp <= 0) continue;
@@ -712,7 +712,7 @@ export class CampaignScene {
       c.strokeStyle = 'rgba(7,30,43,.8)'; c.lineWidth = 5; c.beginPath(); c.arc(sight.x, sight.y, radius + 7, 0, Math.PI * 2); c.stroke();
       c.strokeStyle = '#ffd27a'; c.lineWidth = 3; c.beginPath(); c.arc(sight.x, sight.y, radius + 7, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2); c.stroke();
     }
-    this.drawBombGuide(state, hudLayout);
+    this.drawBombGuide(state);
     c.shadowColor = 'rgba(0,20,30,.9)'; c.shadowBlur = 3; c.font = '600 11px system-ui'; c.textAlign = 'center';
     for (const site of state.sites) {
       const marker = this.projection({ x: site.position.x + 13, y: site.position.y + 22, z: site.position.z + 8 });
@@ -753,7 +753,7 @@ export class CampaignScene {
     this.drawThreats(state);
     c.shadowBlur = 0; this.drawRadar(state, player);
   }
-  private drawBombGuide(state: CampaignState, layout: HudLayout | null) {
+  private drawBombGuide(state: CampaignState) {
     this.bombGuideLabel = null;
     const c = this.ctx!; if (state.player.bombs <= 0 || state.player.hp <= 0) return;
     const guide = predictBombImpact(state.player.position, state.player.velocity, state.player.quaternion); if (!guide) return;
@@ -780,7 +780,7 @@ export class CampaignScene {
     const labelWidth = c.measureText(label).width + 12;
     const labelX = point.x + 32 + labelWidth < this.width - 12 ? point.x + 32 : Math.max(12, point.x - 32 - labelWidth);
     const labelY = Math.max(76, Math.min(this.height - 60, point.y - 36));
-    const placed = layoutCampaignCanvasLabel(layout, { x: labelX, y: labelY, width: labelWidth, height: 20 });
+    const placed = this.hudLayout.placeCanvasLabel('bomb-guide', { x: labelX, y: labelY, width: labelWidth, height: 20 });
     this.bombGuideLabel = { id: 'bomb-guide', text: label, ...placed };
     c.fillStyle = 'rgba(4,24,34,.78)'; c.fillRect(placed.rect.x, placed.rect.y, labelWidth, 20);
     c.fillStyle = friendlyRisk ? '#b2d8ff' : '#d1ffe3'; c.fillText(label, placed.rect.x + 6, placed.rect.y + 14); c.restore();

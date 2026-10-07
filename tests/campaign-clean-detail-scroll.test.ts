@@ -32,3 +32,27 @@ test('nonempty threat/reload/payload and actual reload stay required regardless 
  const e=statusFixture();for(const id of ['campaign-threat','reload-status','payload-status'])e.text[id]='active';assert.deepEqual(activeFixedStatusIds(e),['campaign-threat','reload-status','payload-status']);
  const reload=statusFixture();reload.reloadTicksRemaining=60;assert.deepEqual(activeFixedStatusIds(reload),['reload-status']);
 });
+
+import {detailScrollMeasurement,detailSettlingIssues} from '../browser-acceptance/detail-scroll-observation';
+import {collectHudTextGeometry} from '../browser-acceptance/text-geometry';
+import {runInNewContext} from 'node:vm';
+function atomicFixture(){
+ const sample={scrollTop:100,scrollTopBefore:100,scrollHeight:200,clientHeight:98,motion:{sequence:3,endedSequence:3,trusted:true},
+  input:{keys:[],steerPointer:null,turn:0,climb:0,heldPointers:{bomb:[],loop:[]}},
+  geometry:{viewport:{width:200,height:200},regions:[{key:'viewport',kind:'detail-viewport',rect:{x:0,y:0,width:200,height:98}}],styles:[],runs:[{text:'last fragment',owner:'last',ancestorRegions:[],styleKeys:[],fragments:[{x:2,y:75,width:60,height:21}]}]}};
+ return {...sample,settling:{first:structuredClone(detailScrollMeasurement(sample)),elapsedWallMs:32}};
+}
+test('native scroll completion and real-wall-time stable geometry are both required',()=>{
+ assert.deepEqual(detailSettlingIssues(atomicFixture()),[]);
+ for(const change of [(s:any)=>delete s.settling,(s:any)=>s.settling.elapsedWallMs=0,(s:any)=>s.settling.elapsedWallMs=1501,(s:any)=>s.settling.elapsedWallMs=NaN,
+  (s:any)=>s.motion.endedSequence=2,(s:any)=>s.motion.trusted=false,(s:any)=>s.motion.sequence=.5,(s:any)=>s.scrollTopBefore=82,
+  (s:any)=>s.geometry.runs[0].fragments[0].y+=18,(s:any)=>s.geometry.regions[0].rect.height=90,(s:any)=>s.clientHeight=100,
+  (s:any)=>s.input.keys.push('ArrowDown'),(s:any)=>s.input.heldPointers.bomb.push(1),(s:any)=>delete s.input]){
+  const sample=atomicFixture();change(sample);assert.ok(detailSettlingIssues(sample).length,'unsettled/malformed evidence must fail');
+ }
+});
+test('atomic collector handle expression remains browser-serializable without host dependencies',()=>{
+ const collector=runInNewContext(`(${collectHudTextGeometry.toString()})`);
+ assert.equal(typeof collector,'function');
+ assert.ok(!collector.toString().includes('__name'));
+});

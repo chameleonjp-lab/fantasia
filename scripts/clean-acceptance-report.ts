@@ -1,3 +1,4 @@
+import {detailSettlingIssues} from '../browser-acceptance/detail-scroll-observation';
 import { assertCaptureCancelled } from '../browser-acceptance/capture-contract';
 import { detailAccessIssues, consumedDetailInputIssues, activeFixedStatusIds } from '../browser-acceptance/detail-scroll-contract';
 import { detailGeometrySnapshot, textGeometryIssues } from '../browser-acceptance/text-geometry';
@@ -91,14 +92,16 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
                   const samples=observations.filter((o:any)=>o?.label==='detail-scroll-snapshot');
                   if(samples.length!==proof[0].samples.length)throw new Error('missing detail snapshots');
                   for(const [i,sample]of samples.entries()){
+                    if(detailSettlingIssues(sample).length)throw new Error('unsettled/non-atomic detail observation');
                     const checked=detailGeometrySnapshot(sample.geometry);
                     if(!sample.statusEvidence||activeFixedStatusIds(sample.statusEvidence).some(id=>!sample.persistentIds?.includes(id)))throw new Error('active fixed status hidden/missing');
                     if(checked.completenessIssues.length||textGeometryIssues(checked.projected,sample.reservations??text.reservations).length)throw new Error('invalid reached text');
                     const recorded=proof[0].samples[i];
-                    if(JSON.stringify(checked.expected)!==JSON.stringify(proof[0].expectedFragments)||JSON.stringify(checked.visible)!==JSON.stringify(recorded.fullyVisibleFragments)||sample.method!==recorded.method||sample.scrollTop!==recorded.scrollTop)throw new Error('detail coverage differs from raw geometry');
+                    if(JSON.stringify(checked.expected)!==JSON.stringify(proof[0].expectedFragments)||JSON.stringify(checked.visible)!==JSON.stringify(recorded.fullyVisibleFragments)||sample.method!==recorded.method||sample.scrollTop!==recorded.scrollTop||sample.phase!==recorded.phase||sample.neutralInput!==recorded.neutralInput||JSON.stringify(sample.fullHudScroll)!==JSON.stringify(recorded.fullHudScroll)||JSON.stringify(sample.persistentIds)!==JSON.stringify(recorded.persistentIds))throw new Error('detail coverage differs from raw geometry');
                   }
                   const native=observations.find((o:any)=>o?.label==='detail-scroll-native-events')?.events;
                   if(!Array.isArray(native)||native.some((e:any)=>!e.isTrusted)||!['keydown','keyup','pointerdown','touchstart','touchend'].every(type=>native.some((e:any)=>e.type===type))||!native.some((e:any)=>e.key==='ArrowDown')||!native.some((e:any)=>e.pointerType==='touch'))throw new Error('missing trusted scroll input');
+                  if(samples.some((s:any)=>s.motion.sequence>native.filter((event:any)=>event.type==='scroll').length)||!native.some((event:any)=>event.type==='scrollend'))throw new Error('missing native scroll completion events');
                   if(consumedDetailInputIssues(observations.filter((o:any)=>o?.label==='detail-scroll-consumed-neutral-input')).length)throw new Error('missing/non-neutral consumed input');
                 }
               }
