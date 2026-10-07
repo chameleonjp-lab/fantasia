@@ -1,5 +1,6 @@
 import { assertCaptureCancelled } from '../browser-acceptance/capture-contract';
-import { textGeometryIssues } from '../browser-acceptance/text-geometry';
+import { detailAccessIssues, consumedDetailInputIssues, activeFixedStatusIds } from '../browser-acceptance/detail-scroll-contract';
+import { detailGeometrySnapshot, textGeometryIssues } from '../browser-acceptance/text-geometry';
 import { CASES, titleFor } from '../browser-acceptance/acceptance-cases';
 
 type Json = Record<string, any>;
@@ -79,7 +80,28 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
             }
             if(row[1]===8||row[1]===9) {
               const text=observations.find((o:any)=>o?.label==='full-text-geometry-before-assertions');
-              try {if(!text||!Array.isArray(text.reservations)||!Array.isArray(text.issues)||text.issues.length!==0||textGeometryIssues(text.textGeometry,text.reservations).length!==0) throw new Error('missing/incomplete/clipped text');}
+              try {
+                if(!text||!Array.isArray(text.reservations)||!Array.isArray(text.issues)||text.issues.length!==0)throw new Error('missing text');
+                const compact=observations.some((o:any)=>o?.label==='actual-live-dom-geometry'&&o.dom?.compact===true);
+                const snapshot=compact?detailGeometrySnapshot(text.textGeometry):null;
+                if(textGeometryIssues(snapshot?.projected??text.textGeometry,text.reservations).length||snapshot?.completenessIssues.length)throw new Error('clipped text');
+                if(compact){
+                  const proof=observations.filter((o:any)=>o?.label==='authorized-detail-scroll-proof');
+                  if(proof.length!==1||detailAccessIssues(proof[0]).length)throw new Error('missing detail access proof');
+                  const samples=observations.filter((o:any)=>o?.label==='detail-scroll-snapshot');
+                  if(samples.length!==proof[0].samples.length)throw new Error('missing detail snapshots');
+                  for(const [i,sample]of samples.entries()){
+                    const checked=detailGeometrySnapshot(sample.geometry);
+                    if(!sample.statusEvidence||activeFixedStatusIds(sample.statusEvidence).some(id=>!sample.persistentIds?.includes(id)))throw new Error('active fixed status hidden/missing');
+                    if(checked.completenessIssues.length||textGeometryIssues(checked.projected,sample.reservations??text.reservations).length)throw new Error('invalid reached text');
+                    const recorded=proof[0].samples[i];
+                    if(JSON.stringify(checked.expected)!==JSON.stringify(proof[0].expectedFragments)||JSON.stringify(checked.visible)!==JSON.stringify(recorded.fullyVisibleFragments)||sample.method!==recorded.method||sample.scrollTop!==recorded.scrollTop)throw new Error('detail coverage differs from raw geometry');
+                  }
+                  const native=observations.find((o:any)=>o?.label==='detail-scroll-native-events')?.events;
+                  if(!Array.isArray(native)||native.some((e:any)=>!e.isTrusted)||!['keydown','keyup','pointerdown','touchstart','touchend'].every(type=>native.some((e:any)=>e.type===type))||!native.some((e:any)=>e.key==='ArrowDown')||!native.some((e:any)=>e.pointerType==='touch'))throw new Error('missing trusted scroll input');
+                  if(consumedDetailInputIssues(observations.filter((o:any)=>o?.label==='detail-scroll-consumed-neutral-input')).length)throw new Error('missing/non-neutral consumed input');
+                }
+              }
               catch {errors.push('Complete unclipped nonoverlapping text evidence absent/invalid');}
             }
             if(row[1]===8 && !observations.some((o:any)=>o?.label==='actual-live-dom-geometry'&&o.dom?.sites?.length===7&&o.layout?.status==='placed')) errors.push('Live seven-site geometry absent');

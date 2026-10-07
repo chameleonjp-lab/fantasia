@@ -65,6 +65,12 @@ export class FlightControls {
     this.knob = joystick.querySelector<HTMLElement>('i');
 
     const opts = { signal: this.abort.signal };
+    // Browsing a detail region cancels existing holds and never starts flight.
+    const clearForDetails = (event: Event) => {
+      if (event.target instanceof HTMLElement && event.target.closest('#campaign-hud-details')) this.clear();
+    };
+    app.addEventListener('focusin', clearForDetails, opts);
+    app.addEventListener('pointerdown', clearForDetails, opts);
     surface.addEventListener('pointerdown', event => this.beginSteering(event, app), opts);
     window.addEventListener('pointermove', event => this.moveSteering(event), opts);
     window.addEventListener('pointerup', event => this.endPointer(event, true), opts);
@@ -309,7 +315,7 @@ export class FlightControls {
 
   private isTypingOrActivating(target: EventTarget | null): boolean {
     if (!(target instanceof HTMLElement)) return false;
-    return target.isContentEditable || Boolean(target.closest('input, textarea, select, button, a, dialog, [role="dialog"]'));
+    return target.isContentEditable || Boolean(target.closest('input, textarea, select, button, a, dialog, [role="dialog"], #campaign-hud-details'));
   }
 
   private capture(element: HTMLElement, pointer: number): void {

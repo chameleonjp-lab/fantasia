@@ -47,3 +47,24 @@ test('serialized in-page collector does not depend on host transpiler closure he
  // An empty fixture is never browser acceptance; the pure gate rejects it.
  assert.ok(textGeometryIssues(result).includes('missing-visible-text-runs'));
 });
+
+import {detailGeometrySnapshot} from '../browser-acceptance/text-geometry';
+function detailFixture():TextGeometry {
+ const d=fixture();d.regions.push({key:'details',kind:'detail-viewport',rect:{x:150,y:20,width:100,height:80}},{key:'entry',kind:'detail-entry',rect:{x:152,y:22,width:90,height:180}});
+ d.styles.push(style({key:'style:campaign-hud-details:1',clipRect:{x:151,y:21,width:98,height:78},overflowX:'hidden',overflowY:'auto',scrollWidth:98,clientWidth:98,scrollHeight:220,clientHeight:78,borderRadius:['0px','0px','0px','0px']}));
+ d.runs.push({text:'all detail lines',owner:'entry',ancestorRegions:['entry','details'],fragments:[{x:155,y:30,width:80,height:18},{x:155,y:120,width:80,height:18}],styleKeys:['style:campaign-hud-details:1']});return d;
+}
+test('authorized viewport exposes only fully visible fragments while keeping every fragment in required inventory',()=>{
+ const d=detailFixture(),s=detailGeometrySnapshot(d);assert.equal(s.expected.length,2);assert.equal(s.visible.length,1);assert.deepEqual(s.completenessIssues,[]);assert.deepEqual(textGeometryIssues(s.projected),[]);
+ assert.equal(d.runs[1].owner,'entry');assert.equal(d.runs[1].fragments.length,2);
+});
+test('detail scroll permission never excuses inline ellipsis, inner clipping, clamp or foreign sight overlap',()=>{
+ let d=detailFixture();d.styles[1].scrollWidth=120;assert.ok(detailGeometrySnapshot(d).completenessIssues.length);
+ d=detailFixture();d.styles[1].lineClamp='1';assert.ok(detailGeometrySnapshot(d).completenessIssues.length);
+ d=detailFixture();d.styles.push(style({key:'inner',overflowY:'hidden',scrollHeight:300}));d.runs[1].styleKeys.push('inner');assert.ok(detailGeometrySnapshot(d).completenessIssues.length);
+ d=detailFixture();assert.ok(textGeometryIssues(detailGeometrySnapshot(d).projected,[{key:'sight',kind:'sight',rect:{x:150,y:30,width:100,height:20}}]).some(s=>s.includes('overlaps-sight')));
+});
+test('persistent clipping and same-detail-owner text collision remain failures in fallback',()=>{
+ let d=detailFixture();d.runs[0].fragments[0].x=-10;assert.ok(textGeometryIssues(detailGeometrySnapshot(d).projected).some(s=>s.includes('outside-viewport')));
+ d=detailFixture();d.runs.push({...d.runs[1],text:'another text',fragments:[{x:155,y:31,width:30,height:18}]});assert.ok(textGeometryIssues(detailGeometrySnapshot(d).projected).some(s=>s.includes('text-owner-collision')));
+});

@@ -1207,3 +1207,78 @@ p {
   opacity: 0;
   pointer-events: none;
 }
+
+/* Approved responsive fallback: seven live statuses and safety/flight controls
+   remain fixed; only explicitly secondary details use a bounded scroll region.
+   No font, radar or control scale is reduced. Original live nodes are moved. */
+#app[data-campaign-hud="compact"] .hud-top,
+#app[data-campaign-hud="compact"] .targets,
+#app[data-campaign-hud="compact"] .hud-actions,
+#app[data-campaign-hud="compact"] .flight-data { display: contents; }
+#app[data-campaign-hud="compact"] .campaign-sites {
+  top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left));
+  right: max(8px, env(safe-area-inset-right)); max-width: none; gap: 2px;
+}
+#app[data-campaign-hud="compact"] .campaign-site { padding: 2px; }
+#app[data-campaign-hud="compact"] .campaign-site-heading { flex-wrap: wrap; gap: 2px; }
+#app[data-campaign-hud="compact"] .campaign-site-progress { margin: 2px 0; }
+#app[data-campaign-hud="compact"] .flight-data > *,
+#app[data-campaign-hud="compact"] #campaign-mode-status,
+#app[data-campaign-hud="compact"] #hud > .target-tally,
+#app[data-campaign-hud="compact"] #hud > #bomb-hint {
+  position: absolute; left: 8px; top: 140px; width: 110px; margin: 0;
+}
+#app[data-campaign-hud="compact"] .health-label { flex-wrap: nowrap; white-space: nowrap; width: max-content; }
+#app[data-campaign-hud="compact"] .instrument { gap: 2px; }
+#app[data-campaign-hud="compact"] #campaign-mode-status { width: max-content; }
+#app[data-campaign-hud="compact"] #hud > .target-tally { display: flex; gap: 4px; align-items: baseline; width: max-content; }
+#app[data-campaign-hud="compact"] #hud > .target-tally > b { margin: 0; }
+#app[data-campaign-hud="compact"] #game-sound,
+#app[data-campaign-hud="compact"] #pause {
+  position: absolute !important; left: 8px; top: 112px; right: auto; bottom: auto;
+  width: max-content; min-width: 44px; min-height: 44px; height: auto; padding: 2px;
+}
+#app[data-campaign-hud="compact"] #hud button { white-space: nowrap; }
+#app[data-campaign-hud="compact"] #loop,
+#app[data-campaign-hud="compact"] #bomb,
+#app[data-campaign-hud="compact"] #fire,
+#app[data-campaign-hud="compact"] #accelerate,
+#app[data-campaign-hud="compact"] #brake {
+  width: max-content; height: auto; min-width: max(44px, var(--control-size, 44px));
+  min-height: max(44px, var(--control-size, 44px)); padding: 2px;
+}
+#app[data-campaign-hud="compact"] #loop > span { display: inline; }
+#app[data-campaign-hud="compact"] #loop b { margin: 0; }
+#campaign-hud-details {
+  position: absolute; left: 8px; top: 220px; width: 114px; height: 96px;
+  box-sizing: border-box; overflow-x: hidden; overflow-y: auto; scrollbar-width: thin;
+  overscroll-behavior: contain; touch-action: pan-y; pointer-events: auto;
+  border: 1px solid #c9e5e580; border-radius: 0; padding: 3px;
+  background: #062433ef; color: #bed2d0; scroll-padding-block: 3px;
+}
+#campaign-hud-details [data-campaign-detail] {
+  display: block; position: static !important; inset: auto !important;
+  width: auto !important; min-width: 0 !important; max-width: none !important;
+  height: auto; margin: 0 0 8px !important; padding: 0;
+  transform: none !important; translate: none !important; text-align: left;
+  white-space: normal !important; overflow-wrap: anywhere; word-break: normal;
+}
+#campaign-hud-details [data-campaign-detail] * {
+  white-space: normal !important; overflow-wrap: anywhere; min-width: 0;
+}
+#campaign-hud-details .campaign-site-force,
+#campaign-hud-details .campaign-site-wave { overflow: visible; text-overflow: clip; }
+#campaign-hud-details .time-block > span { display: block; }
+#campaign-hud-details .target-tally { display: block; }
+#campaign-hud-details:focus-visible,
+#campaign-hud-details [data-campaign-detail]:focus-visible { outline: 2px solid #ffe2a4; outline-offset: -2px; }
+@media (min-width: 700px) {
+  #campaign-hud-details { width: 240px; height: 160px; }
+}
+#app[data-campaign-hud="compact"] #hud > .target-tally > span { font-size: 9px; }
+#app[data-campaign-hud="compact"] #hud > .target-tally > b { font-size: 22px; line-height: 1; }
+#campaign-mode-status { font-size: 9px; }
+
+#app[data-campaign-hud="compact"] .campaign-site-state {
+  display: block; white-space: normal; overflow-wrap: anywhere;
+}

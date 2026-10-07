@@ -78,3 +78,31 @@ test('edge evidence must retain both trusted, ordered native cancellations befor
 test('geometry evidence cannot omit full text or hide clipping behind an empty declared issue list',async()=>{
  for(const edit of [(e:any)=>{e.observations=e.observations.filter((o:any)=>o.label!=='full-text-geometry-before-assertions');},(e:any)=>{e.observations.find((o:any)=>o.label==='full-text-geometry-before-assertions').textGeometry.runs[0].fragments[0].x=-20;}]) {const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),edit);assert.equal((await report(raw)).browserAcceptance,'not-passed');}
 });
+
+test('compact fallback cannot inherit full-text pass without a complete native detail proof',async()=>{
+ const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{e.observations.find((o:any)=>o.label==='actual-live-dom-geometry').dom.compact=true;});
+ assert.equal((await report(raw)).browserAcceptance,'not-passed');
+});
+
+test('compact report recomputes raw consumed neutral input and rejects every action even with a neutral label',async()=>{
+ const make=()=>{
+  const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{
+   e.observations.find((o:any)=>o.label==='actual-live-dom-geometry').dom.compact=true;
+   const persistentIds=['campaign-mode-status','lives-count','pause','bomb','loop',...Array.from({length:7},(_,i)=>`site-${i+1}`),...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`)];
+   const geometry={viewport:{width:200,height:200},regions:[{key:'viewport',kind:'detail-viewport',rect:{x:10,y:10,width:100,height:100}},{key:'entry',kind:'detail-entry',rect:{x:11,y:11,width:98,height:150}}],styles:[{key:'style:campaign-hud-details:0',clipRect:{x:11,y:11,width:98,height:98},overflowX:'hidden',overflowY:'auto',scrollWidth:98,clientWidth:98,scrollHeight:200,clientHeight:98,lineClamp:'none',maxLines:'none',contain:'none',unsupported:[]}],runs:[{text:'detail',owner:'entry',ancestorRegions:['entry','viewport'],fragments:[{x:20,y:20,width:40,height:15}],styleKeys:['style:campaign-hud-details:0']}]};
+   const fragments=['entry:0:0'],samples=['keyboard','touch'].flatMap(method=>[0,100].map(scrollTop=>({method,scrollTop,phase:'playing',neutralInput:true,persistentIds,fullyVisibleFragments:fragments,fullHudScroll:{windowX:0,windowY:0,appLeft:0,appTop:0,hudLeft:0,hudTop:0}})));
+   e.observations.find((o:any)=>o.label==='full-text-geometry-before-assertions').textGeometry=geometry;
+   e.observations.push({label:'authorized-detail-scroll-proof',active:true,viewportId:'campaign-hud-details',expectedEntryIds:['entry'],actualEntryIds:['entry'],expectedFragments:fragments,persistentIds,samples},
+    ...samples.map(sample=>({label:'detail-scroll-snapshot',...sample,geometry,reservations:[],statusEvidence:{screen:'playing',status:'running',position:{x:0,y:400,z:0},protectionTicks:0,reloadTicksRemaining:0,text:{}}})),
+    {label:'detail-scroll-native-events',events:['keydown','keyup','pointerdown','touchstart','touchend'].map(type=>({type,isTrusted:true,key:type==='keydown'?'ArrowDown':undefined,pointerType:type==='pointerdown'?'touch':undefined}))},
+    ...Array.from({length:4},(_,i)=>({label:'detail-scroll-consumed-neutral-input',tick:i+1,input:{turn:0,climb:0,fire:false,bomb:false,loop:false,accelerate:false,brake:false}})));
+  });return raw;
+ };
+ assert.equal((await report(make())).browserAcceptance,'passed');
+ for(const key of ['turn','climb','fire','bomb','loop','accelerate','brake']){
+  const raw=make();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{e.observations.find((o:any)=>o.label==='detail-scroll-consumed-neutral-input').input[key]=['turn','climb'].includes(key)?1:true;});
+  assert.equal((await report(raw)).browserAcceptance,'not-passed',key);
+ }
+ const hidden=make();changeEvidence(hidden,CASES.findIndex(c=>c[1]===8),e=>{e.observations.find((o:any)=>o.label==='detail-scroll-snapshot').statusEvidence.protectionTicks=60;});
+ assert.equal((await report(hidden)).browserAcceptance,'not-passed','active warning cannot disappear from raw persistent evidence');
+});

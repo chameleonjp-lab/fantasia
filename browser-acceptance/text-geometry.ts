@@ -16,7 +16,7 @@ export function collectHudTextGeometry(visible:(node:HTMLElement)=>boolean):Text
   const read={rect(r:DOMRect){return {x:r.x,y:r.y,width:r.width,height:r.height};},
     cssVisible(node:HTMLElement){let n:HTMLElement|null=node;while(n){const s=getComputedStyle(n);if(n.hidden||s.display==='none'||s.visibility==='hidden')return false;n=n.parentElement;}return true;}};
   const selectors:Array<[string,string]>=[['panel','.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip'],
-    ['header','.hud-top'],['site','#campaign-sites .campaign-site[data-site]'],['control','#hud button']];
+    ['detail-viewport','#campaign-hud-details'],['detail-entry','#campaign-hud-details [data-campaign-detail]'],['persistent','#campaign-mode-status, #hud > .target-tally, #hud > #bomb-hint'],['header','.hud-top'],['site','#campaign-sites .campaign-site[data-site]'],['control','#hud button']];
   const regionNodes:Array<{key:string;kind:string;node:HTMLElement;rect:TextRect}>=[];
   for(const [kind,selector]of selectors)for(const node of document.querySelectorAll<HTMLElement>(selector))if((visible(node)||(!!node.textContent?.trim()&&read.cssVisible(node)))&&!regionNodes.some(r=>r.node===node))
     regionNodes.push({key:`${kind}:${node.id||node.className}:${regionNodes.length}`,kind,node,rect:read.rect(node.getBoundingClientRect())});
@@ -92,4 +92,38 @@ export function textGeometryIssues(data:TextGeometry,reservations:TextRegion[]=[
     if(a.fragments.some(x=>b.fragments.some(y=>overlap(x,y))))issues.push(`text-owner-collision ${a.owner} / ${b.owner}`);
   }
   return [...new Set(issues)];
+}
+
+/** Only the explicitly authorized detail viewport may clip secondary text.
+ * Fully visible fragments retain all other ancestor/viewport/collision checks.
+ * Offscreen fragments are NOT accepted: the traversal must later cover each ID. */
+export function detailGeometrySnapshot(data:TextGeometry) {
+  const viewport=data.regions.find(r=>r.kind==='detail-viewport');
+  if(!viewport)throw new Error('Missing authorized detail viewport');
+  const viewportStyle=data.styles.find(s=>s.key.startsWith('style:campaign-hud-details:'));
+  if(!viewportStyle)throw new Error('Missing detail clipping style');
+  const box=viewportStyle.clipRect, tolerance=.75;
+  const inside=(r:TextRect)=>r.x>=box.x-tolerance&&r.y>=box.y-tolerance&&r.x+r.width<=box.x+box.width+tolerance&&r.y+r.height<=box.y+box.height+tolerance;
+  const expected:string[]=[],visible:string[]=[];
+  const detailKeys=new Set(data.regions.filter(r=>r.kind==='detail-entry').map(r=>r.key));
+  const runs=data.runs.flatMap((run,index)=>{
+    if(!run.ancestorRegions.includes(viewport.key))return [run];
+    const fragments=run.fragments.filter((r,i)=>{const id=`${run.owner}:${index}:${i}`;expected.push(id);if(inside(r)){visible.push(id);return true;}return false;});
+    return fragments.length?[{...run,fragments}]:[];
+  });
+  const projected:TextGeometry={...data,runs,regions:data.regions.filter(r=>!detailKeys.has(r.key)),
+    styles:data.styles.map(s=>s===viewportStyle?{...s,scrollHeight:s.clientHeight}:s)};
+  // Keep owners present without treating offscreen detail entry rectangles as
+  // visible obstacles. Text-to-text checks still include distinct same-owner runs.
+  for(const run of projected.runs)if(detailKeys.has(run.owner))run.owner=viewport.key;
+  const completenessIssues:string[]=[];
+  for(const run of data.runs.filter(r=>r.ancestorRegions.includes(viewport.key))){
+    if(!run.fragments.length)completenessIssues.push(`missing-detail-fragments: ${run.text}`);
+    for(const key of run.styleKeys){const s=data.styles.find(s=>s.key===key);if(!s){completenessIssues.push('missing-detail-style');continue;}
+      if(s.unsupported.length||!['none','normal','0',''].includes(s.lineClamp)||!['none','normal','0',''].includes(s.maxLines))completenessIssues.push(`unsupported-detail-completeness: ${key}`);
+      if(['hidden','clip','auto','scroll'].includes(s.overflowX)&&s.scrollWidth>s.clientWidth+1)completenessIssues.push(`clipped-detail-inline: ${key}`);
+      if(s!==viewportStyle&&['hidden','clip','auto','scroll'].includes(s.overflowY)&&s.scrollHeight>s.clientHeight+1)completenessIssues.push(`clipped-detail-block: ${key}`);
+    }
+  }
+  return {projected,expected,visible,completenessIssues:[...new Set(completenessIssues)]};
 }

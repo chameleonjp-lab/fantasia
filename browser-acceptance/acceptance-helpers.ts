@@ -3,6 +3,8 @@ import { RealRendererDriver } from './real-driver';
 import { assertFreshGeometry, createVisibilityPredicate } from './geometry-contract';
 import { assertCaptureCancelled, type CaptureEvent } from './capture-contract';
 import { collectHudTextGeometry, textGeometryIssues, type TextGeometry, type TextRegion } from './text-geometry';
+import { verifyDetailScroll } from './detail-scroll';
+import { detailGeometrySnapshot } from './text-geometry';
 import { CASES } from './acceptance-cases';
 
 export async function runCase(driver: RealRendererDriver, info: TestInfo, id: string, body: () => Promise<void>) {
@@ -52,17 +54,18 @@ export async function liveGeometry(driver: RealRendererDriver) {
   try { dom = await driver.call('collect current live DOM geometry',()=>driver.page.evaluate((visible) => {
     const rect = (node: Element) => { const r = node.getBoundingClientRect(); return { x:r.x,y:r.y,width:r.width,height:r.height }; };
     const canvas = rect(document.querySelector('#flight')!);
-    const panels=[...document.querySelectorAll<HTMLElement>('.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip')]
-      .filter(node=>visible(node)&&(!node.matches('.hud-top .time-block')||(canvas.width<=360&&canvas.height>canvas.width)));
+    const compact=document.querySelector('#app')?.getAttribute('data-campaign-hud')==='compact';
+    const panels=[...document.querySelectorAll<HTMLElement>('.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip, #campaign-hud-details, #campaign-mode-status, #hud > .target-tally, #hud > #bomb-hint')]
+      .filter(node=>visible(node)&&!node.parentElement?.closest('#campaign-hud-details')&&(!node.matches('.hud-top .time-block')||compact||(canvas.width<=360&&canvas.height>canvas.width)));
     const obstacles=[...document.querySelectorAll<HTMLElement>('.hud-top, #campaign-sites .campaign-site[data-site], #hud button')].filter(visible);
     const nodes=[...new Set([...panels,...obstacles])];
     const local=(node:HTMLElement)=>({id:node.id||node.className,...rect(node),x:rect(node).x-canvas.x,y:rect(node).y-canvas.y});
-    return { canvas, viewport: {width:innerWidth,height:innerHeight}, sites:[...document.querySelectorAll('#campaign-sites .campaign-site[data-site]')].map(rect),
+    return { compact, canvas, viewport: {width:innerWidth,height:innerHeight}, sites:[...document.querySelectorAll('#campaign-sites .campaign-site[data-site]')].map(rect),
       panels:panels.map(local),obstacles:obstacles.map(local),
       nodes:nodes.map(node => ({id:node.id || node.className, button:node.tagName==='BUTTON', panel:panels.includes(node), scrollWidth:node.scrollWidth,clientWidth:node.clientWidth,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,...rect(node)})),
       overlays: ['home','pause-screen','result'].map(id => ({id, hidden:document.getElementById(id)!.hidden})), dpr:devicePixelRatio };
   },visibility));
-    textGeometry=await driver.call('collect current full-text and clipping geometry',()=>driver.page.evaluate(collectHudTextGeometry,visibility));
+    textGeometry=await driver.call('collect current full-text and clipping geometry',()=>driver.page.evaluate(collectHudTextGeometry,visibility as any));
   } finally {await visibility.dispose();}
   // Preserve independently collected current DOM even if the first assertion fails.
   driver.evidence.push({label:'live-dom-geometry-before-assertions',dom,layout});
@@ -71,7 +74,8 @@ export async function liveGeometry(driver: RealRendererDriver) {
     ...layout.obstacles.filter((r:any)=>['aim-and-reload-ring','central-flight-lane'].includes(r.id)).map((r:any)=>({key:`canvas:${r.id}`,kind:'sight-reservation',rect:r})),
     ...(layout.canvasLabels??[]).filter((r:any)=>r.rect).map((r:any)=>({key:`canvas:${r.id}`,kind:'canvas-label',rect:r.rect})),
   ].map(r=>({...r,rect:{...r.rect,x:r.rect.x+dom.canvas.x,y:r.rect.y+dom.canvas.y}}));
-  const textIssues=textGeometryIssues(textGeometry,reservations);
+  const detailSnapshot=dom.compact?detailGeometrySnapshot(textGeometry):null;
+  const textIssues=[...textGeometryIssues(detailSnapshot?.projected??textGeometry,reservations),...(detailSnapshot?.completenessIssues??[])];
   driver.evidence.push({label:'full-text-geometry-before-assertions',textGeometry,reservations,issues:textIssues});
   expect(layout.status).toBe('placed'); expect(layout.measurements).toBeGreaterThan(0);
   expect(full.render.sites).toBe(7); expect(full.render.calls).toBeGreaterThan(0); expect(full.render.triangles).toBeGreaterThan(0);
@@ -105,6 +109,7 @@ export async function liveGeometry(driver: RealRendererDriver) {
   for(const panel of dom.panels) for(const site of siteRects) expect(overlap(panel,site)).toBe(false);
   for(const panel of layout.panels ?? []) { expect(overlap(panel.rect,sight)).toBe(false); expect(overlap(panel.rect,layout.radar.rect)).toBe(false); }
   for (const selector of ['#pause','#bomb','#loop', ...(state.mode==='normal'?['#fire','#accelerate','#brake']:[])]) await driver.point(selector);
+  if(dom.compact)await verifyDetailScroll(driver,reservations);
   driver.evidence.push({ label:'actual-live-dom-geometry', dom, layout }); return {dom,layout};
 }
 

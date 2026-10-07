@@ -1,3 +1,4 @@
+import { CampaignHudDetails } from './campaign-hud-details';
 /** HUD geometry is in canvas CSS pixels, never device/backing-store pixels. */
 export interface HudRect { x: number; y: number; width: number; height: number }
 export interface HudObstacle extends HudRect { id: string }
@@ -87,6 +88,7 @@ export interface HudMeasurement {
   canvas: HudRect; bounds: HudRect; obstacles: HudObstacle[];
   flightData: HudRect | null; threat: HudRect | null;
   panels?: HudObstacle[];
+  movableControls?: HudObstacle[];
 }
 export interface HudLayout {
   status: 'placed' | 'blocked' | 'invalid';
@@ -94,6 +96,8 @@ export interface HudLayout {
   radar: { status: Placement['status']; rect: HudRect; radius: number; center: { x: number; y: number } };
   threat: { status: Placement['status']; rect: HudRect } | null;
   panels?: Array<{ id: string; status: Placement['status']; rect: HudRect }>;
+  controls?: Array<{ id: string; rect: HudRect }>;
+  compact?: boolean;
   searchChecks?: number;
   fixedConflicts?: Array<{ first: string; second: string }>;
 }
@@ -158,7 +162,7 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
   const obstacles = [...measurement.obstacles,
     { id: 'central-flight-lane', x: canvas.width / 2 - 42, y: canvas.height / 2 - 42, width: 84, height: 84 },
     { ...sight, id: 'aim-and-reload-ring' }];
-  const items = [radar, ...measurement.panels!].sort((a, b) => b.width * b.height - a.width * a.height || a.id.localeCompare(b.id));
+  const items = [radar, ...measurement.panels!, ...(measurement.movableControls ?? [])].sort((a, b) => b.width * b.height - a.width * a.height || a.id.localeCompare(b.id));
   const work = { remaining: 120_000 };
   let invalid = !valid(canvas) || !valid(bounds) || !items.every(valid) || !obstacles.every(valid);
   const sites = obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-'));
@@ -199,8 +203,10 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
   const rectFor = (item: HudObstacle) => found ? placed.get(item.id)! : fullSizeFallback(item, bounds);
   const radarRect = rectFor(radar);
   const panels = measurement.panels!.map(item => ({ id: item.id, status, rect: rectFor(item) }));
+  const controls = measurement.movableControls?.map(item => ({ id: item.id, rect: rectFor(item) }));
+  const finalObstacles = controls ? [...obstacles, ...controls.map(item => ({ ...item.rect, id: item.id }))] : obstacles;
   const threat = panels.find(panel => panel.id === 'campaign-threat');
-  return { status, canvas, bounds, obstacles, panels, fixedConflicts, searchChecks: 120_000 - Math.max(0, work.remaining),
+  return { status, canvas, bounds, obstacles: finalObstacles, panels, controls, compact: Boolean(controls), fixedConflicts, searchChecks: 120_000 - Math.max(0, work.remaining),
     radar: { status, rect: radarRect, radius, center: { x: radarRect.x + radius + 1, y: radarRect.y + radius + 1 } },
     threat: threat ? { status, rect: threat.rect } : null };
 }
@@ -229,7 +235,7 @@ export class CampaignHudLayout {
     const key = [sight.x, sight.y, sight.width, sight.height].map(value => value.toFixed(6)).join(',');
     if (!this.dirty && key === this.sightKey) return this.layout;
     if (!this.dirty && valid(sight) && this.layout?.status === 'placed' && this.layout.panels
-      && [this.layout.radar.rect, ...this.layout.panels.map(panel => panel.rect)].every(rect => !intersects(rect, sight, 4))
+      && [this.layout.radar.rect, ...this.layout.panels.map(panel => panel.rect), ...(this.layout.controls ?? []).map(control => control.rect)].every(rect => !intersects(rect, sight, 4))
       && this.measurement!.obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-')).every(rect => !intersects(rect, sight))) {
       // A moving sight need not repack unchanged DOM. Keep stable labels until
       // its real footprint reaches one, while updating the diagnostic reserve.
@@ -242,7 +248,7 @@ export class CampaignHudLayout {
     this.sightKey = key;
     this.layout = layoutCampaignHud(this.measurement, sight);
     // A blocked result keeps every item at its full size and remains a failure.
-    if (this.layout.panels) this.host.applyPanels?.(this.layout.panels);
+    if (this.layout.panels) this.host.applyPanels?.([...this.layout.panels, ...(this.layout.controls ?? []).map(control => ({ ...control, status: this.layout!.status }))]);
     else this.host.applyThreat(this.layout.threat?.rect ?? null, this.layout.canvas);
     return this.layout;
   }
@@ -255,9 +261,12 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
   const doc = canvas.ownerDocument, win = doc.defaultView!;
   const app = canvas.closest<HTMLElement>('.fantasia-shell') ?? canvas.parentElement!;
   const threat = app.querySelector<HTMLElement>('#campaign-threat');
+  const details = new CampaignHudDetails(app);
+  let compact = false;
   const selectors = '.hud-top, #campaign-sites .campaign-site[data-site], #hud button';
   const panelSelectors = '.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip';
-  const panelNodes = [...app.querySelectorAll<HTMLElement>(panelSelectors)];
+  const panelNodes = [...app.querySelectorAll<HTMLElement>(panelSelectors), details.viewport, details.mode,
+    ...(details.lives ? [details.lives] : []), ...app.querySelectorAll<HTMLElement>('#bomb-hint, #hud button')];
   const header = app.querySelector<HTMLElement>('.hud-top'), sites = app.querySelector<HTMLElement>('#campaign-sites');
   const time = app.querySelector<HTMLElement>('.hud-top .time-block');
   const panelId = (node: HTMLElement) => node.id || node.className;
@@ -291,6 +300,7 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
           if (record.type !== 'attributes') {
             const panel = panelNodes.find(node => node === record.target || node.contains(record.target));
             if (!panel) { changed = true; continue; }
+            if (details.contains(panel) && panel !== details.viewport) continue;
             const current = panel.textContent;
             if (textContent.get(panel) === current) continue;
             textContent.set(panel, current);
@@ -314,19 +324,19 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       mutation = new MutationObserver(handleRecords);
       for (const node of new Set<Element>([doc.documentElement, doc.body, app, ...nodes,
         ...app.querySelectorAll('#hud, #normal-controls, .bottom-controls')])) {
-        mutation.observe(node, { attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style', 'data-mode', 'data-input'] });
+        mutation.observe(node, { attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style', 'data-mode', 'data-input', 'data-campaign-critical'] });
       }
       // Site initialization and threat text affect geometry; steady instrument
       // text writes are handled by ResizeObserver only when their size changes.
-      if (header) mutation.observe(header, { subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style'] });
-      if (sites) mutation.observe(sites, { subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style'] });
+      if (header) mutation.observe(header, { subtree: true, attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style', 'data-campaign-critical'] });
+      if (sites) mutation.observe(sites, { subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style', 'data-campaign-critical'] });
       for (const panel of panelNodes) mutation.observe(panel, { childList: true, subtree: true, characterData: true,
-        attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style'] });
+        attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style', 'data-campaign-critical'] });
       win.addEventListener('resize', invalidate);
       doc.fonts?.addEventListener('loadingdone', invalidate);
       return () => {
         resize.disconnect(); mutation?.disconnect(); win.removeEventListener('resize', invalidate); doc.fonts?.removeEventListener('loadingdone', invalidate);
-        probe.remove();
+        probe.remove(); details.dispose();
         for (const [node, values] of original) for (const [name, value, priority] of values) {
           if (value) node.style.setProperty(name, value, priority); else node.style.removeProperty(name);
         }
@@ -334,6 +344,12 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
     },
     flush() { if (mutation) handleRecords(mutation.takeRecords()); },
     measure(sight) {
+      const active = doc.activeElement as HTMLElement | null;
+      const wasReading = Boolean(active && details.contains(active));
+      const scrollTop = details.viewport.scrollTop;
+      const measureMode = (useCompact: boolean): HudMeasurement => {
+      compact = useCompact;
+      details.sync(compact);
       // Read natural CSS positions afresh on geometry changes. Individual
       // translate offsets preserve normal flow, wrapping and containing blocks.
       for (const node of panelNodes) {
@@ -354,7 +370,7 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       const left = inset(safe.paddingLeft), right = inset(safe.paddingRight), top = inset(safe.paddingTop), bottom = inset(safe.paddingBottom);
       const bounds = { x: left, y: top, width: c.width - left - right, height: c.height - top - bottom };
       const headerRect = header && visibleRect(header);
-      if (headerRect && siteNodes.length) {
+      if (!compact && headerRect && siteNodes.length) {
         const cards = siteNodes.map(node => toCanvasRect(node.getBoundingClientRect(), canvasRect));
         const controls = [...app.querySelectorAll<HTMLElement>('#hud button')].map(visibleRect).filter((rect): rect is HudRect => Boolean(rect)).map(rect => toCanvasRect(rect, canvasRect));
         const positions = layoutCampaignSites(canvasRect, bounds, toCanvasRect(headerRect, canvasRect), cards, sight, controls);
@@ -366,15 +382,20 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       }
       const obstacles: HudObstacle[] = [];
       for (const node of app.querySelectorAll<HTMLElement>(selectors)) {
+        if (compact && (node.tagName === 'BUTTON' || details.contains(node))) continue;
         const r = visibleRect(node); if (r) obstacles.push({ ...toCanvasRect(r, canvasRect), id: node.id || node.className });
       }
-      const panels: HudObstacle[] = [];
+      const panels: HudObstacle[] = [], movableControls: HudObstacle[] = [];
       natural.clear();
       for (const node of panelNodes) {
-        if (node === time && !compactTime) continue;
+        if (details.contains(node) && node !== details.viewport) continue;
+        if (!compact && (node.tagName === 'BUTTON' || node === details.lives || node.id === 'bomb-hint')) continue;
+        if (node === time && !compactTime && !compact) continue;
         const r = visibleRect(node); if (!r) continue;
         const local = toCanvasRect(r, canvasRect), id = panelId(node);
-        natural.set(id, local); panels.push({ ...local, id });
+        natural.set(id, local);
+        if (compact && node.tagName === 'BUTTON') movableControls.push({ ...local, id });
+        else panels.push({ ...local, id });
       }
       // Narrow portrait reflows individual readouts without changing their text.
       // Its ammo box remains the preferred notification anchor when the parent
@@ -382,11 +403,33 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       const data = app.querySelector('.flight-data'), ammo = app.querySelector('.flight-data .ammo');
       const dataRect = (data && visibleRect(data)) || (ammo && visibleRect(ammo)), threatRect = threat && visibleRect(threat);
       return { canvas: canvasRect, bounds, obstacles,
-        panels, flightData: dataRect ? toCanvasRect(dataRect, canvasRect) : null, threat: threatRect ? toCanvasRect(threatRect, canvasRect) : null };
+        panels, ...(compact ? { movableControls } : {}), flightData: dataRect ? toCanvasRect(dataRect, canvasRect) : null, threat: threatRect ? toCanvasRect(threatRect, canvasRect) : null };
+      };
+      const full = measureMode(false);
+      // Full-detail mode wins whenever its actual measured content fits. Text
+      // ellipsis is a failure even when the card's outer rectangle fits.
+      const clipped = [...app.querySelectorAll<HTMLElement>('.campaign-site-force, .campaign-site-wave')]
+        .some(node => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1);
+      const measured = layoutCampaignHud(full, sight).status === 'placed' && !clipped ? full : measureMode(true);
+      // Reparenting and our own translations are synchronous layout writes,
+      // not a new external change requiring another measure on the next frame.
+      if (measured.movableControls) {
+        details.viewport.scrollTop = scrollTop;
+        if (wasReading && active) {
+          (details.contains(active) ? active : details.viewport).focus({ preventScroll: true });
+        }
+      } else if (wasReading) {
+        // When all details become persistent again, retain keyboard ownership on
+        // a real HUD operation instead of silently handing keys to the aircraft.
+        app.querySelector<HTMLElement>('#pause')?.focus({ preventScroll: true });
+      }
+      mutation?.takeRecords();
+      return measured;
     },
     applyThreat() {},
     applyPanels(panels) {
       for (const node of panelNodes) {
+        if (details.contains(node) && node !== details.viewport) continue;
         const id = panelId(node), from = natural.get(id), to = panels.find(panel => panel.id === id)?.rect;
         if (!from || !to) continue;
         const values = { '--campaign-hud-x': `${to.x - from.x}px`, '--campaign-hud-y': `${to.y - from.y}px` };

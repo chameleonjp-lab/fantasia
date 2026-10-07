@@ -87,3 +87,15 @@ A separate test assumption was too strong: scrollWidth greater than clientWidth 
 - Preserve the separate actual border-box, 44px button, native hit-test, DOM/cache, precise 200% font and placed-layout gates. No runtime, font, button diameter, case count or release rule is changed
 
 The 200% sound/Pause collision and site ellipsis seen in screenshots must still fail. These changes do not repair those displays or the five blocked layouts. Browser execution of this revised observation remains pending. The pure fixtures cover readable own-circle overflow, actual clipping, sibling-control/sight overlap, ellipsis boundaries, all wrapped lines, ancestor clipping, missing evidence and unverified geometry.
+
+
+## Authorized detail-only scrolling (2026-10-07)
+
+The user explicitly approved secondary details scrolling on small screens and at 200% text, while seven-site state, the sight, important warnings and controls remain visible. This changes only the former all-details-simultaneously-visible assumption. The original 34 named cases remain; compact fallback adds checks inside each affected case.
+
+- Independently collect all detail text nodes and every Range fragment before filtering. Each fragment must be reached fully through native ArrowDown/Home and separately through trusted Chromium touch panning; unseen fragments cannot pass
+- Only the exact `campaign-hud-details` viewport is allowed to scroll/clip vertically. Inline overflow/ellipsis, inner clipping, clamp, unsupported transforms and foreign text/control/radar/sight collisions still fail. All other HUD text stays subject to the original full-text checks; same-owner text collisions remain checked
+- The detail viewport remains a real layout obstacle. Offscreen child rectangles are not obstacles, but full raw text/geometry is retained and coverage recomputed by the report validator
+- Require seven persistent site cards, mode, lives, controls and active critical warnings at each sample. Document/app/HUD scroll offsets must stay zero. Native hit tests, 44px targets, placed layout and actual/cache geometry checks are retained
+- Check neutral input while a native ArrowDown is held and while touch is down, as well as after traversal; inspect consumed runtime inputs. A focused detail child must retain focus across a live HUD update
+- Preserve clock/fence, DPR, actual 200% fonts and native capability contracts. No local Chromium launch was attempted: known socket EPERM remains a blocker. Pure tests/type/discovery are not native browser acceptance; the integrated candidate still needs exact-head CI

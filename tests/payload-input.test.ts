@@ -7,7 +7,7 @@ class ElementStub extends EventTarget {
   getAttribute(key: string) { return this.attributes.get(key) ?? null; }
   setAttribute(key: string, value: string) { this.attributes.set(key, value); }
   getBoundingClientRect() { return { left: 0, top: 0 }; }
-  closest() { return this; } querySelector() { return this; }
+  closest(selector?: string) { return selector === '#campaign-hud-details' ? null : this; } querySelector() { return this; }
   setPointerCapture() { throw new Error('capture unavailable'); } hasPointerCapture() { return false; }
 }
 function pointer(type: string, id: number, x = 100, y = 200) {
