@@ -5,7 +5,7 @@ import { RunBudget } from './run-budget';
 export interface Observed {
   phase: string; screen: string; mode: string; tick: number; activeTicks: number;
   runId: string; graphicsReady: boolean; bombs: number; status: string; startupError: string | null;
-  pauseReasons: string[]; fatalLogicError: string | null; renderStatus: string;
+  pauseReasons: string[]; performanceInterrupted: boolean; fatalLogicError: string | null; renderStatus: string;
   preparation: { phase: string; failure: string | null };
   queue: { status: string; failure: string | null; submittedCount: number; completedCount: number };
   render: { calls: number; triangles: number; hudLayout: { status?: string; measurements: number } };
@@ -19,7 +19,7 @@ export class RealRendererDriver {
   releasedFences = 0;
   constructor(readonly page: Page) { page.on('pageerror', error => this.pageErrors.push(error.message)); }
 
-  private async call<T>(label: string, work: () => Promise<T>, cap = 5000): Promise<T> {
+  async call<T>(label: string, work: () => Promise<T>, cap = 5000): Promise<T> {
     const ms = Math.min(cap, this.budget.remaining(label));
     let timer: ReturnType<typeof setTimeout>;
     try { return await Promise.race([work(), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`Driver operation timed out: ${label}`)), ms); })]); }
@@ -32,7 +32,7 @@ export class RealRendererDriver {
       const value = read(false);
       return { phase: value.phase, screen: value.screen, mode: value.mode, tick: value.tick,
         activeTicks: value.activeTicks, runId: value.campaign.runId, graphicsReady: value.graphicsReady,
-        bombs: value.campaignPlayer.bombs, status: value.status, pauseReasons: value.pauseReasons,
+        bombs: value.campaignPlayer.bombs, status: value.status, pauseReasons: value.pauseReasons, performanceInterrupted: value.performanceInterrupted,
         startupError: document.querySelector<HTMLElement>('#startup-error')?.hidden === false
           ? document.querySelector('#startup-error')!.textContent : null,
         fatalLogicError: value.fatalLogicError, renderStatus: value.renderStatus,
@@ -124,20 +124,54 @@ export class RealRendererDriver {
     }
     throw new Error('Real simulation did not consume the bounded input tick');
   }
-  async click(selector: string): Promise<void> {
-    const point = await this.call('verify visible hit target', () => this.page.locator(selector).evaluate(element => {
+  async point(selector: string): Promise<{ x: number; y: number }> {
+    return await this.call('verify visible hit target', () => this.page.locator(selector).evaluate(element => {
       const node = element as HTMLElement;
       node.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'instant' });
       if (node.closest('[hidden], [inert]') || (node as HTMLButtonElement).disabled) throw new Error('Target is hidden/inert/disabled');
       let parent: HTMLElement | null = node;
       while (parent) { const s = getComputedStyle(parent); if (s.visibility === 'hidden' || s.display === 'none' || Number(s.opacity) === 0) throw new Error('Target is visually hidden'); parent = parent.parentElement; }
       const r = node.getBoundingClientRect(), x = r.x + r.width / 2, y = r.y + r.height / 2;
-      if (r.width <= 0 || r.height <= 0 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) throw new Error('Target outside viewport');
+      if (r.width <= 0 || r.height <= 0 || r.x < -1 || r.y < -1 || r.right > innerWidth + 1 || r.bottom > innerHeight + 1 || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) throw new Error('Target outside viewport');
       const hit = document.elementFromPoint(x, y);
       if (!hit || !node.contains(hit)) throw new Error('Target is occluded');
       return { x, y };
     }));
+  }
+  async click(selector: string): Promise<void> {
+    const point = await this.point(selector);
     await this.call('native mouse click', () => this.page.mouse.click(point.x, point.y));
+  }
+  async tap(selector: string): Promise<void> {
+    const point = await this.point(selector);
+    await this.call('native touch tap', () => this.page.touchscreen.tap(point.x, point.y));
+  }
+  async start(mode: 'normal' | 'easy'): Promise<Observed> {
+    await this.click(`label:has(input[name="game-mode"][value="${mode}"])`);
+    await this.click('#start'); return this.reachPlaying();
+  }
+  async ticks(count: number): Promise<Observed> {
+    let state = await this.requireState('before-bounded-ticks');
+    for (let n = 0; n < count; n++) state = await this.nextTick();
+    return state;
+  }
+  async home(): Promise<void> {
+    const state = await this.requireState('before-home');
+    if (state.phase === 'playing') await this.click('#pause');
+    await this.click('#pause-home');
+    if ((await this.requireState('home')).phase !== 'ready') throw new Error('Home transition failed');
+  }
+  async full(): Promise<any> {
+    return this.call('read full existing observation', () => this.page.evaluate(() => (window as any).__fantasiaReadState(false)));
+  }
+  async audit(): Promise<any> {
+    return this.call('read existing input audit', () => this.page.evaluate(() => (window as any).__fantasiaReadState('audit')));
+  }
+  async waitState(label: string, predicate: (value: Observed) => boolean, maxFrames = 8): Promise<Observed> {
+    for (let n = 0; n < maxFrames; n++) {
+      const state = await this.requireState(label); if (predicate(state)) return state; await this.step();
+    }
+    throw new Error(`Bounded state condition not reached: ${label}`);
   }
   async key(key: string): Promise<void> { await this.call('native keyboard input', () => this.page.keyboard.press(key)); }
   async backend(): Promise<Record<string, unknown>> {
