@@ -68,3 +68,52 @@ test('operation-specific completion rejects stale events and preserves no-op Hom
  assert.ok(detailOperationIssues({kind:'arrow',before:zero},zero).length);
  assert.ok(detailOperationIssues({kind:'home',before:{...zero,scrollTop:40}},zero).length);
 });
+
+import {nativeCompletionMatches} from '../browser-acceptance/detail-scroll-observation';
+import {unreadDetailFragments,nativeTouchTravel} from '../browser-acceptance/detail-navigation';
+test('late same-position scroll event requires exact trusted target and every intermediate coordinate',()=>{
+ const make=()=>{const position={targetIsViewport:true,isTrusted:true,target:'campaign-hud-details',scrollTop:40,scrollHeight:200,clientHeight:98};return {scrollTop:40,scrollHeight:200,clientHeight:98,motion:{sequence:10,endedSequence:8,endCount:1,trusted:true,trailingSamePosition:true,completion:{...position,sequence:8},lastScroll:{...position,sequence:10},trailingScrolls:[{...position,sequence:9},{...position,sequence:10}]}};};
+ assert.equal(nativeCompletionMatches(make()),true);
+ for(const corrupt of [(s:any)=>delete s.motion.completion,(s:any)=>s.motion.completion.target='other',(s:any)=>s.motion.completion.scrollTop=39,
+  (s:any)=>s.motion.trailingScrolls[0].scrollTop=39,(s:any)=>s.motion.trailingScrolls[0].target='other',(s:any)=>s.motion.trailingScrolls[0].clientHeight=99,
+  (s:any)=>s.motion.trailingScrolls[0].isTrusted=false,(s:any)=>s.motion.trailingScrolls[0].targetIsViewport=false,(s:any)=>s.motion.trailingScrolls.pop(),(s:any)=>s.motion.trailingSamePosition=false,(s:any)=>s.motion.trailingScrolls[0].sequence=8]){
+  const s=make();corrupt(s);assert.equal(nativeCompletionMatches(s),false);
+ }
+ const exact=make();exact.motion.sequence=8;assert.equal(nativeCompletionMatches(exact),true);exact.motion.completion.targetIsViewport=false;assert.equal(nativeCompletionMatches(exact),false,'a foreign target cannot settle even an equal sequence');
+ const noEnd=make();noEnd.motion.endCount=0;const before={scrollTop:0,motion:{sequence:0,endedSequence:0,endCount:0,trusted:true}};
+ assert.ok(detailOperationIssues({kind:'arrow',before},noEnd).length);
+});
+test('native Tab may keep offset unchanged only with new trusted Tab and correct real entry focus',()=>{
+ const before={scrollTop:0,motion:{sequence:0,endedSequence:0,endCount:0,tabCount:0,trusted:true}};
+ const sample={...before,focusEntry:'timer',motion:{...before.motion,tabCount:1}},operation={kind:'tab',entryId:'timer',before};
+ assert.deepEqual(detailOperationIssues(operation,sample),[]);
+ assert.ok(detailOperationIssues(operation,{...sample,focusEntry:'hidden-other'}).length);
+ assert.ok(detailOperationIssues(operation,{...sample,motion:before.motion}).length);
+ const reverse={scrollTop:10,motion:{sequence:2,endedSequence:2,endCount:2,trusted:true}};
+ assert.deepEqual(detailOperationIssues({kind:'touch',direction:-1,before:{scrollTop:40,motion:{sequence:1,endedSequence:1,endCount:1,trusted:true}}},reverse),[]);
+});
+test('fragment navigation keeps wrapped timer IDs independent of changing time text and computes safe native travel',()=>{
+ const data:any={viewport:{width:200,height:400},regions:[{key:'view',kind:'detail-viewport',rect:{x:0,y:220,width:114,height:96}},{key:'timer',kind:'detail-entry',detailEntryId:'timer',rect:{x:4,y:224,width:106,height:217}}],
+  styles:[{key:'style:campaign-hud-details:0',clipRect:{x:1,y:221,width:112,height:94}}],runs:[{owner:'timer',text:'00:00.03',ancestorRegions:['timer','view'],styleKeys:[],fragments:[{x:4,y:252,width:94,height:63},{x:4,y:315,width:94,height:63},{x:4,y:378,width:63,height:63}]}]};
+ const pending=unreadDetailFragments(data,new Set(['timer:0:0']),'timer');assert.equal(pending.length,2);assert.equal(pending[0].window,31);
+ data.runs[0].text='00:00.05';assert.deepEqual(unreadDetailFragments(data,new Set(['timer:0:0']),'timer'),pending);
+ assert.equal(nativeTouchTravel(80,160,15),95);assert.equal(nativeTouchTravel(80,80,15),64);assert.equal(nativeTouchTravel(-10,80,15),-25);
+ assert.deepEqual(unreadDetailFragments(data,new Set(['timer:0:0','timer:0:1','timer:0:2']),'timer'),[]);
+ const reversed=structuredClone(data);reversed.runs[0].fragments.reverse();assert.deepEqual(unreadDetailFragments(reversed,new Set()).map(f=>f.rect.y),[252,315,378],'navigation follows spatial order, not panel-first collection order');
+});
+
+import {nativeDetailEventIssues} from '../browser-acceptance/detail-scroll-observation';
+test('late notification evidence must match every retained native log coordinate',()=>{
+ const position={targetIsViewport:true,target:'campaign-hud-details',isTrusted:true,scrollTop:40,scrollHeight:200,clientHeight:98};
+ const completion={...position,sequence:8},trailing={...position,sequence:9};
+ const sample:any={motion:{sequence:9,endedSequence:8,endCount:1,completion,trailingScrolls:[trailing]},settling:{operation:{kind:'arrow'}}};
+ const events=[{...completion,type:'scrollend',endCount:1},{...trailing,type:'scroll',endCount:1}];
+ assert.deepEqual(nativeDetailEventIssues(sample,events),[]);
+ assert.ok(nativeDetailEventIssues(sample,events.slice(1)).length);
+ const exact={...sample,motion:{...sample.motion,sequence:8,trailingScrolls:[]}};assert.deepEqual(nativeDetailEventIssues(exact,[events[0]]),[]);assert.ok(nativeDetailEventIssues(exact,[]).length,'new exact-sequence metadata must also match a real recorded end');
+ assert.ok(nativeDetailEventIssues(sample,[events[0],{...events[1],scrollTop:39}]).length);
+ assert.ok(nativeDetailEventIssues(sample,[events[0],{...events[1],target:'foreign'}]).length);
+ const tab={motion:{sequence:0,endedSequence:0,tabCount:1},settling:{operation:{kind:'tab'}}};
+ assert.ok(nativeDetailEventIssues(tab,[]).length);
+ assert.deepEqual(nativeDetailEventIssues(tab,[{type:'keydown',key:'Tab',isTrusted:true}]),[]);
+});

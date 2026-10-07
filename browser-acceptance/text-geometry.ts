@@ -1,5 +1,5 @@
 export interface TextRect {x:number;y:number;width:number;height:number}
-export interface TextRegion {key:string;kind:string;rect:TextRect;ancestorRegions?:string[]}
+export interface TextRegion {key:string;kind:string;rect:TextRect;ancestorRegions?:string[];detailEntryId?:string}
 export interface TextStyleEvidence {
   key:string;rect:TextRect;clipRect:TextRect;overflowX:string;overflowY:string;textOverflow:string;
   scrollWidth:number;clientWidth:number;scrollHeight:number;clientHeight:number;whiteSpace:string;
@@ -53,7 +53,7 @@ export function collectHudTextGeometry(visible:(node:HTMLElement)=>boolean):Text
     const styleKeys:string[]=[];let ancestor:HTMLElement|null=parent;while(ancestor){styleKeys.push(inspect.node(ancestor));ancestor=ancestor.parentElement;}
     runs.push({text:raw.slice(start,end),owner:owner.key,ancestorRegions:ancestors.map(a=>a.key),fragments,styleKeys});
   }
-  return {viewport:{width:innerWidth,height:innerHeight},regions:regionNodes.map(({key,kind,rect,node})=>({key,kind,rect,ancestorRegions:regionNodes.filter(r=>r.node!==node&&r.node.contains(node)).map(r=>r.key)})),styles,runs};
+  return {viewport:{width:innerWidth,height:innerHeight},regions:regionNodes.map(({key,kind,rect,node})=>({key,kind,rect,...(node.dataset?.campaignDetail?{detailEntryId:node.dataset.campaignDetail}:{}),ancestorRegions:regionNodes.filter(r=>r.node!==node&&r.node.contains(node)).map(r=>r.key)})),styles,runs};
 }
 
 /** Text may extend outside its own visible-overflow circle; it may never be lost or cover unrelated content. */

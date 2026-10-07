@@ -1,22 +1,24 @@
-import {detailSettlingIssues} from '../browser-acceptance/detail-scroll-observation';
+import { byteReference, type AttachmentStore, type ByteReference } from './acceptance-report-storage';
+import {detailSettlingIssues,nativeDetailEventIssues} from '../browser-acceptance/detail-scroll-observation';
 import { assertCaptureCancelled } from '../browser-acceptance/capture-contract';
 import { detailAccessIssues, consumedDetailInputIssues, activeFixedStatusIds } from '../browser-acceptance/detail-scroll-contract';
 import { detailGeometrySnapshot, textGeometryIssues } from '../browser-acceptance/text-geometry';
 import { CASES, titleFor } from '../browser-acceptance/acceptance-cases';
 
 type Json = Record<string, any>;
-export async function buildAcceptanceReport(raw: unknown, readAttachment: (path: string) => Promise<string>) {
+export async function buildAcceptanceReport(raw: unknown, readAttachment: (path: string) => Promise<string | Buffer>, storeAttachment?: AttachmentStore) {
   const issues: string[] = [], cases: Json[] = [];
   const expected = new Map(CASES.map(row => [titleFor(String(row[0])), row]));
   const seen = new Set<string>();
   const isObject = (value: unknown): value is Json => !!value && typeof value === 'object' && !Array.isArray(value);
   if (!isObject(raw) || !Array.isArray(raw.suites)) issues.push('Missing/malformed Playwright suites');
-  async function visit(suite: Json) {
+  async function visit(suite: Json, pointer: string) {
     if (!isObject(suite)) { issues.push('Malformed suite'); return; }
     if (suite.specs !== undefined && !Array.isArray(suite.specs)) issues.push('Malformed specs');
-    for (const spec of Array.isArray(suite.specs) ? suite.specs : []) {
+    for (const [specIndex, spec] of (Array.isArray(suite.specs) ? suite.specs : []).entries()) {
       if (!isObject(spec) || !Array.isArray(spec.tests)) { issues.push('Malformed spec tests'); continue; }
-      for (const result of spec.tests) {
+      for (const [testIndex, result] of spec.tests.entries()) {
+        const rawPointer = `${pointer}/specs/${specIndex}/tests/${testIndex}`;
         const errors: string[] = [], row = expected.get(spec.title), id = row?.[0];
         if (!row) errors.push('Unexpected title');
         if (seen.has(spec.title)) errors.push('Duplicate case'); seen.add(spec.title);
@@ -27,6 +29,32 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
         if (!Array.isArray(result.results) || result.results.length !== 1) errors.push('Exactly one attempt required');
         const attempts = Array.isArray(result.results) ? result.results : [];
         if (attempts.some((a: any) => !isObject(a) || a.status !== 'passed' || a.error || (Array.isArray(a.errors) ? a.errors.length > 0 : a.errors !== undefined))) errors.push('Failed/skipped/error attempt');
+        // Index every attempt and attachment, including retries and failed cases.
+        // Full metadata remains losslessly available at rawPointer in the raw file.
+        const attemptIndex: Json[] = [];
+        let evidenceReference: ByteReference | undefined;
+        let evidenceBody: Buffer | undefined;
+        for (const [attemptNumber, item] of attempts.entries()) {
+          const attachmentIndex: Json[] = [];
+          for (const [attachmentNumber, attachment] of (isObject(item) && Array.isArray(item.attachments) ? item.attachments : []).entries()) {
+            const entry: Json = { name: attachment?.name, contentType: attachment?.contentType,
+              sourcePath: attachment?.path, rawPointer: `${rawPointer}/results/${attemptNumber}/attachments/${attachmentNumber}` };
+            try {
+              const bytes = typeof attachment?.body === 'string' ? Buffer.from(attachment.body, 'base64')
+                : typeof attachment?.path === 'string' ? Buffer.from(await readAttachment(attachment.path)) : undefined;
+              if (!bytes) throw new Error('Missing attachment body/path');
+              const reference = storeAttachment ? await storeAttachment(bytes, { rawPointer: entry.rawPointer, sourcePath: attachment.path, inline: typeof attachment.body === 'string' }) : byteReference(bytes);
+              entry.attachmentPointer = entry.rawPointer;
+              Object.assign(entry, reference);
+              if (attemptNumber === 0 && attachment.name === 'clean-acceptance-evidence') { evidenceBody = bytes; evidenceReference = reference; }
+            } catch (error) { entry.unavailable = String(error); errors.push(`Unavailable attachment: ${String(error)}`); }
+            attachmentIndex.push(entry);
+          }
+          attemptIndex.push({ rawPointer: `${rawPointer}/results/${attemptNumber}`, status: item?.status,
+            retry: item?.retry, startTime: item?.startTime, duration: item?.duration,
+            workerIndex: item?.workerIndex, parallelIndex: item?.parallelIndex,
+            hasError: !!item?.error, errorCount: Array.isArray(item?.errors) ? item.errors.length : null, attachments: attachmentIndex });
+        }
         const attempt = attempts[0]; let evidence: Json | undefined;
         const attachments = isObject(attempt) && Array.isArray(attempt.attachments) ? attempt.attachments : [];
         const matching = attachments.filter((a: any) => isObject(a) && a.name === 'clean-acceptance-evidence');
@@ -35,8 +63,7 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
           const attachment = matching[0];
           try {
             if (attachment.contentType !== 'application/json') throw new Error('Wrong evidence content type');
-            const body = typeof attachment.body === 'string' ? Buffer.from(attachment.body, 'base64').toString('utf8')
-              : typeof attachment.path === 'string' ? await readAttachment(attachment.path) : '';
+            const body = evidenceBody?.toString('utf8') ?? '';
             const value = JSON.parse(body); if (!isObject(value)) throw new Error('Evidence is not an object'); evidence=value;
           } catch(error) { errors.push(`Unavailable/malformed evidence: ${String(error)}`); }
         }
@@ -104,6 +131,7 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
                   }
                   const native=observations.find((o:any)=>o?.label==='detail-scroll-native-events')?.events;
                   if(!Array.isArray(native)||native.some((e:any)=>!e.isTrusted)||!['keydown','keyup','pointerdown','touchstart','touchend'].every(type=>native.some((e:any)=>e.type===type))||!native.some((e:any)=>e.key==='ArrowDown')||!native.some((e:any)=>e.pointerType==='touch'))throw new Error('missing trusted scroll input');
+                  if(samples.some((s:any)=>nativeDetailEventIssues(s,native).length))throw new Error('native event log differs from settled observation');
                   if(samples.some((s:any)=>s.motion.sequence>native.filter((event:any)=>event.type==='scroll').length||s.motion.endCount>native.filter((event:any)=>event.type==='scrollend').length)||!native.some((event:any)=>event.type==='scrollend'))throw new Error('missing native scroll completion events');
                   if(consumedDetailInputIssues(observations.filter((o:any)=>o?.label==='detail-scroll-consumed-neutral-input')).length)throw new Error('missing/non-neutral consumed input');
                 }
@@ -115,23 +143,23 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
           }
         }
         if(errors.length) issues.push(`${id??spec.title}: ${errors.join('; ')}`);
-        cases.push({id,category:row?.[1],title:spec.title,project:result.projectName,status:result.status,attempts,validated:errors.length===0,errors,evidence});
+        cases.push({id,category:row?.[1],title:spec.title,project:result.projectName,status:result.status,expectedStatus:result.expectedStatus,rawPointer,attempts:attemptIndex,validated:errors.length===0,errors,evidence:evidenceReference});
       }
     }
     if(suite.suites!==undefined&&!Array.isArray(suite.suites)) issues.push('Malformed child suites');
-    for(const child of Array.isArray(suite.suites)?suite.suites:[]) await visit(child);
+    for(const [index, child] of (Array.isArray(suite.suites)?suite.suites:[]).entries()) await visit(child, `${pointer}/suites/${index}`);
   }
   if(isObject(raw)) {
     if(Array.isArray(raw.errors)&&raw.errors.length) issues.push('Top-level Playwright errors');
     if(raw.errors!==undefined&&!Array.isArray(raw.errors)) issues.push('Malformed top-level errors');
-    for(const suite of Array.isArray(raw.suites)?raw.suites:[]) await visit(suite);
+    for(const [index, suite] of (Array.isArray(raw.suites)?raw.suites:[]).entries()) await visit(suite, `/suites/${index}`);
   }
   for(const title of expected.keys()) if(!seen.has(title)) issues.push(`Missing case: ${title}`);
   if(cases.length!==CASES.length) issues.push(`Expected ${CASES.length} results; received ${cases.length}`);
   const categories=Array.from({length:10},(_,n)=>({category:n+1,expected:CASES.filter(row=>row[1]===n+1).length,
     validated:cases.filter(row=>row.category===n+1&&row.validated).length}));
   const passed=issues.length===0;
-  return {schemaVersion:1,classification:'clean-sheet-browser-functional-and-capability',suiteImplementationComplete:true,
+  return {schemaVersion:2,evidenceFormat:'sha256-byte-reference-with-raw-json-pointer',classification:'clean-sheet-browser-functional-and-capability',suiteImplementationComplete:true,
     productContractBlocks:[
       {gate:'F-03',status:'blocked',reason:'Normal throttle lever integration, ownership and accessibility required by THROTTLE_LEVER_ADAPTER are absent; old acceleration/brake controls are current-runtime coverage only'},
       {gate:'F-04',status:'blocked',reason:'Required v1-preserving v2 layout saves/migration and lever settings are absent; current v1 settings tests are not the v2 contract'},

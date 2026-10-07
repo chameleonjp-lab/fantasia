@@ -85,8 +85,7 @@ test('compact fallback cannot inherit full-text pass without a complete native d
  assert.equal((await report(raw)).browserAcceptance,'not-passed');
 });
 
-test('compact report recomputes raw consumed neutral input and rejects every action even with a neutral label',async()=>{
- const make=()=>{
+function compactFixture(){
   const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{
    e.observations.find((o:any)=>o.label==='actual-live-dom-geometry').dom.compact=true;
    const persistentIds=['campaign-mode-status','lives-count','pause','bomb','loop',...Array.from({length:7},(_,i)=>`site-${i+1}`),...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`)];
@@ -98,7 +97,9 @@ test('compact report recomputes raw consumed neutral input and rejects every act
     {label:'detail-scroll-native-events',events:['keydown','keyup','pointerdown','touchstart','touchend','scroll','scrollend'].map(type=>({type,isTrusted:true,key:type==='keydown'?'ArrowDown':undefined,pointerType:type==='pointerdown'?'touch':undefined}))},
     ...Array.from({length:4},(_,i)=>({label:'detail-scroll-consumed-neutral-input',tick:i+1,input:{turn:0,climb:0,fire:false,bomb:false,loop:false,accelerate:false,brake:false}})));
   });return raw;
- };
+}
+test('compact report recomputes raw consumed neutral input and rejects every action even with a neutral label',async()=>{
+ const make=compactFixture;
  assert.equal((await report(make())).browserAcceptance,'passed');
  for(const key of ['turn','climb','fire','bomb','loop','accelerate','brake']){
   const raw=make();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{e.observations.find((o:any)=>o.label==='detail-scroll-consumed-neutral-input').input[key]=['turn','climb'].includes(key)?1:true;});
@@ -114,4 +115,75 @@ test('compact report recomputes raw consumed neutral input and rejects every act
  }
  const hidden=make();changeEvidence(hidden,CASES.findIndex(c=>c[1]===8),e=>{e.observations.find((o:any)=>o.label==='detail-scroll-snapshot').statusEvidence.protectionTicks=60;});
  assert.equal((await report(hidden)).browserAcceptance,'not-passed','active warning cannot disappear from raw persistent evidence');
+});
+
+test('report indexes full attachment bytes without duplicating payload; validation still inspects full evidence',async()=>{
+ const raw=fixture(); const padding='large-payload-'.repeat(200000);
+ changeEvidence(raw,0,e=>{e.padding=padding;e.pageErrors=['failure after a large payload'];});
+ const saved:Buffer[]=[];
+ const {byteReference}=await import('../scripts/acceptance-report-storage');
+ const r=await buildAcceptanceReport(raw,async()=>{throw new Error('unexpected file');},async bytes=>{
+  saved.push(bytes);return {...byteReference(bytes),path:`evidence/${saved.length}.bin`};
+ });
+ assert.equal(r.browserAcceptance,'not-passed');assert.equal(r.cases[0].validated,false);
+ assert.ok(r.cases[0].errors.includes('Page errors or missing error evidence'));
+ assert.equal(r.schemaVersion,2);assert.ok(JSON.stringify(r).length<100000);
+ assert.equal(JSON.stringify(r).includes('large-payload-'),false);
+ assert.equal(r.cases[0].attempts[0].attachments[0].body,undefined);
+ assert.equal(r.cases[0].evidence.sha256,byteReference(saved[0]).sha256);
+ assert.equal(JSON.parse(saved[0].toString()).padding,padding);
+ assert.equal(r.cases[0].rawPointer,'/suites/0/specs/0/tests/0');
+});
+
+test('unavailable evidence storage fails closed and retries retain every attachment reference',async()=>{
+ const raw=fixture();raw.suites[0].specs[0].tests[0].results.push(raw.suites[0].specs[0].tests[0].results[0]);
+ const r=await report(raw);assert.equal(r.browserAcceptance,'not-passed');
+ assert.equal(r.cases[0].attempts.length,2);
+ assert.equal(r.cases[0].attempts[1].attachments.length,1);
+ const failed=await buildAcceptanceReport(fixture(),async()=>'',async()=>{throw new Error('storage failed');});
+ assert.equal(failed.browserAcceptance,'not-passed');assert.equal(failed.counts.validated,0);
+ assert.ok(failed.cases.every(c=>c.errors.some((e:string)=>e.includes('storage failed'))));
+});
+
+test('late scroll completion must match independent native event records, including target identity',async()=>{
+ const make=()=>{const raw=compactFixture();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{
+  const sample=e.observations.find((o:any)=>o.label==='detail-scroll-snapshot');
+  const position={target:'campaign-hud-details',targetIsViewport:true,isTrusted:true,scrollTop:sample.scrollTop,scrollHeight:sample.scrollHeight,clientHeight:sample.clientHeight};
+  sample.motion={sequence:2,endedSequence:1,endCount:2,trusted:true,trailingSamePosition:true,
+   completion:{...position,sequence:1},lastScroll:{...position,sequence:2},trailingScrolls:[{...position,sequence:2}]};
+  sample.settling.first=structuredClone(detailScrollMeasurement(sample));
+  const log=e.observations.find((o:any)=>o.label==='detail-scroll-native-events');
+  log.events=log.events.filter((event:any)=>!['scroll','scrollend'].includes(event.type));
+  log.events.push({type:'scrollend',...position,sequence:0,endCount:1},{type:'scroll',...position,sequence:1},{type:'scrollend',...position,sequence:1,endCount:2},{type:'scroll',...position,sequence:2});
+ });return raw;};
+ assert.equal((await report(make())).browserAcceptance,'passed');
+ const corruptions=[
+  (events:any[])=>events.filter(e=>e.type!=='scrollend'),
+  (events:any[])=>events.filter(e=>!(e.type==='scroll'&&e.sequence===2)),
+  (events:any[])=>[...events,{...events.find(e=>e.type==='scrollend'&&e.endCount===2)}],
+  ...['target','targetIsViewport','scrollTop','scrollHeight','clientHeight','sequence','endCount'].map(key=>(events:any[])=>events.map(e=>e.type==='scrollend'?{...e,[key]:key==='target'?'other':key==='targetIsViewport'?false:999}:e)),
+  (events:any[])=>events.map(e=>e.type==='scroll'&&e.sequence===2?{...e,scrollTop:99}:e),
+  // Retain the event count but remove all event-time coordinate/target evidence.
+  (events:any[])=>events.map(e=>['scroll','scrollend'].includes(e.type)?{type:e.type,isTrusted:true}:e),
+ ];
+ for(const corrupt of corruptions){const raw=make();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{
+  const log=e.observations.find((o:any)=>o.label==='detail-scroll-native-events');log.events=corrupt(log.events);
+ });assert.equal((await report(raw)).browserAcceptance,'not-passed','forged/missing independent event evidence must fail closed');}
+});
+
+test('Tab settlement cannot claim more trusted native Tab inputs than the retained event log',async()=>{
+ const make=()=>{const raw=compactFixture();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{
+  const sample=e.observations.find((o:any)=>o.label==='detail-scroll-snapshot');
+  sample.motion.tabCount=1;sample.focusEntry='entry';
+  sample.settling.operation={kind:'tab',entryId:'entry',before:{scrollTop:0,focusEntry:'other',motion:{sequence:1,endedSequence:1,endCount:1,trusted:true,tabCount:0}}};
+  sample.settling.first=structuredClone(detailScrollMeasurement(sample));
+  e.observations.find((o:any)=>o.label==='detail-scroll-observation-attempt').operation=structuredClone(sample.settling.operation);
+  e.observations.find((o:any)=>o.label==='detail-scroll-native-events').events.push({type:'keydown',key:'Tab',isTrusted:true});
+ });return raw;};
+ assert.equal((await report(make())).browserAcceptance,'passed');
+ for(const edit of [
+  (e:any)=>{const log=e.observations.find((o:any)=>o.label==='detail-scroll-native-events');log.events=log.events.filter((event:any)=>event.key!=='Tab');},
+  (e:any)=>{e.observations.find((o:any)=>o.label==='detail-scroll-native-events').events.find((event:any)=>event.key==='Tab').isTrusted=false;},
+  (e:any)=>{const sample=e.observations.find((o:any)=>o.label==='detail-scroll-snapshot');sample.motion.tabCount=2;sample.settling.first=structuredClone(detailScrollMeasurement(sample));},
+ ]){const raw=make();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),edit);assert.equal((await report(raw)).browserAcceptance,'not-passed');}
 });
