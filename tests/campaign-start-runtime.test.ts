@@ -78,6 +78,7 @@ async function appHarness() {
     constructor(_canvas: unknown, _buttons: unknown, readonly active: () => boolean) { controls = this; }
     clear() { this.pending = false; } clearPending() {} setMode() {} dispose() {}
     peek() { return { pending: this.pending }; }
+    sampleThrottle() { return 0; }
     sample() { sampleCalls++; return { turn: 0, climb: 0, loop: this.pending, fire: false, bomb: this.pending }; }
   }
   class Settings { isOpen = false; setActiveMode() {} open() { this.isOpen = true; } close() { this.isOpen = false; } dispose() {} }

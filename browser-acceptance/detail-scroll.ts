@@ -8,7 +8,7 @@ import {detailAccessIssues,activeFixedStatusIds,type FixedStatusEvidence,type De
 
 /** Native navigation only: never assign scrollTop, dispatch synthetic events,
  * shrink text, alter layout, or replace the runtime input/renderer. */
-export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextRegion[]) {
+export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextRegion[],phase:'playing'|'respawning'='playing') {
   const traversalStarted=performance.now();let stage='setup',currentOperation:any,lastAtomic:any;
   const viewport=d.page.locator('#campaign-hud-details');
   await expect(viewport).toHaveAttribute('role','region');await expect(viewport).toHaveAttribute('tabindex','0');
@@ -16,10 +16,11 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     const v=document.querySelector<HTMLElement>('#campaign-hud-details')!;
     const expected=['timer','tallies','wingmen','score','flight-tip','loop-status','lives-note',...Array.from({length:7},(_,i)=>`site-${i+1}`)];
     for(const [id,key]of [['announcement','announcement-secondary'],['bomb-hint','bomb-hint-secondary']])if(document.getElementById(id)?.dataset.campaignCritical!=='true')expected.push(key);
-    return {expected,actual:[...v.querySelectorAll<HTMLElement>('[data-campaign-detail]')].map(n=>n.dataset.campaignDetail!),max:v.scrollHeight-v.clientHeight,height:v.clientHeight};
+    return {expected,actual:[...v.querySelectorAll<HTMLElement>('[data-campaign-detail]')].map(n=>n.dataset.campaignDetail!),
+      navigable:[...v.querySelectorAll<HTMLElement>('[data-campaign-detail]')].filter(n=>!n.closest('[hidden]')&&getComputedStyle(n).display!=='none'&&getComputedStyle(n).visibility!=='hidden').map(n=>n.dataset.campaignDetail!),max:v.scrollHeight-v.clientHeight,height:v.clientHeight};
   });
   expect(contract.max,'Fallback must actually provide a scrollable detail region').toBeGreaterThan(0);
-  const evidence:DetailAccessEvidence={active:true,viewportId:'campaign-hud-details',expectedEntryIds:contract.expected,actualEntryIds:contract.actual,expectedFragments:[],persistentIds:[],samples:[]};
+  const evidence:DetailAccessEvidence={active:true,...(phase==='respawning'?{phase}:{}),viewportId:'campaign-hud-details',expectedEntryIds:contract.expected,actualEntryIds:contract.actual,expectedFragments:[],persistentIds:[],samples:[]};
   const visibility=await d.page.evaluateHandle(createVisibilityPredicate);
   const collector=await d.page.evaluateHandle(`(${collectHudTextGeometry.toString()})`);
   await viewport.evaluate(node=>{
@@ -51,13 +52,13 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     const rect=document.querySelector<HTMLElement>('#flight')!.getBoundingClientRect(),layout=state.render.hudLayout;
     const statusEvidence={screen:state.screen,status:state.status,position:state.player.position,protectionTicks:state.campaignPlayer.protectionTicks,reloadTicksRemaining:state.player.reloadTicksRemaining,
       text:Object.fromEntries(['campaign-threat','reload-status','payload-status'].map(id=>[id,document.getElementById(id)?.textContent??'']))};
-    const required=[...document.querySelectorAll<HTMLElement>('#campaign-sites [data-site], #campaign-sites .campaign-site-number, #campaign-sites .campaign-site-owner, #campaign-sites .campaign-site-state, #hud button, #campaign-mode-status, #lives-count, [data-campaign-critical="true"]')].filter(n=>n.matches('[data-campaign-critical="true"]')?!!n.textContent?.trim():!n.closest('[hidden]'));
+    const required=[...document.querySelectorAll<HTMLElement>('#campaign-sites [data-site], #campaign-sites .campaign-site-number, #campaign-sites .campaign-site-owner, #campaign-sites .campaign-site-state, #hud button, #hud [role="slider"], #campaign-mode-status, #lives-count, [data-campaign-critical="true"]')].filter(n=>n.matches('[data-campaign-critical="true"]')?!!n.textContent?.trim():!n.closest('[hidden]'));
     const candidates=[...new Set([...required,...['campaign-threat','reload-status','payload-status','warning','respawn-status'].map(id=>document.getElementById(id)).filter((n):n is HTMLElement=>!!n)])];
     const visible=candidates.filter(n=>{const r=n.getBoundingClientRect(),s=getComputedStyle(n);return !n.closest('[hidden]')&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0&&r.left>=-.75&&r.top>=-.75&&r.right<=innerWidth+.75&&r.bottom<=innerHeight+.75;});
     const ids={of(n:HTMLElement){return n.id||(n.dataset.site?`site-${n.dataset.site}`:`${n.className}-${n.closest<HTMLElement>('[data-site]')?.dataset.site}`);}};
     return {geometry:data,statusEvidence,layout,focusEntry:(document.activeElement as HTMLElement)?.closest<HTMLElement>('[data-campaign-detail]')?.dataset.campaignDetail??null,canvas:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},input,
       scrollTopBefore,motion:{...(window as any).__detailScrollEvents.motion},scrollHeight:v.scrollHeight,clientHeight:v.clientHeight,
-      scrollTop:v.scrollTop,phase:state.phase,neutralInput:input.keys.length===0&&input.steerPointer===null&&input.turn===0&&input.climb===0&&Object.values(input.heldPointers).every((ids:any)=>ids.length===0),
+      scrollTop:v.scrollTop,phase:state.phase,neutralInput:input.keys.length===0&&input.steerPointer===null&&input.throttlePointer===null&&input.throttle===0&&input.turn===0&&input.climb===0&&Object.values(input.heldPointers).every((ids:any)=>ids.length===0),
       fullHudScroll:{windowX:scrollX,windowY:scrollY,appLeft:app.scrollLeft,appTop:app.scrollTop,hudLeft:hud.scrollLeft,hudTop:hud.scrollTop},
       requiredIds:required.map(ids.of),visibleIds:visible.map(ids.of)};
   },{collector,visibility} as any),cap);
@@ -133,9 +134,21 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     return observed.scrollTop;
   };
   const consumedNeutral=async()=>{
+    if(phase==='respawning'){
+      const before=await d.requireState('respawn-before-native-detail-input');
+      expect(before.phase).toBe('respawning');await d.step();
+      const after=await d.requireState('respawn-after-native-detail-input');
+      expect(after.phase).toBe('respawning');expect(after.tick).toBe(before.tick);expect(after.activeTicks).toBe(before.activeTicks);
+      const input=(await d.full()).controlsInput;
+      // A countdown frame consumes no campaign input. Check actual neutral flight
+      // channels while native detail keys/pointers belong to the detail viewport.
+      expect(input.turn).toBe(0);expect(input.climb).toBe(0);expect(input.throttle).toBe(0);expect(input.steerPointer).toBeNull();
+      for(const held of Object.values(input.heldPointers))expect(held).toEqual([]);
+      d.evidence.push({label:'respawn-detail-frozen-campaign',before,after,input});return;
+    }
     const state=await d.nextTick(),audit=await d.audit();expect(audit.dropped).toBe(0);
     const item=audit.entries.filter((x:any)=>x.tick<=state.tick-1).at(-1);expect(item).toBeTruthy();
-    const input=item.input;expect(input.turn).toBe(0);expect(input.climb).toBe(0);
+    const input=item.input;expect(input.turn).toBe(0);expect(input.climb).toBe(0);expect(input.throttle).toBe(0);
     for(const key of ['accelerate','brake','fire','bomb','loop'])expect(input[key],`Detail scroll leaked ${key}`).toBe(false);
     d.evidence.push({label:'detail-scroll-consumed-neutral-input',input,tick:state.tick});
   };
@@ -152,7 +165,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     const restart=await beginOperation('home');await d.page.keyboard.press('Home');top=await sample('keyboard',restart);
     // Native Tab scrolls the real focusable entry into view. DOM focus is used
     // only for the viewport setup above, never to substitute for this traversal.
-    for(const [entryIndex,entryId] of contract.actual.entries()){
+    for(const [entryIndex,entryId] of contract.navigable.entries()){
       if(entryIndex>0&&complete('keyboard'))break;
       const operation=await beginOperation('tab',1,entryId);await d.page.keyboard.press('Tab');top=await sample('keyboard',operation);
       const visited=new Set<string>();
@@ -197,11 +210,11 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     expect(events.some((e:any)=>!e.isTrusted)).toBe(false);
     expect(events.some((e:any)=>e.type==='keydown'&&e.key==='ArrowDown')).toBe(true);
     expect(events.some((e:any)=>e.type==='pointerdown'&&e.pointerType==='touch')).toBe(true);
-    expect(detailAccessIssues(evidence)).toEqual([]);
+    expect(detailAccessIssues(evidence,phase)).toEqual([]);
   }catch(error){
     d.evidence.push({label:'detail-scroll-traversal-failure',stage,cumulativeWallMs:performance.now()-traversalStarted,operation:currentOperation,error:String(error),lastRaw:lastAtomic?{scrollTop:lastAtomic.scrollTop,motion:lastAtomic.motion,layoutMeasurements:lastAtomic.layout.measurements,viewport:lastAtomic.geometry.viewport}:null});throw error;
   }finally{
     const events=await d.page.evaluate(()=>{const o=(window as any).__detailScrollEvents;const events=o.events;o.remove();delete (window as any).__detailScrollEvents;return events;});
     d.evidence.push({label:'detail-scroll-native-events',events});
-    await collector.dispose();await visibility.dispose();d.evidence.push({label:'authorized-detail-scroll-proof',...evidence,issues:detailAccessIssues(evidence)});}
+    await collector.dispose();await visibility.dispose();d.evidence.push({label:'authorized-detail-scroll-proof',...evidence,issues:detailAccessIssues(evidence,phase)});}
 }

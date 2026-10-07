@@ -45,6 +45,8 @@ export interface GameEvent {
   weapon?: 'mg' | 'cannon' | 'aa' | 'bomb' | 'torpedo'; detail?: string; mountId?: string; armor?: boolean;
 }
 export interface FlightInput {
+  /** Explicit rate axis takes precedence over legacy accelerate/brake, including zero. */
+  throttle?: number;
   turn: number; climb: number; fire: boolean; loop: boolean;
   bomb?: boolean; torpedo?: boolean;
   accelerate?: boolean; brake?: boolean; viewAspect?: number; steeringRevision?: number;

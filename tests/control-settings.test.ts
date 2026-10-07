@@ -31,15 +31,15 @@ test('only exact legacy payload defaults move to the lower edge without mutating
 });
 
 test('layout and keyboard persistence roll back together when any write fails', () => {
-  const storage = storageFixture(); storage.values.set('normal', 'before');
+  const storage = storageFixture(); storage.values.set('fantasia-controls-v2', 'before');
   const write = storage.setItem;
-  storage.setItem = (key, value) => { if (key === 'keys' && value === 'new keys') throw new Error('quota'); write(key, value); };
-  assert.equal(persistControlSettings([{ key: 'normal', value: 'after' }, { key: 'easy', value: 'new easy' }, { key: 'keys', value: 'new keys' }], storage), false);
-  assert.equal(storage.getItem('normal'), 'before');
-  assert.equal(storage.getItem('easy'), null);
-  assert.equal(storage.getItem('keys'), null);
-  assert.equal(persistControlSettings([{ key: 'normal', value: 'after' }], storage), true);
-  assert.equal(storage.getItem('normal'), 'after');
+  storage.setItem = (key, value) => { if (key === 'fantasia-keyboard-v1' && value === 'new keys') throw new Error('quota'); write(key, value); };
+  assert.equal(persistControlSettings([{ key: 'fantasia-controls-v2', value: 'after' }, { key: 'fantasia-controls-easy-v2', value: 'new easy' }, { key: 'fantasia-keyboard-v1', value: 'new keys' }], storage), false);
+  assert.equal(storage.getItem('fantasia-controls-v2'), 'before');
+  assert.equal(storage.getItem('fantasia-controls-easy-v2'), null);
+  assert.equal(storage.getItem('fantasia-keyboard-v1'), null);
+  assert.equal(persistControlSettings([{ key: 'fantasia-controls-v2', value: 'after' }], storage), true);
+  assert.equal(storage.getItem('fantasia-controls-v2'), 'after');
 });
 
 test('unavailable storage reads cannot cause partial writes', () => {
@@ -59,12 +59,12 @@ test('saving from an older tab preserves a future settings format', () => {
   assert.equal(storage.getItem('fantasia-controls-v1'), null);
 });
 
-test('Fantasia exposes five Normal touch controls, two Easy touch controls, and ten or seven keyboard actions', () => {
+test('Fantasia exposes four Normal touch controls, two Easy touch controls, and ten or seven keyboard actions', () => {
   assert.equal(KEYBOARD_STORAGE_KEY, 'fantasia-keyboard-v1');
-  assert.deepEqual(CONTROL_NAMES, ['fire', 'loop', 'accelerate', 'brake', 'bomb']);
-  assert.deepEqual(MODE_CONTROLS.normal, ['fire', 'loop', 'accelerate', 'brake', 'bomb']);
+  assert.deepEqual(CONTROL_NAMES, ['fire', 'loop', 'throttle', 'bomb']);
+  assert.deepEqual(MODE_CONTROLS.normal, ['fire', 'loop', 'throttle', 'bomb']);
   assert.deepEqual(MODE_CONTROLS.easy, ['loop', 'bomb']);
-  assert.equal(Object.keys(DEFAULT_LAYOUT).length, 5);
+  assert.equal(Object.keys(DEFAULT_LAYOUT).length, 4);
   assert.equal(KEY_ACTIONS.length, 10);
   assert.equal(KEY_ACTIONS.filter(action => !['fire', 'accelerate', 'brake'].includes(action)).length, 7);
 });
@@ -102,8 +102,8 @@ test('save applies both drafts only after successful persistence; cancel restore
     assert.equal(dialog.returnValue, 'save');
     assert.equal(keyboard.code('bomb'), 'KeyB');
     assert.equal(JSON.parse(storage.getItem(KEYBOARD_STORAGE_KEY)!).bindings.bomb, 'KeyB');
-    assert.equal(JSON.parse(storage.getItem('fantasia-controls-v1')!).controls.bomb.x, .2);
-    assert.equal(JSON.parse(storage.getItem('fantasia-controls-easy-v1')!).controls.loop.x, .2);
+    assert.equal(JSON.parse(storage.getItem('fantasia-controls-v2')!).controls.bomb.x, .2);
+    assert.equal(JSON.parse(storage.getItem('fantasia-controls-easy-v2')!).controls.loop.x, .2);
     assert.equal(storage.getItem('kaisen-controls-v1'), null); assert.equal(storage.getItem('kaisen-keyboard-v1'), null);
     editor.draft.normal.bomb.x = .7; editor.draft.easy.loop.x = .7; editor.keyDraft.bomb = 'KeyC'; editor.capturing = 'bomb';
     editor.onClosed();
@@ -170,4 +170,39 @@ test('default touch controls keep safe edges and payloads separate in portrait a
     }
     assert.ok(rects.bomb.y > height * .8, 'the bomb stays near the lower edge');
   }
+});
+
+test('an incomplete rollback stays pending after Cancel and an unchanged Save retries restoration', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  const storage = storageFixture(), key = 'fantasia-controls-v2';
+  const before = JSON.stringify({version: 2, controls: DEFAULT_LAYOUT}); storage.values.set(key, before);
+  const write = storage.setItem; let denyRollback = true;
+  storage.setItem = (name, value) => {
+    if (denyRollback && (name === KEYBOARD_STORAGE_KEY || name === key && value === before)) throw new Error('quota');
+    write(name, value);
+  };
+  Object.defineProperty(globalThis, 'localStorage', {configurable:true, value:storage});
+  try {
+    const {editor, dialog} = dialogFixture();
+    editor.draft.normal.bomb.x = .2; editor.keyDraft.bomb = 'KeyB'; editor.save();
+    assert.equal(editor.recoveryPending, true); assert.notEqual(storage.getItem(key), before);
+    assert.ok(storage.getItem('fantasia-controls-recovery-v1'));
+    editor.onClosed(); assert.equal(editor.saveFailedAwaitingUse, false);
+    // Cancel restores the draft but cannot make the partial storage write successful.
+    assert.deepEqual(editor.draft.normal, DEFAULT_LAYOUT);
+    denyRollback = false; editor.save();
+    assert.equal(storage.getItem(key), before); assert.equal(storage.getItem(KEYBOARD_STORAGE_KEY), null);
+    assert.equal(storage.getItem('fantasia-controls-recovery-v1'), null);
+    assert.equal(editor.recoveryPending, false); assert.equal(dialog.returnValue, 'save');
+  } finally {if(original)Object.defineProperty(globalThis,'localStorage',original);else Reflect.deleteProperty(globalThis,'localStorage');}
+});
+
+
+test('Fantasia settings keep the two Easy controls and never advertise a torpedo', async () => {
+  const {readFile} = await import('node:fs/promises');
+  const source = await readFile(new URL('../src/control-settings.ts', import.meta.url), 'utf8');
+  assert.ok(source.includes('宙返り・爆弾を調整できます。'));
+  assert.ok(!source.includes('魚雷'));
+  assert.ok(!source.includes('torpedo'));
+  assert.deepEqual(MODE_CONTROLS.easy, ['loop', 'bomb']);
 });

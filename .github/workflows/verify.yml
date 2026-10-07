@@ -7,6 +7,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -17,12 +18,38 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:browser
+      - id: browser
+        name: Existing 34-case browser acceptance
+        run: npm run test:browser
       - name: Report clean-sheet acceptance (release remains blocked)
         if: always()
         run: node --import tsx scripts/report-clean-acceptance.ts
+      - id: throttle
+        name: Four real-DOM lever integration cases
+        if: ${{ !cancelled() && steps.browser.outcome != 'skipped' }}
+        run: npx playwright test --config=playwright.throttle.config.ts
+      - name: Validate lever evidence and preserve original bytes in job log
+        if: ${{ always() && steps.throttle.outcome != 'skipped' }}
+        run: node --import tsx scripts/report-supplemental-acceptance.ts throttle
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: fantasia-verification
           path: test-results/
+  active-critical:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - id: critical
+        name: Twelve active-warning cases with 39 state observations
+        run: npx playwright test --config=playwright.active-critical.config.ts
+      - name: Validate warning evidence and preserve original bytes in job log
+        if: always()
+        run: node --import tsx scripts/report-supplemental-acceptance.ts active-critical

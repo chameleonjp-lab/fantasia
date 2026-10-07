@@ -156,15 +156,15 @@ functional('storage-future-rollback',async d=>{
   await d.click('#control-cancel');await d.step();
   // Test-context fixture replacement; no user storage or runtime is changed.
   await d.page.evaluate(()=>localStorage.removeItem('fantasia-keyboard-v1'));
-  await d.click('#home-controls');await d.click('#control-editor-touch');
+  await d.click('#home-controls');await d.click('#control-editor-touch');await d.page.locator('#control-mode').selectOption('normal');
   await d.page.locator('#control-size').focus();await d.key('ArrowRight');
   await d.click('#control-editor-keyboard');await bindBomb(d,'x');
-  const prior=await d.page.evaluate(()=>({normal:localStorage.getItem('fantasia-controls-v1'),easy:localStorage.getItem('fantasia-controls-easy-v1'),keys:localStorage.getItem('fantasia-keyboard-v1')}));
+  const prior=await d.page.evaluate(()=>({normal:localStorage.getItem('fantasia-controls-v2'),easy:localStorage.getItem('fantasia-controls-easy-v2'),keys:localStorage.getItem('fantasia-keyboard-v1'),recovery:localStorage.getItem('fantasia-controls-recovery-v1'),legacyNormal:localStorage.getItem('fantasia-controls-v1'),legacyEasy:localStorage.getItem('fantasia-controls-easy-v1')}));
   await d.page.evaluate(()=>{const original=Storage.prototype.setItem;(window as any).__restoreAcceptanceStorage=()=>{Storage.prototype.setItem=original;};(window as any).__acceptanceStorageWrites=[];Storage.prototype.setItem=function(key,value){(window as any).__acceptanceStorageWrites.push(key);if(key==='fantasia-keyboard-v1')throw new DOMException('Explicit second-write failure','QuotaExceededError');return original.call(this,key,value);};});
   try {
     await d.click('#control-save');await expect(d.page.locator('#control-storage-note')).toContainText('保存できません');
-    const writes=await d.page.evaluate(()=>(window as any).__acceptanceStorageWrites);expect(writes).toHaveLength(2);expect(writes[1]).toBe('fantasia-keyboard-v1');
-    expect(await d.page.evaluate(()=>({normal:localStorage.getItem('fantasia-controls-v1'),easy:localStorage.getItem('fantasia-controls-easy-v1'),keys:localStorage.getItem('fantasia-keyboard-v1')}))).toEqual(prior);
+    const writes=await d.page.evaluate(()=>(window as any).__acceptanceStorageWrites);expect(writes).toEqual(['fantasia-controls-recovery-v1','fantasia-controls-v2','fantasia-keyboard-v1']);
+    expect(await d.page.evaluate(()=>({normal:localStorage.getItem('fantasia-controls-v2'),easy:localStorage.getItem('fantasia-controls-easy-v2'),keys:localStorage.getItem('fantasia-keyboard-v1'),recovery:localStorage.getItem('fantasia-controls-recovery-v1'),legacyNormal:localStorage.getItem('fantasia-controls-v1'),legacyEasy:localStorage.getItem('fantasia-controls-easy-v1')}))).toEqual(prior);
     d.evidence.push({label:'partial-write-rollback',writes,prior});await d.click('#control-cancel');await d.step();
   }finally{await d.page.evaluate(()=>(window as any).__restoreAcceptanceStorage());}
 });
