@@ -1,5 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mkdir, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { collectStartFailureEvidence } from './start-failure-evidence';
 import { oneTickPulseEvidence, type InputAudit } from './input-audit';
 import { confirmHudObservation, waitForNativeFrame, type HudObservationGate, type NativeConfirmation } from './hud-observation';
 
@@ -59,7 +61,33 @@ async function start(page: Page, mode: 'easy' | 'normal') {
     // The renderer may report a temporary stall on SwiftShader and recover.
     // Honor its safe stop and require an explicit player resume; frame-gap,
     // hidden-page, and logic-error pauses remain test failures.
-    expect(afterStart.pauseReasons).toEqual(['render']);
+    try {
+      expect(afterStart.pauseReasons).toEqual(['render']);
+    } catch (assertionError) {
+      // Do not add any observations to the successful/pre-failure path.
+      // Preserve the first stop, including history omitted by ordinary polls.
+      try {
+        const info = test.info();
+        await collectStartFailureEvidence({
+          read: () => page.evaluate(() => {
+            const read = (window as any).__fantasiaReadState;
+            if (typeof read !== 'function') throw new Error('Fantasia observation hook unavailable');
+            const value = read(true);
+            if (!value) throw new Error('Fantasia observation snapshot unavailable');
+            return JSON.stringify(value);
+          }),
+          persist: async (name, body) => {
+            const path = info.outputPath(name);
+            await mkdir(dirname(path), { recursive: true });
+            await writeFile(path, body); return path;
+          },
+          attach: (name, attachment) => info.attach(name, attachment),
+          warn: message => console.warn(message),
+        });
+      } finally {
+        throw assertionError;
+      }
+    }
     expect(afterStart.fatalLogicError).toBeFalsy();
     if (afterStart.renderStatus === 'stalled' && await page.locator('#resume').isDisabled()) {
       test.skip(true, 'Headless Chromium renderer remained stalled; the app correctly withheld flight resume.');
