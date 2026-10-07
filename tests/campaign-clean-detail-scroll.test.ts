@@ -33,14 +33,14 @@ test('nonempty threat/reload/payload and actual reload stay required regardless 
  const reload=statusFixture();reload.reloadTicksRemaining=60;assert.deepEqual(activeFixedStatusIds(reload),['reload-status']);
 });
 
-import {detailScrollMeasurement,detailSettlingIssues} from '../browser-acceptance/detail-scroll-observation';
+import {detailScrollMeasurement,detailSettlingIssues,detailOperationIssues} from '../browser-acceptance/detail-scroll-observation';
 import {collectHudTextGeometry} from '../browser-acceptance/text-geometry';
 import {runInNewContext} from 'node:vm';
 function atomicFixture(){
- const sample={scrollTop:100,scrollTopBefore:100,scrollHeight:200,clientHeight:98,motion:{sequence:3,endedSequence:3,trusted:true},
+ const sample={scrollTop:100,scrollTopBefore:100,scrollHeight:200,clientHeight:98,motion:{sequence:3,endedSequence:3,endCount:3,trusted:true},
   input:{keys:[],steerPointer:null,turn:0,climb:0,heldPointers:{bomb:[],loop:[]}},
   geometry:{viewport:{width:200,height:200},regions:[{key:'viewport',kind:'detail-viewport',rect:{x:0,y:0,width:200,height:98}}],styles:[],runs:[{text:'last fragment',owner:'last',ancestorRegions:[],styleKeys:[],fragments:[{x:2,y:75,width:60,height:21}]}]}};
- return {...sample,settling:{first:structuredClone(detailScrollMeasurement(sample)),elapsedWallMs:32}};
+ return {...sample,settling:{first:structuredClone(detailScrollMeasurement(sample)),elapsedWallMs:32,totalWallMs:100,operation:{kind:'arrow',before:{scrollTop:60,motion:{sequence:2,endedSequence:2,endCount:2,trusted:true}}}}};
 }
 test('native scroll completion and real-wall-time stable geometry are both required',()=>{
  assert.deepEqual(detailSettlingIssues(atomicFixture()),[]);
@@ -55,4 +55,16 @@ test('atomic collector handle expression remains browser-serializable without ho
  const collector=runInNewContext(`(${collectHudTextGeometry.toString()})`);
  assert.equal(typeof collector,'function');
  assert.ok(!collector.toString().includes('__name'));
+});
+
+
+test('operation-specific completion rejects stale events and preserves no-op Home only at zero',()=>{
+ const e=atomicFixture();assert.deepEqual(detailOperationIssues(e.settling.operation,e),[]);
+ for(const change of [(s:any)=>s.motion.endCount=2,(s:any)=>s.motion.sequence=2,(s:any)=>s.scrollTop=60,(s:any)=>s.settling.operation.kind='direct-scroll',(s:any)=>delete s.settling.operation]){
+  const s=atomicFixture();change(s);assert.ok(detailOperationIssues(s.settling.operation,s).length);
+ }
+ const zero={scrollTop:0,motion:{sequence:0,endedSequence:0,endCount:0,trusted:true}};
+ assert.deepEqual(detailOperationIssues({kind:'home',before:zero},zero),[]);
+ assert.ok(detailOperationIssues({kind:'arrow',before:zero},zero).length);
+ assert.ok(detailOperationIssues({kind:'home',before:{...zero,scrollTop:40}},zero).length);
 });

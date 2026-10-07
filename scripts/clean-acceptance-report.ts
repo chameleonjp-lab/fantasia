@@ -90,8 +90,11 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
                   const proof=observations.filter((o:any)=>o?.label==='authorized-detail-scroll-proof');
                   if(proof.length!==1||detailAccessIssues(proof[0]).length)throw new Error('missing detail access proof');
                   const samples=observations.filter((o:any)=>o?.label==='detail-scroll-snapshot');
+                  const attempts=observations.filter((o:any)=>o?.label==='detail-scroll-observation-attempt');
+                  if(attempts.length!==samples.length||attempts.some((o:any)=>o.outcome!=='settled'||!Number.isFinite(o.totalWallMs)||o.totalWallMs<32||!Number.isInteger(o.fullCaptures)||o.fullCaptures<2||!Array.isArray(o.history)||!o.history.length||o.history.length>32||!Number.isInteger(o.candidates)||o.candidates<o.history.length))throw new Error('missing bounded native observation history');
                   if(samples.length!==proof[0].samples.length)throw new Error('missing detail snapshots');
                   for(const [i,sample]of samples.entries()){
+                    if(attempts[i].method!==sample.method||JSON.stringify(attempts[i].operation)!==JSON.stringify(sample.settling?.operation))throw new Error('operation history differs from settled sample');
                     if(detailSettlingIssues(sample).length)throw new Error('unsettled/non-atomic detail observation');
                     const checked=detailGeometrySnapshot(sample.geometry);
                     if(!sample.statusEvidence||activeFixedStatusIds(sample.statusEvidence).some(id=>!sample.persistentIds?.includes(id)))throw new Error('active fixed status hidden/missing');
@@ -101,7 +104,7 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
                   }
                   const native=observations.find((o:any)=>o?.label==='detail-scroll-native-events')?.events;
                   if(!Array.isArray(native)||native.some((e:any)=>!e.isTrusted)||!['keydown','keyup','pointerdown','touchstart','touchend'].every(type=>native.some((e:any)=>e.type===type))||!native.some((e:any)=>e.key==='ArrowDown')||!native.some((e:any)=>e.pointerType==='touch'))throw new Error('missing trusted scroll input');
-                  if(samples.some((s:any)=>s.motion.sequence>native.filter((event:any)=>event.type==='scroll').length)||!native.some((event:any)=>event.type==='scrollend'))throw new Error('missing native scroll completion events');
+                  if(samples.some((s:any)=>s.motion.sequence>native.filter((event:any)=>event.type==='scroll').length||s.motion.endCount>native.filter((event:any)=>event.type==='scrollend').length)||!native.some((event:any)=>event.type==='scrollend'))throw new Error('missing native scroll completion events');
                   if(consumedDetailInputIssues(observations.filter((o:any)=>o?.label==='detail-scroll-consumed-neutral-input')).length)throw new Error('missing/non-neutral consumed input');
                 }
               }

@@ -320,6 +320,27 @@ export class CampaignHudLayout {
   dispose() { if (this.disposed) return; this.disposed = true; this.disconnect(); }
 }
 
+/** Live HP/progress widths and reload positions are not typography changes.
+ * Compare only context properties, preserving ordinary live remeasurement. */
+export function campaignHudContextStyleChanged(before: string | null, after: string | null): boolean {
+  const context = (value: string | null) => (value ?? '').split(';').map(part => {
+    const colon = part.indexOf(':');
+    return [part.slice(0, colon).trim().toLowerCase(), part.slice(colon + 1).trim()];
+  }).filter(([name]) => /^(font($|-)|line-height$|letter-spacing$|--control-(x|y|size)$|--safe-)/.test(name))
+    .sort(([a], [b]) => a.localeCompare(b));
+  return JSON.stringify(context(before)) !== JSON.stringify(context(after));
+}
+
+/** Re-measure live reservations in their current mode. A late ResizeObserver
+ * delivery is not permission to hide/reparent an active native scroll region.
+ * Only explicit viewport/typography/mode changes reconsider full-detail mode. */
+export function measureCampaignHudMode(compact: boolean, reviewFull: boolean, sight: HudRect,
+  measureMode: (compact: boolean) => HudMeasurement, clipped: () => boolean): HudMeasurement {
+  if (compact && !reviewFull) return measureMode(true);
+  const full = measureMode(false);
+  return layoutCampaignHud(full, sight).status === 'placed' && !clipped() ? full : measureMode(true);
+}
+
 /** Scene-owned adapter. Observe geometry owners, not every changing HUD text. */
 export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudLayout {
   const doc = canvas.ownerDocument, win = doc.defaultView!;
@@ -327,6 +348,8 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
   const threat = app.querySelector<HTMLElement>('#campaign-threat');
   const details = new CampaignHudDetails(app);
   let compact = false;
+  let reviewFull = true;
+  let viewportKey = '';
   const selectors = '.hud-top, #campaign-sites .campaign-site[data-site], #hud button';
   const panelSelectors = '.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip';
   const panelNodes = [...app.querySelectorAll<HTMLElement>(panelSelectors), details.viewport, details.mode,
@@ -356,7 +379,10 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
   return new CampaignHudLayout({
     observe(invalidate) {
       const nodes = [...app.querySelectorAll<HTMLElement>(selectors), ...app.querySelectorAll<HTMLElement>('#campaign-sites'), ...panelNodes];
+      // Panel-size notifications still refresh every critical reservation, but
+      // never trigger a full→compact round trip merely because they arrived late.
       const resize = new ResizeObserver(invalidate);
+      const reviewContext = () => { reviewFull = true; invalidate(); };
       for (const node of [canvas, app, probe, ...nodes]) resize.observe(node);
       handleRecords = records => {
         let changed = false;
@@ -381,7 +407,14 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
           }
           const node = record.target as Element, value = node.getAttribute(record.attributeName!);
           if (record.oldValue === value) continue;
-          if (!(record.attributeName === 'style' && ownStyles.has(node) && value === ownStyles.get(node))) changed = true;
+          if (record.attributeName === 'style' && ownStyles.has(node) && value === ownStyles.get(node)) continue;
+          changed = true;
+          // Text enlargement/custom control styles, mode/input and root theme
+          // changes can make full mode viable again. Live visibility, warning
+          // flags and site state classes only require current-mode measurement.
+          if (record.attributeName === 'style' && campaignHudContextStyleChanged(record.oldValue, value)
+            || ['data-mode', 'data-input'].includes(record.attributeName!)
+            || record.attributeName === 'class' && [doc.documentElement, doc.body, app].includes(node as HTMLElement)) reviewFull = true;
         }
         if (changed) invalidate();
       };
@@ -396,10 +429,10 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       if (sites) mutation.observe(sites, { subtree: true, childList: true, attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style', 'data-campaign-critical'] });
       for (const panel of panelNodes) mutation.observe(panel, { childList: true, subtree: true, characterData: true,
         attributes: true, attributeOldValue: true, attributeFilter: ['hidden', 'class', 'style', 'data-campaign-critical'] });
-      win.addEventListener('resize', invalidate);
-      doc.fonts?.addEventListener('loadingdone', invalidate);
+      win.addEventListener('resize', reviewContext);
+      doc.fonts?.addEventListener('loadingdone', reviewContext);
       return () => {
-        resize.disconnect(); mutation?.disconnect(); win.removeEventListener('resize', invalidate); doc.fonts?.removeEventListener('loadingdone', invalidate);
+        resize.disconnect(); mutation?.disconnect(); win.removeEventListener('resize', reviewContext); doc.fonts?.removeEventListener('loadingdone', reviewContext);
         probe.remove(); details.dispose();
         for (const [node, values] of original) for (const [name, value, priority] of values) {
           if (value) node.style.setProperty(name, value, priority); else node.style.removeProperty(name);
@@ -411,6 +444,11 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       const active = doc.activeElement as HTMLElement | null;
       const wasReading = Boolean(active && details.contains(active));
       const scrollTop = details.viewport.scrollTop;
+      const beforeRevision = details.layoutRevision;
+      const view = canvas.getBoundingClientRect(), safeContext = win.getComputedStyle(probe);
+      const nextViewportKey = [view.width, view.height, safeContext.paddingTop, safeContext.paddingRight, safeContext.paddingBottom, safeContext.paddingLeft].join(',');
+      if (nextViewportKey !== viewportKey) reviewFull = true;
+      viewportKey = nextViewportKey;
       const measureMode = (useCompact: boolean): HudMeasurement => {
       compact = useCompact;
       details.sync(compact);
@@ -470,24 +508,13 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       return { canvas: canvasRect, bounds, obstacles,
         panels, ...(compact ? { movableControls } : {}), flightData: dataRect ? toCanvasRect(dataRect, canvasRect) : null, threat: threatRect ? toCanvasRect(threatRect, canvasRect) : null };
       };
-      const full = measureMode(false);
-      // Full-detail mode wins whenever its actual measured content fits. Text
-      // ellipsis is a failure even when the card's outer rectangle fits.
-      const clipped = [...app.querySelectorAll<HTMLElement>('.campaign-site-force, .campaign-site-wave')]
-        .some(node => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1);
-      const measured = layoutCampaignHud(full, sight).status === 'placed' && !clipped ? full : measureMode(true);
+      const measured = measureCampaignHudMode(compact, reviewFull, sight, measureMode, () =>
+        [...app.querySelectorAll<HTMLElement>('.campaign-site-force, .campaign-site-wave')]
+          .some(node => node.scrollWidth > node.clientWidth + 1 || node.scrollHeight > node.clientHeight + 1));
+      reviewFull = false;
       // Reparenting and our own translations are synchronous layout writes,
       // not a new external change requiring another measure on the next frame.
-      if (measured.movableControls) {
-        details.viewport.scrollTop = scrollTop;
-        if (wasReading && active) {
-          (details.contains(active) ? active : details.viewport).focus({ preventScroll: true });
-        }
-      } else if (wasReading) {
-        // When all details become persistent again, retain keyboard ownership on
-        // a real HUD operation instead of silently handing keys to the aircraft.
-        app.querySelector<HTMLElement>('#pause')?.focus({ preventScroll: true });
-      }
+      details.restoreReading(beforeRevision, scrollTop, wasReading ? active : null);
       mutation?.takeRecords();
       return measured;
     },

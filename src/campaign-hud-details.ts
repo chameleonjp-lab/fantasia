@@ -10,6 +10,8 @@ export class CampaignHudDetails {
   private readonly siteGroups: HTMLElement[] = [];
   private readonly typography = new Map<HTMLElement, Array<[string, string, string, string]>>();
   private compact = false;
+  private reparentRevision = 0;
+  get layoutRevision() { return this.reparentRevision; }
   private readonly hud: HTMLElement;
   constructor(private readonly app: HTMLElement) {
     const doc = app.ownerDocument;
@@ -65,17 +67,21 @@ export class CampaignHudDetails {
       names.forEach((name, i) => element.style.setProperty(name, values[i]));
     }
     parent.insertBefore(node, before);
+    this.reparentRevision++;
   }
   private restore(node: HTMLElement) {
-    const anchor = this.anchors.get(node); if (anchor?.parentNode) anchor.after(node);
+    const anchor = this.anchors.get(node);
+    if (anchor?.parentNode && anchor.nextSibling !== node) { anchor.after(node); this.reparentRevision++; }
     for (const [name, value] of this.attributes.get(node) ?? []) {
       if (value === null) node.removeAttribute(name); else node.setAttribute(name, value);
     }
   }
   sync(compact: boolean) {
+    const changed = this.compact !== compact;
+    if (changed) this.reparentRevision++;
     this.compact = compact;
     if (compact) this.app.dataset.campaignHud = 'compact'; else delete this.app.dataset.campaignHud;
-    this.viewport.hidden = !compact; this.mode.hidden = !compact;
+    if (changed) { this.viewport.hidden = !compact; this.mode.hidden = !compact; }
     const mode = this.app.querySelector<HTMLElement>('#hud-mode');
     if (mode) { if (compact) { if (mode.parentElement !== this.mode) this.move(mode, this.mode); } else this.restore(mode); }
     if (this.lives) { if (compact) { if (this.lives.parentElement !== this.hud) this.move(this.lives, this.hud); } else this.restore(this.lives); }
@@ -112,6 +118,19 @@ export class CampaignHudDetails {
         if (value) element.style.setProperty(name, value, priority); else element.style.removeProperty(name);
       }
       this.typography.clear();
+    }
+  }
+  /** Assigning even the same scrollTop can cancel the browser's in-flight
+   * native scroll. Repair reading state only after a real structural change. */
+  restoreReading(beforeRevision: number, scrollTop: number, active: HTMLElement | null) {
+    if (this.reparentRevision === beforeRevision) return;
+    if (this.compact) {
+      this.viewport.scrollTop = scrollTop;
+      if (active) (this.contains(active) ? active : this.viewport).focus({ preventScroll: true });
+    } else if (active) {
+      // Full details are visible again; keyboard ownership stays on a HUD
+      // operation instead of silently returning movement keys to the aircraft.
+      this.app.querySelector<HTMLElement>('#pause')?.focus({ preventScroll: true });
     }
   }
   contains(node: Node) { return this.compact && this.viewport.contains(node); }
