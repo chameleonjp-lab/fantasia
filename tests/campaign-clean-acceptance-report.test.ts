@@ -12,6 +12,7 @@ function fixture() {
       capabilityOutcome:'startup-and-bounded-frame-completion',observations:[{label:'home-ready'},{label:'case-assertions-completed',id},
         ...(native?[{label:'native-startup',phase:'ready',tick:0,queue:{completedCount:1}},{label:'native-start-completed',render:{calls:1,triangles:1},queue:{completedCount:2}},{label:'native-receipt-or-safety',phase:'playing',pauseReasons:[],queue:{completedCount:3}}]:[]),
         ...(String(id).startsWith('edges-')?['bomb','loop'].map(control=>({label:'native-capture-cancelled-before-up',control,pointerId:1,heldBeforeUp:[],events:['pointerdown','gotpointercapture','lostpointercapture'].map(type=>({type,pointerId:1,isTrusted:true,targetId:control}))})):[]),
+        ...([8,9].includes(Number(category))?[{label:'full-text-geometry-before-assertions',issues:[],reservations:[],textGeometry:{viewport:{width:200,height:200},regions:[{key:'label',kind:'panel',rect:{x:10,y:10,width:50,height:20}}],styles:[{key:'s',overflowX:'visible',overflowY:'visible',lineClamp:'none',maxLines:'none',contain:'none',unsupported:[]}],runs:[{text:'Visible',owner:'label',ancestorRegions:['label'],fragments:[{x:10,y:10,width:40,height:15}],styleKeys:['s']}]}}]:[]),
         ...(category===8?[{label:'actual-live-dom-geometry',dom:{sites:Array(7).fill({})},layout:{status:'placed'}}]:[]),
         ...(category===9?[{label:'actual-200-percent-text',beforeMeasurements:1,afterMeasurements:2,enlargement:Array(21).fill({})}]:[])]};
     return {title:titleFor(String(id)),tests:[{projectName:'clean-browser-acceptance',expectedStatus:'passed',status:'expected',results:[{status:'passed',errors:[],attachments:[{name:'clean-acceptance-evidence',contentType:'application/json',body:Buffer.from(JSON.stringify(evidence)).toString('base64')}]}]}]};
@@ -72,4 +73,8 @@ test('native capability needs an actual later completed receipt, not merely a ti
 
 test('edge evidence must retain both trusted, ordered native cancellations before pointerup',async()=>{
  for(const edit of [(e:any)=>{e.observations=e.observations.filter((o:any)=>o.label!=='native-capture-cancelled-before-up');},(e:any)=>{e.observations.find((o:any)=>o.label==='native-capture-cancelled-before-up').events[1].isTrusted=false;}]) {const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[0]==='edges-normal'),edit);assert.equal((await report(raw)).browserAcceptance,'not-passed');}
+});
+
+test('geometry evidence cannot omit full text or hide clipping behind an empty declared issue list',async()=>{
+ for(const edit of [(e:any)=>{e.observations=e.observations.filter((o:any)=>o.label!=='full-text-geometry-before-assertions');},(e:any)=>{e.observations.find((o:any)=>o.label==='full-text-geometry-before-assertions').textGeometry.runs[0].fragments[0].x=-20;}]) {const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),edit);assert.equal((await report(raw)).browserAcceptance,'not-passed');}
 });

@@ -2,6 +2,7 @@ import { expect, type TestInfo } from '@playwright/test';
 import { RealRendererDriver } from './real-driver';
 import { assertFreshGeometry, createVisibilityPredicate } from './geometry-contract';
 import { assertCaptureCancelled, type CaptureEvent } from './capture-contract';
+import { collectHudTextGeometry, textGeometryIssues, type TextGeometry, type TextRegion } from './text-geometry';
 import { CASES } from './acceptance-cases';
 
 export async function runCase(driver: RealRendererDriver, info: TestInfo, id: string, body: () => Promise<void>) {
@@ -47,7 +48,7 @@ export async function liveGeometry(driver: RealRendererDriver) {
   const state = await driver.requireState('live-geometry'); expect(state.phase).toBe('playing');
   const full = await driver.full(), layout = full.render.hudLayout;
   const visibility=await driver.call('create test visibility predicate',()=>driver.page.evaluateHandle(createVisibilityPredicate));
-  let dom;
+  let dom, textGeometry:TextGeometry;
   try { dom = await driver.call('collect current live DOM geometry',()=>driver.page.evaluate((visible) => {
     const rect = (node: Element) => { const r = node.getBoundingClientRect(); return { x:r.x,y:r.y,width:r.width,height:r.height }; };
     const canvas = rect(document.querySelector('#flight')!);
@@ -60,9 +61,18 @@ export async function liveGeometry(driver: RealRendererDriver) {
       panels:panels.map(local),obstacles:obstacles.map(local),
       nodes:nodes.map(node => ({id:node.id || node.className, button:node.tagName==='BUTTON', panel:panels.includes(node), scrollWidth:node.scrollWidth,clientWidth:node.clientWidth,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,...rect(node)})),
       overlays: ['home','pause-screen','result'].map(id => ({id, hidden:document.getElementById(id)!.hidden})), dpr:devicePixelRatio };
-  },visibility)); } finally {await visibility.dispose();}
+  },visibility));
+    textGeometry=await driver.call('collect current full-text and clipping geometry',()=>driver.page.evaluate(collectHudTextGeometry,visibility));
+  } finally {await visibility.dispose();}
   // Preserve independently collected current DOM even if the first assertion fails.
   driver.evidence.push({label:'live-dom-geometry-before-assertions',dom,layout});
+  const reservations:TextRegion[]=[
+    {key:'canvas:radar',kind:'radar',rect:layout.radar.rect},
+    ...layout.obstacles.filter((r:any)=>['aim-and-reload-ring','central-flight-lane'].includes(r.id)).map((r:any)=>({key:`canvas:${r.id}`,kind:'sight-reservation',rect:r})),
+    ...(layout.canvasLabels??[]).filter((r:any)=>r.rect).map((r:any)=>({key:`canvas:${r.id}`,kind:'canvas-label',rect:r.rect})),
+  ].map(r=>({...r,rect:{...r.rect,x:r.rect.x+dom.canvas.x,y:r.rect.y+dom.canvas.y}}));
+  const textIssues=textGeometryIssues(textGeometry,reservations);
+  driver.evidence.push({label:'full-text-geometry-before-assertions',textGeometry,reservations,issues:textIssues});
   expect(layout.status).toBe('placed'); expect(layout.measurements).toBeGreaterThan(0);
   expect(full.render.sites).toBe(7); expect(full.render.calls).toBeGreaterThan(0); expect(full.render.triangles).toBeGreaterThan(0);
   // 0.75 CSS-pixel tolerance covers subpixel CSS rounding, never clipping or stale-size reuse.
@@ -79,9 +89,12 @@ export async function liveGeometry(driver: RealRendererDriver) {
     inside({...node,x:node.x-dom.canvas.x,y:node.y-dom.canvas.y});
     expect(node.x).toBeGreaterThanOrEqual(-1); expect(node.y).toBeGreaterThanOrEqual(-1);
     expect(node.x+node.width).toBeLessThanOrEqual(dom.viewport.width+1); expect(node.y+node.height).toBeLessThanOrEqual(dom.viewport.height+1);
-    if(node.button||node.panel) { expect(node.scrollWidth).toBeLessThanOrEqual(node.clientWidth+1); expect(node.scrollHeight).toBeLessThanOrEqual(node.clientHeight+1); }
+    // Raw scroll/client metrics remain in evidence. Visible text outside its own
+    // circle is judged by fragments/clipping/foreign collisions below, not by
+    // an invented requirement that every label fit inside the circle.
     if(node.button) { expect(node.width).toBeGreaterThanOrEqual(44); expect(node.height).toBeGreaterThanOrEqual(44); }
   }
+  expect(textIssues, 'Full visible text must be complete, unclipped and unobscured').toEqual([]);
   const overlap = (a:any,b:any) => Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x)>1 && Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y)>1;
   const sight = layout.obstacles.find((r:any) => r.id === 'aim-and-reload-ring'); expect(sight).toBeTruthy();
   const siteRects = dom.sites.map(r => ({...r,x:r.x-dom.canvas.x,y:r.y-dom.canvas.y}));

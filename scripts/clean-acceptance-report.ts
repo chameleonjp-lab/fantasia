@@ -1,4 +1,5 @@
 import { assertCaptureCancelled } from '../browser-acceptance/capture-contract';
+import { textGeometryIssues } from '../browser-acceptance/text-geometry';
 import { CASES, titleFor } from '../browser-acceptance/acceptance-cases';
 
 type Json = Record<string, any>;
@@ -75,6 +76,11 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
               try {if(!capture||!Array.isArray(capture.events)||!Array.isArray(capture.heldBeforeUp)) throw new Error('missing capture evidence');
                 assertCaptureCancelled(capture.events,capture.pointerId,control,capture.heldBeforeUp);
               } catch {errors.push(`Native ${control} capture cancellation proof absent/invalid`);}
+            }
+            if(row[1]===8||row[1]===9) {
+              const text=observations.find((o:any)=>o?.label==='full-text-geometry-before-assertions');
+              try {if(!text||!Array.isArray(text.reservations)||!Array.isArray(text.issues)||text.issues.length!==0||textGeometryIssues(text.textGeometry,text.reservations).length!==0) throw new Error('missing/incomplete/clipped text');}
+              catch {errors.push('Complete unclipped nonoverlapping text evidence absent/invalid');}
             }
             if(row[1]===8 && !observations.some((o:any)=>o?.label==='actual-live-dom-geometry'&&o.dom?.sites?.length===7&&o.layout?.status==='placed')) errors.push('Live seven-site geometry absent');
             if(row[1]===9 && !observations.some((o:any)=>o?.label==='actual-200-percent-text'&&o.afterMeasurements>o.beforeMeasurements&&o.enlargement?.length>20)) errors.push('Fresh enlarged-text evidence absent');

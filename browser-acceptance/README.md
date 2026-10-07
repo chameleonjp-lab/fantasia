@@ -72,3 +72,18 @@ This follow-up corrects three setup mistakes and one observation mismatch, witho
 - Empty panels can have positive width but zero height. Use exactly the adapter's hidden/client-rect/display/visibility/positive-width/positive-height predicate. Keep strict actual/cache comparisons and persist the independent DOM/layout observation before assertions, including failed layout states
 
 Five actual-200%-text cases recorded blocked layouts with visible clipping/overlap/out-of-bounds content. Those assertions remain unchanged and are expected to stay red until separately authorized product fixes pass native verification. These test-only corrections do not fix the product layouts or the already documented lever/v2 gaps. The corrected candidate needs its own native CI run; the previous 10 passes are not fresh proof for this source.
+
+## Full-text geometry observation correction
+
+The next exact-head run, `37562240798` at `db86575d20ea4dd39a7131935ad8f8a3813eaab0`, passed all 14 non-layout cases; all 20 layout cases remained failed. The original four input/settings issues and 15 incorrect panel counts were resolved. The reporter validated 14/34; all 403 test-owned fences were released, with no page errors. The five known 200%-text blocked layouts remained failures.
+
+A separate test assumption was too strong: scrollWidth greater than clientWidth does not by itself prove clipped text when a control intentionally allows visible overflow. The ordinary bomb description can be readable just outside its fixed circle. This candidate replaces that blanket containment assertion with explicit full-text evidence, rather than accepting overflow without checking it:
+
+- Collect every nonempty visible DOM text run and every Range.getClientRects fragment in viewport CSS pixels, with complete text, semantic owner, containing regions and ancestor styles. Collect the evidence before any acceptance assertion
+- Retain raw scroll/client dimensions. Reject clipped inline/block overflow, including ellipsis; reject unproven line-clamp completeness. Check all fragments against viewport and applicable ancestor client/padding clip rectangles
+- Permit an own-control label outside its overflow-visible circle only if it remains complete and avoids unrelated controls, panels, site cards/text, other label owners, radar, the actual sight and central-flight reservations, and canvas-label reservations
+- Inspect each wrapped fragment independently. Do not approximate multiple lines by a union rectangle or ignore later lines
+- Treat unsupported non-translation transforms, CSS zoom, nonrectangular/rounded clipping, masks or clip paths as unverified failures, not guessed successful clipping calculations
+- Preserve the separate actual border-box, 44px button, native hit-test, DOM/cache, precise 200% font and placed-layout gates. No runtime, font, button diameter, case count or release rule is changed
+
+The 200% sound/Pause collision and site ellipsis seen in screenshots must still fail. These changes do not repair those displays or the five blocked layouts. Browser execution of this revised observation remains pending. The pure fixtures cover readable own-circle overflow, actual clipping, sibling-control/sight overlap, ellipsis boundaries, all wrapped lines, ancestor clipping, missing evidence and unverified geometry.

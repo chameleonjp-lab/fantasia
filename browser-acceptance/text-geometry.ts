@@ -1,0 +1,95 @@
+export interface TextRect {x:number;y:number;width:number;height:number}
+export interface TextRegion {key:string;kind:string;rect:TextRect}
+export interface TextStyleEvidence {
+  key:string;rect:TextRect;clipRect:TextRect;overflowX:string;overflowY:string;textOverflow:string;
+  scrollWidth:number;clientWidth:number;scrollHeight:number;clientHeight:number;whiteSpace:string;
+  lineClamp:string;maxLines:string;contain:string;transform:string;translate:string;zoom:string;
+  clipPath:string;maskImage:string;legacyClip:string;borderRadius:string[];overflowClipMargin:string;
+  unsupported:string[];
+}
+export interface TextRun {text:string;owner:string;ancestorRegions:string[];fragments:TextRect[];styleKeys:string[]}
+export interface TextGeometry {viewport:{width:number;height:number};regions:TextRegion[];styles:TextStyleEvidence[];runs:TextRun[]}
+
+/** Read-only DOM evidence, executed in the page with the exact tested visibility predicate. */
+export function collectHudTextGeometry(visible:(node:HTMLElement)=>boolean):TextGeometry {
+  // Object methods keep serialized browser code independent of host transpiler helpers.
+  const read={rect(r:DOMRect){return {x:r.x,y:r.y,width:r.width,height:r.height};},
+    cssVisible(node:HTMLElement){let n:HTMLElement|null=node;while(n){const s=getComputedStyle(n);if(n.hidden||s.display==='none'||s.visibility==='hidden')return false;n=n.parentElement;}return true;}};
+  const selectors:Array<[string,string]>=[['panel','.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip'],
+    ['header','.hud-top'],['site','#campaign-sites .campaign-site[data-site]'],['control','#hud button']];
+  const regionNodes:Array<{key:string;kind:string;node:HTMLElement;rect:TextRect}>=[];
+  for(const [kind,selector]of selectors)for(const node of document.querySelectorAll<HTMLElement>(selector))if((visible(node)||(!!node.textContent?.trim()&&read.cssVisible(node)))&&!regionNodes.some(r=>r.node===node))
+    regionNodes.push({key:`${kind}:${node.id||node.className}:${regionNodes.length}`,kind,node,rect:read.rect(node.getBoundingClientRect())});
+  const textNodes=new Set<Text>();
+  for(const region of regionNodes){const walker=document.createTreeWalker(region.node,NodeFilter.SHOW_TEXT);let node;while((node=walker.nextNode()))if(node.textContent?.trim())textNodes.add(node as Text);}
+  const styles:TextStyleEvidence[]=[],styleCache=new Map<HTMLElement,string>();
+  const inspect={node(node:HTMLElement):string{
+    const known=styleCache.get(node);if(known)return known;
+    const key=`style:${node.id||node.className||node.tagName}:${styles.length}`,s=getComputedStyle(node),r=node.getBoundingClientRect();
+    const unsupported:string[]=[];
+    if(s.transform!=='none'){const matrix=new DOMMatrixReadOnly(s.transform);if(!matrix.is2D||matrix.a!==1||matrix.b!==0||matrix.c!==0||matrix.d!==1)unsupported.push('non-translation-transform');}
+    if(s.scale!=='none'&&s.scale!=='1')unsupported.push('individual-scale');if(s.rotate!=='none'&&s.rotate!=='0deg')unsupported.push('individual-rotation');
+    if(s.translate!=='none'&&s.translate.split(/\s+/).length>2&&parseFloat(s.translate.split(/\s+/)[2])!==0)unsupported.push('3d-individual-translation');
+    if(s.zoom!=='1'&&s.zoom!=='normal')unsupported.push('css-zoom');
+    if(s.clipPath!=='none')unsupported.push('clip-path');if(s.maskImage!=='none')unsupported.push('mask-image');
+    if(s.clip!=='auto')unsupported.push('legacy-clip');
+    if(Number(s.opacity)===0)unsupported.push('zero-opacity');
+    const clipping=['hidden','clip','auto','scroll'].includes(s.overflowX)||['hidden','clip','auto','scroll'].includes(s.overflowY)||/\b(paint|strict|content)\b/.test(s.contain);
+    const radii=[s.borderTopLeftRadius,s.borderTopRightRadius,s.borderBottomLeftRadius,s.borderBottomRightRadius];
+    if(clipping&&radii.some(v=>v.split(/\s+/).some(p=>parseFloat(p)!==0)))unsupported.push('rounded-clip');
+    if((s.overflowX==='clip'||s.overflowY==='clip')&&s.overflowClipMargin!=='0px')unsupported.push('overflow-clip-margin');
+    const lineClamp=s.getPropertyValue('-webkit-line-clamp')||s.getPropertyValue('line-clamp')||'none',maxLines=s.getPropertyValue('max-lines')||'none';
+    styles.push({key,rect:read.rect(r),clipRect:{x:r.x+node.clientLeft,y:r.y+node.clientTop,width:node.clientWidth,height:node.clientHeight},overflowX:s.overflowX,overflowY:s.overflowY,textOverflow:s.textOverflow,
+      scrollWidth:node.scrollWidth,clientWidth:node.clientWidth,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,whiteSpace:s.whiteSpace,
+      lineClamp,maxLines,contain:s.contain,transform:s.transform,translate:s.translate,zoom:s.zoom,clipPath:s.clipPath,maskImage:s.maskImage,legacyClip:s.clip,borderRadius:radii,overflowClipMargin:s.overflowClipMargin,unsupported});
+    styleCache.set(node,key);return key;
+  }};
+  const runs:TextRun[]=[];
+  for(const node of textNodes){const parent=node.parentElement;if(!parent||!read.cssVisible(parent))continue;
+    const ancestors=regionNodes.filter(r=>r.node.contains(node));if(!ancestors.length)continue;
+    const owner=ancestors.reduce((a,b)=>a.node.contains(b.node)?b:a);
+    const raw=node.textContent!,start=raw.search(/\S/),end=raw.search(/\s*$/);const range=document.createRange();range.setStart(node,start);range.setEnd(node,end);
+    const fragments=[...range.getClientRects()].map(read.rect);range.detach();
+    const styleKeys:string[]=[];let ancestor:HTMLElement|null=parent;while(ancestor){styleKeys.push(inspect.node(ancestor));ancestor=ancestor.parentElement;}
+    runs.push({text:raw.slice(start,end),owner:owner.key,ancestorRegions:ancestors.map(a=>a.key),fragments,styleKeys});
+  }
+  return {viewport:{width:innerWidth,height:innerHeight},regions:regionNodes.map(({key,kind,rect})=>({key,kind,rect})),styles,runs};
+}
+
+/** Text may extend outside its own visible-overflow circle; it may never be lost or cover unrelated content. */
+export function textGeometryIssues(data:TextGeometry,reservations:TextRegion[]=[],tolerance=.75):string[] {
+  const issues:string[]=[],styles=new Map(data.styles.map(s=>[s.key,s]));
+  const valid=(r:TextRect)=>[r.x,r.y,r.width,r.height].every(Number.isFinite)&&r.width>0&&r.height>0;
+  const overlap=(a:TextRect,b:TextRect)=>Math.min(a.x+a.width,b.x+b.width)-Math.max(a.x,b.x)>tolerance&&Math.min(a.y+a.height,b.y+b.height)-Math.max(a.y,b.y)>tolerance;
+  const contained=(r:TextRect,b:TextRect,x=true,y=true)=>(!x||(r.x>=b.x-tolerance&&r.x+r.width<=b.x+b.width+tolerance))&&(!y||(r.y>=b.y-tolerance&&r.y+r.height<=b.y+b.height+tolerance));
+  const clips=(value:string)=>['hidden','clip','auto','scroll'].includes(value);
+  if(!data.runs.length)issues.push('missing-visible-text-runs');
+  for(const [index,run]of data.runs.entries()){
+    const label=`text[${index}] ${run.owner} ${JSON.stringify(run.text)}`;
+    if(!run.text.trim()||!run.fragments.length)issues.push(`${label}: missing-full-text-fragments`);
+    if(!data.regions.some(r=>r.key===run.owner))issues.push(`${label}: missing-owner`);
+    const chain=run.styleKeys.map(key=>styles.get(key));if(!chain.length||chain.some(s=>!s))issues.push(`${label}: missing-style-chain`);
+    for(const style of chain){if(!style)continue;
+      for(const reason of style.unsupported)issues.push(`${label}: unsupported-${reason} at ${style.key}`);
+      // Range geometry alone cannot prove completeness under line clamping.
+      if(!['none','normal','0',''].includes(style.lineClamp)||!['none','normal','0',''].includes(style.maxLines))issues.push(`${label}: line-clamp-completeness-unverified at ${style.key}`);
+      if(clips(style.overflowX)&&style.scrollWidth>style.clientWidth+1)issues.push(`${label}: clipped-inline-overflow(${style.textOverflow}) at ${style.key}`);
+      if(clips(style.overflowY)&&style.scrollHeight>style.clientHeight+1)issues.push(`${label}: clipped-block-overflow at ${style.key}`);
+    }
+    for(const fragment of run.fragments){
+      if(!valid(fragment)){issues.push(`${label}: ${fragment.width===0||fragment.height===0?'zero-area-fragment-completeness-unverified':'invalid-text-fragment'}`);continue;}
+      if(!contained(fragment,{x:0,y:0,...data.viewport}))issues.push(`${label}: text-outside-viewport`);
+      for(const style of chain){if(!style)continue;const paint=/\b(paint|strict|content)\b/.test(style.contain);
+        if((paint||clips(style.overflowX)||clips(style.overflowY))&&!contained(fragment,style.clipRect,paint||clips(style.overflowX),paint||clips(style.overflowY)))issues.push(`${label}: text-crosses-clip at ${style.key}`);
+      }
+      for(const region of [...data.regions,...reservations])if(!run.ancestorRegions.includes(region.key)&&region.key!==run.owner&&overlap(fragment,region.rect))issues.push(`${label}: text-overlaps-${region.kind} ${region.key}`);
+    }
+  }
+  // Each run is a distinct Text node (deduplicated during collection). Even
+  // siblings within one control/header/site must not obscure one another.
+  for(let i=0;i<data.runs.length;i++)for(let j=i+1;j<data.runs.length;j++){
+    const a=data.runs[i],b=data.runs[j];
+    if(a.fragments.some(x=>b.fragments.some(y=>overlap(x,y))))issues.push(`text-owner-collision ${a.owner} / ${b.owner}`);
+  }
+  return [...new Set(issues)];
+}
