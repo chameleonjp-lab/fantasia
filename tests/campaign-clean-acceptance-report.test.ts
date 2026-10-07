@@ -11,6 +11,7 @@ function fixture() {
       faultInjection:id==='render-fault'?'Canvas2D.clearRect throws once':id==='frame-gap'?'Playwright clock fastForward(400)':['storage-failure','storage-session','storage-future-rollback'].includes(String(id))?'Storage.setItem throws':null,
       capabilityOutcome:'startup-and-bounded-frame-completion',observations:[{label:'home-ready'},{label:'case-assertions-completed',id},
         ...(native?[{label:'native-startup',phase:'ready',tick:0,queue:{completedCount:1}},{label:'native-start-completed',render:{calls:1,triangles:1},queue:{completedCount:2}},{label:'native-receipt-or-safety',phase:'playing',pauseReasons:[],queue:{completedCount:3}}]:[]),
+        ...(String(id).startsWith('edges-')?['bomb','loop'].map(control=>({label:'native-capture-cancelled-before-up',control,pointerId:1,heldBeforeUp:[],events:['pointerdown','gotpointercapture','lostpointercapture'].map(type=>({type,pointerId:1,isTrusted:true,targetId:control}))})):[]),
         ...(category===8?[{label:'actual-live-dom-geometry',dom:{sites:Array(7).fill({})},layout:{status:'placed'}}]:[]),
         ...(category===9?[{label:'actual-200-percent-text',beforeMeasurements:1,afterMeasurements:2,enlargement:Array(21).fill({})}]:[])]};
     return {title:titleFor(String(id)),tests:[{projectName:'clean-browser-acceptance',expectedStatus:'passed',status:'expected',results:[{status:'passed',errors:[],attachments:[{name:'clean-acceptance-evidence',contentType:'application/json',body:Buffer.from(JSON.stringify(evidence)).toString('base64')}]}]}]};
@@ -67,4 +68,8 @@ test('expected failure, missing expectedStatus and contradictory expected status
 
 test('native capability needs an actual later completed receipt, not merely a tick',async()=>{
   const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[0]==='native-capability'),e=>{e.observations.find((o:any)=>o.label==='native-receipt-or-safety').queue.completedCount=2;});assert.equal((await report(raw)).browserAcceptance,'not-passed');
+});
+
+test('edge evidence must retain both trusted, ordered native cancellations before pointerup',async()=>{
+ for(const edit of [(e:any)=>{e.observations=e.observations.filter((o:any)=>o.label!=='native-capture-cancelled-before-up');},(e:any)=>{e.observations.find((o:any)=>o.label==='native-capture-cancelled-before-up').events[1].isTrusted=false;}]) {const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[0]==='edges-normal'),edit);assert.equal((await report(raw)).browserAcceptance,'not-passed');}
 });

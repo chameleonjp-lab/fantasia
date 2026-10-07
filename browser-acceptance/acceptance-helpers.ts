@@ -1,6 +1,7 @@
 import { expect, type TestInfo } from '@playwright/test';
 import { RealRendererDriver } from './real-driver';
-import { assertFreshGeometry } from './geometry-contract';
+import { assertFreshGeometry, createVisibilityPredicate } from './geometry-contract';
+import { assertCaptureCancelled, type CaptureEvent } from './capture-contract';
 import { CASES } from './acceptance-cases';
 
 export async function runCase(driver: RealRendererDriver, info: TestInfo, id: string, body: () => Promise<void>) {
@@ -45,12 +46,11 @@ export async function frozen(driver: RealRendererDriver, frames = 3) {
 export async function liveGeometry(driver: RealRendererDriver) {
   const state = await driver.requireState('live-geometry'); expect(state.phase).toBe('playing');
   const full = await driver.full(), layout = full.render.hudLayout;
-  expect(layout.status).toBe('placed'); expect(layout.measurements).toBeGreaterThan(0);
-  expect(full.render.sites).toBe(7); expect(full.render.calls).toBeGreaterThan(0); expect(full.render.triangles).toBeGreaterThan(0);
-  const dom = await driver.page.evaluate(() => {
+  const visibility=await driver.call('create test visibility predicate',()=>driver.page.evaluateHandle(createVisibilityPredicate));
+  let dom;
+  try { dom = await driver.call('collect current live DOM geometry',()=>driver.page.evaluate((visible) => {
     const rect = (node: Element) => { const r = node.getBoundingClientRect(); return { x:r.x,y:r.y,width:r.width,height:r.height }; };
     const canvas = rect(document.querySelector('#flight')!);
-    const visible=(node:HTMLElement)=>!node.closest('[hidden]')&&getComputedStyle(node).display!=='none'&&getComputedStyle(node).visibility!=='hidden'&&node.getBoundingClientRect().width>0;
     const panels=[...document.querySelectorAll<HTMLElement>('.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip')]
       .filter(node=>visible(node)&&(!node.matches('.hud-top .time-block')||(canvas.width<=360&&canvas.height>canvas.width)));
     const obstacles=[...document.querySelectorAll<HTMLElement>('.hud-top, #campaign-sites .campaign-site[data-site], #hud button')].filter(visible);
@@ -60,7 +60,11 @@ export async function liveGeometry(driver: RealRendererDriver) {
       panels:panels.map(local),obstacles:obstacles.map(local),
       nodes:nodes.map(node => ({id:node.id || node.className, button:node.tagName==='BUTTON', panel:panels.includes(node), scrollWidth:node.scrollWidth,clientWidth:node.clientWidth,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,...rect(node)})),
       overlays: ['home','pause-screen','result'].map(id => ({id, hidden:document.getElementById(id)!.hidden})), dpr:devicePixelRatio };
-  });
+  },visibility)); } finally {await visibility.dispose();}
+  // Preserve independently collected current DOM even if the first assertion fails.
+  driver.evidence.push({label:'live-dom-geometry-before-assertions',dom,layout});
+  expect(layout.status).toBe('placed'); expect(layout.measurements).toBeGreaterThan(0);
+  expect(full.render.sites).toBe(7); expect(full.render.calls).toBeGreaterThan(0); expect(full.render.triangles).toBeGreaterThan(0);
   // 0.75 CSS-pixel tolerance covers subpixel CSS rounding, never clipping or stale-size reuse.
   assertFreshGeometry(dom.panels, (layout.panels??[]).map((p:any)=>({...p.rect,id:p.id})), 'live panels');
   assertFreshGeometry(dom.obstacles, layout.obstacles.filter((r:any)=>!['aim-and-reload-ring','central-flight-lane'].includes(r.id)), 'live obstacles');
@@ -89,4 +93,40 @@ export async function liveGeometry(driver: RealRendererDriver) {
   for(const panel of layout.panels ?? []) { expect(overlap(panel.rect,sight)).toBe(false); expect(overlap(panel.rect,layout.radar.rect)).toBe(false); }
   for (const selector of ['#pause','#bomb','#loop', ...(state.mode==='normal'?['#fire','#accelerate','#brake']:[])]) await driver.point(selector);
   driver.evidence.push({ label:'actual-live-dom-geometry', dom, layout }); return {dom,layout};
+}
+
+/** Establish actual native capture before requesting its loss; no synthetic events. */
+export async function cancelNativeCapture(driver:RealRendererDriver, control:'bomb'|'loop') {
+  const selector=`#${control}`, point=await driver.point(selector);
+  await driver.page.locator(selector).evaluate(node=>{
+    const events:Array<{type:string;pointerId:number;isTrusted:boolean;targetId:string}>=[];
+    const record=(event:Event)=>{const p=event as PointerEvent;events.push({type:p.type,pointerId:p.pointerId,isTrusted:p.isTrusted,targetId:(p.currentTarget as Element).id});};
+    const types=['pointerdown','gotpointercapture','lostpointercapture','pointerup'];
+    for(const type of types)node.addEventListener(type,record);
+    (window as any).__acceptanceCaptureObservation={events,remove:()=>{for(const type of types)node.removeEventListener(type,record);}};
+  });
+  try {
+    await driver.page.mouse.move(point.x,point.y);await driver.page.mouse.down();
+    // setPointerCapture initially sets only a pending override. This real move
+    // processes it, producing gotpointercapture before release is requested.
+    await driver.page.mouse.move(point.x+1,point.y);
+    const active=await driver.page.locator(selector).evaluate((node,control)=>{
+      const events=(window as any).__acceptanceCaptureObservation.events;
+      const held=(window as any).__fantasiaReadState(false).controlsInput.heldPointers[control];
+      return {events:[...events],held:[...held],captured:held.length===1&&node.hasPointerCapture(held[0])};
+    },control);
+    driver.evidence.push({label:'native-capture-established',control,...active});
+    expect(active.captured).toBe(true);expect(active.held).toHaveLength(1);
+    expect(active.events.map((e:CaptureEvent)=>e.type)).toEqual(['pointerdown','gotpointercapture']);
+    for(const event of active.events as CaptureEvent[]) {expect(event.isTrusted).toBe(true);expect(event.pointerId).toBe(active.held[0]);expect(event.targetId).toBe(control);}
+    await driver.page.locator(selector).evaluate((node,pointerId)=>node.releasePointerCapture(pointerId),active.held[0]);
+    await driver.page.mouse.move(point.x+2,point.y);
+    const cancelled=await driver.page.evaluate(control=>({events:[...(window as any).__acceptanceCaptureObservation.events],heldBeforeUp:[...(window as any).__fantasiaReadState(false).controlsInput.heldPointers[control]]}),control);
+    driver.evidence.push({label:'native-capture-cancelled-before-up',control,pointerId:active.held[0],...cancelled});
+    assertCaptureCancelled(cancelled.events,active.held[0],control,cancelled.heldBeforeUp);
+    await driver.page.mouse.up();
+  } finally {
+    const observations=await driver.page.evaluate(()=>{const o=(window as any).__acceptanceCaptureObservation;const events=[...o.events];o.remove();delete (window as any).__acceptanceCaptureObservation;return events;});
+    driver.evidence.push({label:'native-capture-event-sequence',control,events:observations});
+  }
 }

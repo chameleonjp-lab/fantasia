@@ -1,3 +1,4 @@
+import { assertCaptureCancelled } from '../browser-acceptance/capture-contract';
 import { CASES, titleFor } from '../browser-acceptance/acceptance-cases';
 
 type Json = Record<string, any>;
@@ -69,6 +70,12 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
             const expectedFault = id==='render-fault' ? 'Canvas2D.clearRect throws once' : id==='frame-gap' ? 'Playwright clock fastForward(400)' : ['storage-failure','storage-session','storage-future-rollback'].includes(String(id)) ? 'Storage.setItem throws' : null;
             if(evidence.faultInjection!==expectedFault) errors.push('Fault injection label mismatch');
             if(!observations.some((o:any)=>o?.label==='case-assertions-completed'&&o.id===id)) errors.push('Case completion evidence missing');
+            if(String(id).startsWith('edges-')) for(const control of ['bomb','loop']) {
+              const capture=observations.find((o:any)=>o?.label==='native-capture-cancelled-before-up'&&o.control===control);
+              try {if(!capture||!Array.isArray(capture.events)||!Array.isArray(capture.heldBeforeUp)) throw new Error('missing capture evidence');
+                assertCaptureCancelled(capture.events,capture.pointerId,control,capture.heldBeforeUp);
+              } catch {errors.push(`Native ${control} capture cancellation proof absent/invalid`);}
+            }
             if(row[1]===8 && !observations.some((o:any)=>o?.label==='actual-live-dom-geometry'&&o.dom?.sites?.length===7&&o.layout?.status==='placed')) errors.push('Live seven-site geometry absent');
             if(row[1]===9 && !observations.some((o:any)=>o?.label==='actual-200-percent-text'&&o.afterMeasurements>o.beforeMeasurements&&o.enlargement?.length>20)) errors.push('Fresh enlarged-text evidence absent');
           }

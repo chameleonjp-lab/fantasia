@@ -9,3 +9,11 @@ export function assertFreshGeometry(actual: Box[], cached: Box[], label: string,
       throw new Error(`${label}: stale ${a[i].id} ${key}`);
   }
 }
+/** Same visibility contract as the production adapter, callable in-page and in fixtures. */
+export function createVisibilityPredicate() { return (node: HTMLElement): boolean => {
+  if(node.closest('[hidden]') || node.getClientRects().length===0) return false;
+  const style=node.ownerDocument.defaultView!.getComputedStyle(node);
+  if(style.visibility==='hidden'||style.display==='none') return false;
+  const rect=node.getBoundingClientRect();
+  return rect.width>0&&rect.height>0;
+}; }

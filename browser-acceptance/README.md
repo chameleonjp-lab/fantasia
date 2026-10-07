@@ -59,3 +59,16 @@ Physical iPhone behavior, native background/visibility lifecycle, multi-finger o
 Local Chromium launches were previously denied before page creation with process_singleton_posix.cc socket() EPERM, including the approved ordinary escalation. No new launch, workaround or download is attempted here. The earlier proof's exact-head native CI succeeded; the full new suite has not yet run natively.
 
 The retired original browser source and configuration remain recoverable at `6ab5803c10382a52cbb56e7272b7cdea24f70af5` and the verified recovery document. Some unchanged logical tests import its pure helpers, so those inactive files remain in the repository. The current change is reversibly preserved as a complete UTF-8 source bundle, SHA-256 manifest and unified patch for root review.
+
+## First full-suite CI and test-harness corrections
+
+PR #8 head `2b27b417c3a64c5c16e54ebd94ee772ad10e1e3e`, run `37560246507`, executed all 34 cases: 10 passed and 24 failed. The reporter correctly validated 10/34 and kept releaseReady=false. All 340 test-owned GPU fences were released. Its native capability case observed a later completed receipt without a safety stop; that remains a bounded capability observation, not FPS certification.
+
+This follow-up corrects three setup mistakes and one observation mismatch, without changing the runtime or relaxing product assertions:
+
+- Mixed turn/climb input legitimately loses speed to aerodynamic drag. Preserve consumed mixed-input/release checks and compare separate fresh straight neutral/acceleration/braking runs for the physical throttle effect
+- Capture the settings range baseline before any value-changing click; use non-mutating focus before ArrowRight and Discard
+- A pending pointer capture is not active capture. Establish trusted gotpointercapture with native movement, then request release and process trusted lostpointercapture with another native movement. Require cleared application holds before pointerup; retain both complete bomb/loop sequences in evidence and validate them in the reporter
+- Empty panels can have positive width but zero height. Use exactly the adapter's hidden/client-rect/display/visibility/positive-width/positive-height predicate. Keep strict actual/cache comparisons and persist the independent DOM/layout observation before assertions, including failed layout states
+
+Five actual-200%-text cases recorded blocked layouts with visible clipping/overlap/out-of-bounds content. Those assertions remain unchanged and are expected to stay red until separately authorized product fixes pass native verification. These test-only corrections do not fix the product layouts or the already documented lever/v2 gaps. The corrected candidate needs its own native CI run; the previous 10 passes are not fresh proof for this source.
