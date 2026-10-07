@@ -28,11 +28,12 @@ export function criticalRuntimeEvidence(raw: any) {
 export class CriticalAcquisitionDriver extends RealRendererDriver {
   override readonly budget = new RunBudget(120000, 1800);
   override async step(): Promise<void> {
-    // Only the natural-flight acquisition batches two real animation frames.
-    // Count both against the original frame cap and retain native GPU completion.
+    // Only the natural-flight acquisition batches four real animation frames.
+    // Count every frame against the original cap and retain native GPU completion.
     // Single-tick event acquisition and all display proofs keep the 16ms step.
-    this.budget.step(); this.budget.step(); await this.drainNativeGpu();
-    await this.call('advance two controlled acquisition frames', () => this.page.clock.runFor(32));
+    for (let frame = 0; frame < 4; frame++) this.budget.step();
+    await this.drainNativeGpu();
+    await this.call('advance four controlled acquisition frames', () => this.page.clock.runFor(64));
   }
   async stepOne(): Promise<void> { await super.step(); }
   override async full(): Promise<any> {

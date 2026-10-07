@@ -38,7 +38,7 @@ Input sample → FlightInput.throttle → CampaignFlightController → advanceTh
 
 既存workflowの標準ubuntu-latestを使います。verify jobは既存34件とレバー4件、active-critical jobは警告12件・39状態を別実行します。警告suiteは25分、個別case12分の上限、jobは35分です。verify jobは40分上限です。新しい有料runner・サービスは使いません。
 
-既存34のartifact経路は維持します。追加4/12の原JSON・画像等は `supplemental-results` に分離し、新artifactを作らずjob logへgzipによる可逆圧縮後のbase64チャンクで記録します。FILE/CHUNK/END識別、原本と圧縮後それぞれのbyte数・SHA-256、原JSON-pointer参照を持ち、同じ内容hashの重複だけを参照化します。取得後に全チャンクを結合し、圧縮後のhashとgzip展開した原本のhashを両方照合するまで、回収済み証拠とは呼びません。欠落・打切りは失敗として残します。PR #9の最初の警告結果が223MBとなり、無圧縮ログの記録が長引いたため、原本bytesを変えず転送量を減らしました。
+既存34のartifact経路は維持します。追加4/12の原JSON・画像等は `supplemental-results` に分離します。レバー4件はjob logへgzipによる可逆圧縮後のbase64チャンクで記録します。警告12件は大容量logの接続取得失敗に対応して `fantasia-active-critical-verification` artifactに全記録を保存し、logには圧縮ファイルの復元参照と短い結果を出します。原本と圧縮後それぞれのbyte数・SHA-256、原JSON-pointer参照を持ち、同じ内容hashの重複だけを参照化します。取得後に圧縮後のhashとgzip展開した原本のhashを両方照合するまで、回収済み証拠とは呼びません。欠落・打切りは失敗として残します。PR #9の最初の警告結果が223MBとなり、無圧縮ログの記録が長引いたため、原本bytesを変えず転送量を減らしました。
 
 追加reportは4件/12件のregistryを別集計し、retry/skip/重複/欠落/壊れた添付/誤ったoutcome/欠けた観測値を合格にしません。警告はbefore/afterの実状態と文字geometryも再判定します。復活待機はcallerが明示した時だけ別phaseを許可し、既存34のplaying既定は変更しません。
 
@@ -64,4 +64,4 @@ READMEの統合済み見出しと由来検査の期待値を一致させまし�
 
 run `37697697512` は既存34/34・レバー4/4・単体445/445と各reportが成功しました。警告suiteは25分4秒で失敗終了し、25分の全体上限への到達が疑われます。記録ログの取得もTransport closedで繰り返し失敗したため、JSON添付自体も原本bytesをgzipで可逆圧縮し、reportで展開・元の全項目を検証します。圧縮データ破損・不正JSON・失敗outcomeの否定検査を追加しました。
 
-自然な状態取得だけは実animation frameを2frame（32ms）ずつ進め、両方を既存1,800frame上限に数えます。GPU完了をnative fenceで待ち、持続する条件の取得後は実16msの1frameを描画してから元の表示検査へ引き渡します。1tickの爆弾event取得は従来の16msのままです。120秒、1,800frame、25分、45秒/120step、39状態のoracleと表示検査、アプリのGPU queue、安全中断条件を緩めません。通常時計の性能測定とは扱いません。
+自然な状態取得だけは実animation frameを4frame（64ms）ずつ進め、全frameを既存1,800frame上限に数えます。GPU完了をnative fenceで待ち、持続する条件の取得後は実16msの1frameを描画してから元の表示検査へ引き渡します。1tickの爆弾event取得は従来の16msのままです。120秒、1,800frame、25分、45秒/120step、39状態のoracleと表示検査、アプリのGPU queue、安全中断条件を緩めません。通常時計の性能測定とは扱いません。2frame版のrun `37701082485` でも全体上限付近で失敗し大容量logの取得ができなかったため、4frame版とダウンロード可能な記録経路へ進めています。

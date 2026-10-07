@@ -53,7 +53,7 @@ for (const profile of profiles) test.describe(`active-critical-${profile.id}`, (
           failureClass: outcome === 'passed' ? null : stage.startsWith('acquisition:') ? 'state-not-reached-or-runtime-interruption' : stage.startsWith('display:') ? 'active-display-or-scroll-proof-failed' : 'startup-or-text-enlargement-failed',
           classification: 'controlled-clock-functional', runtimeMocked: false, rendererMocked: false, applicationQueueModified: false,
           stateInjected: false, warningDomFabricated: false, physicalDeviceAcceptance: 'unverified', performanceAcceptance: 'not-measured', releaseReady: false,
-          acquisitionBudget: { wallMsPerState: 120000, maxFramesPerState: 1800, probeClockMs: 32, eventProbeClockMs: 16 }, displayBudget: { wallMsPerState: 45000, maxStepsPerState: 120 },
+          acquisitionBudget: { wallMsPerState: 120000, maxFramesPerState: 1800, probeClockMs: 64, eventProbeClockMs: 16 }, displayBudget: { wallMsPerState: 45000, maxStepsPerState: 120 },
           backend, evidence, startup: startup.evidence,
           acquisitions: acquisitions.map(d => ({ steps: d.budget.steps, createdFences: d.createdFences, releasedFences: d.releasedFences, pageErrors: d.pageErrors, observations: d.evidence })),
           displays: displays.map(d => ({ steps: d.budget.steps, createdFences: d.createdFences, releasedFences: d.releasedFences, pageErrors: d.pageErrors, observations: d.evidence })),

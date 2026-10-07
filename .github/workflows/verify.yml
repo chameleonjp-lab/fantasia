@@ -50,6 +50,13 @@ jobs:
       - id: critical
         name: Twelve active-warning cases with 39 state observations
         run: npx playwright test --config=playwright.active-critical.config.ts
-      - name: Validate warning evidence and preserve original bytes in job log
+      - name: Validate warnings and index complete downloadable evidence
         if: always()
         run: node --import tsx scripts/report-supplemental-acceptance.ts active-critical
+      - name: Preserve complete warning evidence for download
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fantasia-active-critical-verification
+          path: supplemental-results/
+          if-no-files-found: error

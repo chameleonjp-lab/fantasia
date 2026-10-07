@@ -150,14 +150,14 @@ test('browser-side acquisition projection retains real targeting activation and 
   assert.equal(JSON.stringify(raw), before); assert.equal(driver.budget.steps, 0);
 });
 
-test('acquisition counts both native frames, keeps single-event steps, and never extends the frame cap', async () => {
+test('acquisition counts all four native frames, keeps single-event steps, and never extends the frame cap', async () => {
   const calls: unknown[] = [];
   const page = { on() {}, clock: { async runFor(ms: number) { calls.push(ms); } } } as any;
   const driver = new CriticalAcquisitionDriver(page);
   driver.drainNativeGpu = async () => { calls.push('native GPU completion'); };
-  await driver.step(); assert.equal(driver.budget.steps, 2);
-  await driver.stepOne(); assert.equal(driver.budget.steps, 3);
-  assert.deepEqual(calls, ['native GPU completion', 32, 'native GPU completion', 16]);
+  await driver.step(); assert.equal(driver.budget.steps, 4);
+  await driver.stepOne(); assert.equal(driver.budget.steps, 5);
+  assert.deepEqual(calls, ['native GPU completion', 64, 'native GPU completion', 16]);
   driver.budget.steps = 1799; calls.length = 0;
   await assert.rejects(driver.step(), /animation-step budget exceeded/);
   assert.deepEqual(calls, []); assert.equal(driver.budget.maxSteps, 1800); assert.equal(driver.budget.wallMs, 120000);

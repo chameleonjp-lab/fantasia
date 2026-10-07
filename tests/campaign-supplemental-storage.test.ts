@@ -37,3 +37,32 @@ test('supplemental job log restores exact raw bytes after lossless compression a
     assert.equal(summary.status, 'not-passed'); assert.equal(summary.releaseReady, false); assert.deepEqual(summary.raw, ref);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test('large warning evidence stays byte-exact in downloadable files while its job log remains bounded', async () => {
+  const dir = await mkdtemp(resolve(tmpdir(), 'supplemental-artifact-'));
+  try {
+    const root = resolve(dir, 'supplemental-results'); await mkdir(root);
+    const bytes = Buffer.from(JSON.stringify({ suites: [], note: '全記録を維持', diagnostics: 'actual source geometry\n'.repeat(50000) }) + '\r\n');
+    await writeFile(resolve(root, 'active-critical-results.json'), bytes);
+    const result = spawnSync(process.execPath, ['--import', resolve('node_modules/tsx/dist/loader.mjs'),
+      resolve('scripts/report-supplemental-acceptance.ts'), 'active-critical'], { cwd: dir, encoding: 'utf8' });
+    assert.equal(result.status, 1, result.stderr); assert.ok(result.stdout.length < 10000);
+    assert.equal(result.stdout.includes('FANTASIA_EVIDENCE_CHUNK '), false);
+    const lines = result.stdout.trim().split('\n'), refs = lines.filter(l => l.startsWith('FANTASIA_EVIDENCE_FILE ')).map(l => JSON.parse(l.slice(23)));
+    const raw = refs.find(r => r.label === 'active-critical-results.json'); assert.ok(raw);
+    for (const ref of refs) {
+      assert.equal(ref.storage, 'artifact'); assert.equal(ref.encoding, 'binary'); assert.equal(ref.compression, 'gzip');
+      assert.match(ref.path, /^evidence-bytes\/[0-9a-f]{64}\.gz$/); assert.equal(ref.chunks, 0);
+      assert.ok(lines.includes(`FANTASIA_EVIDENCE_END ${ref.sha256}`));
+      const encoded = await readFile(resolve(root, ref.path)), restored = gunzipSync(encoded);
+      const digest = (b: Buffer) => createHash('sha256').update(b).digest('hex');
+      assert.equal(encoded.length, ref.encodedBytes); assert.equal(digest(encoded), ref.encodedSha256);
+      assert.equal(restored.length, ref.bytes); assert.equal(digest(restored), ref.sha256);
+      if (ref.label === 'active-critical-results.json') assert.deepEqual(restored, bytes);
+    }
+    const summary = JSON.parse(await readFile(resolve(root, 'active-critical-summary.json'), 'utf8'));
+    assert.equal(summary.status, 'not-passed'); assert.equal(summary.counts.expected, 12);
+    assert.equal(summary.releaseReady, false); assert.deepEqual(summary.raw, raw);
+    assert.deepEqual(await readFile(resolve(root, 'active-critical-results.json')), bytes);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});
