@@ -2,7 +2,7 @@
 
 ## 統合後の位置づけ（2026-10-07）
 
-この文書の以下の本文は、警告検査だけを独立候補として作成した時点の履歴です。共通UI・速度レバー候補への統合後は、結果・添付の保存先が `supplemental-results/active-critical-results.json` と `supplemental-results/active-critical` になり、既存 `verify.yml` の独立 `active-critical` jobへ接続済みです。追加の原bytesは無圧縮base64チャンク・byte数・SHA-256・復元索引でjob logへ保持します。
+この文書の以下の本文は、警告検査だけを独立候補として作成した時点の履歴です。共通UI・速度レバー候補への統合後は、結果・添付の保存先が `supplemental-results/active-critical-results.json` と `supplemental-results/active-critical` になり、既存 `verify.yml` の独立 `active-critical` jobへ接続済みです。PR #9の記録容量修正後は、警告のJSON添付とjob logをgzipで可逆圧縮し、圧縮前後のbyte数・SHA-256・復元索引を保持します。
 
 統合後の現行構成と検査境界は `COMMON_UI_THROTTLE_INTEGRATION.md` および実workflow/configを参照してください。以下の「製品不変」「workflowを含まない」「test-results出力」は独立候補時点の範囲を説明するもので、統合後の現状説明ではありません。新候補の実ブラウザーCIはまだ実行しておらず、定義・配線を実行成功とは扱いません。
 

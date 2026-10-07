@@ -27,6 +27,14 @@ export function criticalRuntimeEvidence(raw: any) {
 
 export class CriticalAcquisitionDriver extends RealRendererDriver {
   override readonly budget = new RunBudget(120000, 1800);
+  override async step(): Promise<void> {
+    // Only the natural-flight acquisition batches two real animation frames.
+    // Count both against the original frame cap and retain native GPU completion.
+    // Single-tick event acquisition and all display proofs keep the 16ms step.
+    this.budget.step(); this.budget.step(); await this.drainNativeGpu();
+    await this.call('advance two controlled acquisition frames', () => this.page.clock.runFor(32));
+  }
+  async stepOne(): Promise<void> { await super.step(); }
   override async full(): Promise<any> {
     // Project inside the browser before transport. Acquisition still reads the
     // actual state each native step; the separate atomic display capture keeps
@@ -56,17 +64,25 @@ export async function acquireCritical(d: CriticalAcquisitionDriver, kind: Critic
     }
     for (let frame = 0; frame < 1800; frame++) {
       if (criticalStateActive(kind, last)) {
+        // Present persistent conditions in a fresh real renderer frame before
+        // handing over to the unchanged display driver. Bomb events use their
+        // original one-frame probe so an edge cannot disappear between reads.
+        if (kind !== 'bomb-announcement') {
+          await d.stepOne(); last = await d.full();
+          if (!criticalStateActive(kind, last)) continue;
+        }
         const event = last.campaign.events.find((e: any) => e.kind === 'shot' && e.weapon === 'bomb' && e.sourceRef?.id === last.campaign.player.id);
         const witness: CriticalWitness = { kind, runId: last.campaign.runId, tick: last.tick, activeTicks: last.activeTicks, ...(event ? { eventId: event.id } : {}) };
         reached = true;
-        d.evidence.push({ label: 'critical-native-acquisition', kind, frames: frame, key, before: criticalRuntimeEvidence(before), reached: criticalRuntimeEvidence(last), witness, audit: await d.audit() });
+        d.evidence.push({ label: 'critical-native-acquisition', kind, frames: d.budget.steps, probes: frame, key, before: criticalRuntimeEvidence(before), reached: criticalRuntimeEvidence(last), witness, audit: await d.audit() });
         expect(last.performanceInterrupted).toBe(false); expect(last.fatalLogicError).toBeNull(); expect(d.pageErrors).toEqual([]);
         return witness;
       }
       if (last.phase === 'respawning' && down) { await d.page.keyboard.up(key!); down = false; }
       if (!['playing', 'respawning'].includes(last.phase)) throw new Error(`Critical acquisition interrupted: ${kind}, phase=${last.phase}`);
       if (last.phase === 'respawning' && !['respawning', 'protection'].includes(kind)) throw new Error(`Critical acquisition lost aircraft before ${kind}`);
-      await d.step(); last = await d.full();
+      if (kind === 'bomb-announcement') await d.stepOne(); else await d.step();
+      last = await d.full();
       if (last.fatalLogicError || last.performanceInterrupted || last.render?.queue?.failure || d.pageErrors.length) throw new Error(`Critical acquisition encountered a runtime/native-renderer failure: ${kind}`);
     }
     throw new Error(`Critical state not naturally reached within 1800 frames: ${kind}`);

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { RealRendererDriver } from './real-driver';
 import { CriticalAcquisitionDriver, acquireCritical, verifyActiveCritical } from './active-critical-driver';
 import type { CriticalKind } from './active-critical-contract';
+import { gzipSync } from 'node:zlib';
 
 const profiles = [
   { id: 'small-portrait', width: 320, height: 568, dpr: 2, textScale: 1 },
@@ -47,16 +48,16 @@ for (const profile of profiles) test.describe(`active-critical-${profile.id}`, (
         }
         stage = 'complete'; outcome = 'passed';
       } finally {
-        await info.attach('active-critical-evidence', { contentType: 'application/json', body: JSON.stringify({
+        await info.attach('active-critical-evidence', { contentType: 'application/gzip', body: gzipSync(Buffer.from(JSON.stringify({
           schemaVersion: 1, profile, mode, sequence, stage, outcome,
           failureClass: outcome === 'passed' ? null : stage.startsWith('acquisition:') ? 'state-not-reached-or-runtime-interruption' : stage.startsWith('display:') ? 'active-display-or-scroll-proof-failed' : 'startup-or-text-enlargement-failed',
           classification: 'controlled-clock-functional', runtimeMocked: false, rendererMocked: false, applicationQueueModified: false,
           stateInjected: false, warningDomFabricated: false, physicalDeviceAcceptance: 'unverified', performanceAcceptance: 'not-measured', releaseReady: false,
-          acquisitionBudget: { wallMsPerState: 120000, maxFramesPerState: 1800 }, displayBudget: { wallMsPerState: 45000, maxStepsPerState: 120 },
+          acquisitionBudget: { wallMsPerState: 120000, maxFramesPerState: 1800, probeClockMs: 32, eventProbeClockMs: 16 }, displayBudget: { wallMsPerState: 45000, maxStepsPerState: 120 },
           backend, evidence, startup: startup.evidence,
           acquisitions: acquisitions.map(d => ({ steps: d.budget.steps, createdFences: d.createdFences, releasedFences: d.releasedFences, pageErrors: d.pageErrors, observations: d.evidence })),
           displays: displays.map(d => ({ steps: d.budget.steps, createdFences: d.createdFences, releasedFences: d.releasedFences, pageErrors: d.pageErrors, observations: d.evidence })),
-        }, null, 2) });
+        }, null, 2))) });
       }
     });
   }

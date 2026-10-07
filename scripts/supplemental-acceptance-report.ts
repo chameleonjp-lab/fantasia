@@ -1,6 +1,7 @@
 import {criticalStateActive,criticalText,fixedCriticalTextIssues,FIXED_INSTRUMENTS,type CriticalKind} from '../browser-acceptance/active-critical-contract';
 import {detailGeometrySnapshot,textGeometryIssues,type TextRegion} from '../browser-acceptance/text-geometry';
 import {createHash} from 'node:crypto';
+import {gunzipSync} from 'node:zlib';
 type Json=Record<string,any>;
 export type SupplementalSuite='throttle'|'active-critical';
 export const throttleIds=['throttle-normal','throttle-easy','throttle-save','throttle-recovery'];
@@ -36,7 +37,12 @@ export async function supplementalReport(raw:any,suite:SupplementalSuite,read:(p
         if(typeof a.body!=='string'&&typeof a.path!=='string')throw Error('No evidence bytes');
         const bytes=typeof a.body==='string'?Buffer.from(a.body,'base64'):await read(a.path);
         refs.push({name:a.name,bytes:bytes.length,sha256:hash(bytes),...(a.path?{path:a.path}:{rawPointer:`${pointer}/specs/${si}/tests/${ti}/results/0/attachments/${i}/body`,encoding:'base64'})});
-        if(a.name===name){if(a.contentType!=='application/json')throw Error('Wrong content type');evidence=JSON.parse(bytes.toString('utf8'));}
+        if(a.name===name){
+          if(!['application/json','application/gzip'].includes(a.contentType))throw Error('Wrong content type');
+          const payload=a.contentType==='application/gzip'?gunzipSync(bytes):bytes;
+          if(a.contentType==='application/gzip')Object.assign(refs.at(-1)!,{compression:'gzip',payloadContentType:'application/json',decodedBytes:payload.length,decodedSha256:hash(payload)});
+          evidence=JSON.parse(payload.toString('utf8'));
+        }
       }catch(e){errors.push(`Unreadable attachment: ${String(e)}`);}
       if(matches.length!==1||!evidence)errors.push('Exactly one readable evidence required');
       if(evidence) {
