@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Campaign, campaignScore, campaignStateHash, formationPosition, formatCampaignTicks, terrainHeight, validateCampaignState } from '../src/campaign';
-import { ACTOR_STATS, classDamage } from '../src/campaign-config';
+import { ACTOR_STATS, classDamage, DEFAULT_CAMPAIGN_FEATURES } from '../src/campaign-config';
 import { ActorGrid, allocateEffectiveDamage, applyDamages, attackEligible, collectCombat, commitActorFire, commitPlayerFire, entityRef, moveActors, predictBombImpact, projectileActorHit, projectileActorHitOracle, selectTarget, tickPlayerAmmo } from '../src/campaign-combat';
 import { aircraftTerrainContact, sweptPlayerHit } from '../src/campaign-airframe';
 import { distanceSquared, laneBasis, radialPosition, sweepObstacles } from '../src/campaign-terrain';
-import type { CampaignActor, CampaignEvent, CampaignMode, CampaignProjectile, CampaignState, Vec } from '../src/campaign-types';
+import type { CampaignActor, CampaignEvent, CampaignFeatures, CampaignMode, CampaignProjectile, CampaignState, Vec } from '../src/campaign-types';
 
 function emit(state: CampaignState) {
   return (event: Omit<CampaignEvent, 'id' | 'eventId' | 'tick'>): CampaignEvent => {
@@ -13,8 +13,8 @@ function emit(state: CampaignState) {
     state.events.push(result); return result;
   };
 }
-function isolated(mode: CampaignMode = 'normal'): Campaign {
-  const run = new Campaign(mode);
+function isolated(mode: CampaignMode = 'normal', features: CampaignFeatures = DEFAULT_CAMPAIGN_FEATURES): Campaign {
+  const run = new Campaign(mode, 20261005, features);
   run.state.actors = run.state.actors.filter(a => a.kind === 'turret');
   for (const actor of run.state.actors) { actor.hp = 0; actor.phase = 'idle'; }
   run.state.player.velocity = { x: 0, y: 0, z: 0 };
@@ -223,7 +223,7 @@ test('120 blocked ticks replan to the fixed road without teleporting or crossing
 });
 
 test('a dragon telegraph triggers bounded shelter retreat and returns to the assigned site after danger', () => {
-  const run = isolated(), soldier = actor(run, 'friendly', 'bow'), dragon = actor(run, 'enemy', 'dragon', 1180);
+  const run = isolated('normal', { dragonFireballs: true }), soldier = actor(run, 'friendly', 'bow'), dragon = actor(run, 'enemy', 'dragon', 1180);
   dragon.phase = 'telegraph'; dragon.fireAtTick = 54; dragon.targetRef = entityRef(soldier);
   moveActors(run.state);
   assert.ok(soldier.coverPosition); assert.equal(soldier.coverUntilTick, 120);
@@ -304,7 +304,7 @@ test('a bomb may impact before the end of its final lifetime interval, but exact
 });
 
 test('dragon fireball direct damage and 10m splash use one event per actor and never hit its own team', () => {
-  const run = isolated(), direct = actor(run, 'friendly', 'sword'), splash = actor(run, 'friendly', 'sword', 1005), immune = actor(run, 'enemy', 'sword', 1002);
+  const run = isolated('normal', { dragonFireballs: true }), direct = actor(run, 'friendly', 'sword'), splash = actor(run, 'friendly', 'sword', 1005), immune = actor(run, 'enemy', 'sword', 1002);
   for (const unit of [splash, immune]) { unit.position.y = direct.position.y; unit.previous = { ...unit.position }; }
   run.state.projectiles.push(projectile(run, 'fireball', { x: 990, y: direct.position.y, z: 0 }, { x: 1200, y: 0, z: 0 }, { damage: 22, fromPlayer: false, sourceClass: 'dragon', sourceRef: { id: 999, generation: 1 }, team: 'enemy', ttl: 300 }));
   const pending = collectCombat(run.state, emit(run.state)); applyDamages(run.state, pending.damages, emit(run.state));

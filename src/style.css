@@ -1128,3 +1128,82 @@ p {
   .fantasia-shell #announcement { top: calc(118px + var(--safe-top)) !important; bottom: auto; left: auto; right: 12px; transform: none; width: 180px; font-size: 10px; text-align: right; }
   .fantasia-shell #warning { bottom: calc(88px + var(--safe-bottom)); font-size: 10px; }
 }
+
+/* Translation preserves each measured readout's size, text flow and existing
+   transforms. The scene removes its offsets before a fresh DOM measurement. */
+.fantasia-shell [style*="--campaign-hud-x"] {
+  translate: var(--campaign-hud-x) var(--campaign-hud-y);
+}
+/* Keep both full-size instrument values readable when text grows to 200%. */
+.fantasia-shell .instrument { flex-wrap: wrap; }
+.fantasia-shell .campaign-site[style*="--campaign-site-x"] {
+  translate: var(--campaign-site-x) var(--campaign-site-y);
+}
+
+/* Preserve the measured 44px utility targets while putting each tally's number
+   beside its two labels. The former 64px stack crowded the landscape sight. */
+@media (orientation: landscape) and (max-height: 600px), (max-width: 360px) and (orientation: portrait) {
+  .fantasia-shell .hud-top { top: max(8px, env(safe-area-inset-top)); }
+  .fantasia-shell .time-block { padding-block: 0; }
+  .fantasia-shell .targets { padding-block: 0; }
+  .fantasia-shell .targets .target-tally { display: grid; grid-template-columns: auto auto; gap: 2px 4px; }
+  .fantasia-shell .target-tally > span { grid-column: 1; grid-row: 1; }
+  .fantasia-shell .target-tally > small { grid-column: 1; grid-row: 2; }
+  .fantasia-shell .target-tally > b { grid-column: 2; grid-row: 1 / span 2; align-self: center; }
+}
+
+/* Narrow portrait leaves both sight and aircraft-center lanes clear by moving
+   elapsed-time text out of the compact tally bar. Full-size cards keep four
+   plus three rows; the radar and unchanged readouts use measured open slots.
+   Text may wrap; no labels, font sizes, or touch-target dimensions are removed. */
+@media (max-width: 360px) and (orientation: portrait) {
+  .fantasia-shell .campaign-sites { row-gap: 0; }
+  .fantasia-shell .hud-top {
+    top: calc(8px + var(--safe-top));
+    left: max(12px, env(safe-area-inset-left));
+  }
+  .fantasia-shell .hud-top .time-block {
+    position: absolute; top: 160px; left: calc(100% - 110px); width: 110px;
+    flex: none;
+  }
+  .fantasia-shell .flight-data { display: contents; }
+  .fantasia-shell .flight-data > * {
+    position: absolute; margin: 0;
+    left: max(8px, env(safe-area-inset-left)); width: 94px;
+  }
+  .fantasia-shell .health-label { top: calc(238px + var(--safe-top)); }
+  .fantasia-shell .health-track { top: calc(263px + var(--safe-top)); width: 118px; }
+  .fantasia-shell .instrument { top: calc(276px + var(--safe-top)); }
+  .fantasia-shell .wingmen {
+    top: calc(177px + var(--safe-top)); left: calc(75% - 3px); width: calc(25% - 9px);
+  }
+  .fantasia-shell .campaign-limit,
+  .fantasia-shell .score-readout,
+  .fantasia-shell .ammo {
+    left: calc(50% - 63px); width: 114px;
+  }
+  .fantasia-shell .campaign-limit { top: calc(50% + 13.5vmin + 14px); }
+  .fantasia-shell .score-readout { top: calc(50% + 13.5vmin + 30px); }
+  .fantasia-shell .ammo { top: calc(50% + 13.5vmin + 48px); }
+  .fantasia-shell #campaign-threat { width: 114px; }
+  #app.fantasia-shell #announcement {
+    top: calc(50% + 13.5vmin + 128px) !important; bottom: auto;
+    left: calc(50% - 63px); width: 114px; max-width: 114px;
+    transform: none; text-align: left; margin: 0;
+  }
+  #app.fantasia-shell #flight-tip {
+    top: calc(238px + var(--safe-top)); bottom: auto;
+    left: auto; right: max(8px, env(safe-area-inset-right)); width: 94px; max-width: 94px;
+    margin: 0;
+  }
+}
+
+/* Measure/draw the actual first-flight HUD during preparation without exposing
+   it or its controls. Keep normal geometry: display/visibility hiding would
+   make the layout adapter skip these boxes. main.ts also sets inert/aria-hidden. */
+#app[data-screen="preparing"] #hud,
+#app[data-screen="preparing"] #markers,
+#app[data-screen="preparing"] #announcement {
+  opacity: 0;
+  pointer-events: none;
+}

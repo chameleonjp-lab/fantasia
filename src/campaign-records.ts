@@ -1,4 +1,5 @@
 import type { CampaignResult } from './campaign-types';
+import { SUSPENDED_CAMPAIGN_RULES_VERSION } from './campaign-config';
 
 export const CAMPAIGN_RECORDS_KEY = 'fantasia-records-v1';
 export interface RecordGroup {
@@ -40,7 +41,9 @@ function isBetter(next: CampaignRecord, current: CampaignRecord | null): boolean
     || (next.recordTicks === current.recordTicks && next.score > current.score);
 }
 function candidate(result: CampaignResult, pauseCount: number, interrupted: boolean): CampaignRecord | null {
-  if (result.status !== 'victory' || interrupted) return null;
+  // The temporary attack suspension changes difficulty. It must neither enter
+  // the original comparison group nor create a persistent/session-only best.
+  if (result.status !== 'victory' || interrupted || result.rulesVersion === SUSPENDED_CAMPAIGN_RULES_VERSION) return null;
   const record: CampaignRecord = {
     mode: result.mode, rulesVersion: result.rulesVersion, mapVersion: result.mapVersion,
     seed: result.seed, startHeading: result.startHeading,

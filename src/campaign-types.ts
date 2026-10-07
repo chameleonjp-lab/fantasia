@@ -1,6 +1,7 @@
 /** Authoritative, serializable 60 Hz campaign state. No rendering objects. */
 export interface Vec { x: number; y: number; z: number }
 export type CampaignMode = 'easy' | 'normal';
+export interface CampaignFeatures { readonly dragonFireballs: boolean }
 export type CampaignTeam = 'friendly' | 'enemy';
 export type SiteOwner = CampaignTeam | 'neutral';
 export type GroundClass = 'sword' | 'bow' | 'mage' | 'cavalry';
@@ -83,6 +84,7 @@ export interface CampaignResult {
 }
 export interface CampaignState {
   runId: string; rulesVersion: string; mapVersion: string; seed: number; rngState: number;
+  readonly features: CampaignFeatures;
   mode: CampaignMode; startHeading: number; status: CampaignStatus;
   simTick: number; activeTicks: number; respawnPenaltyTicks: number; livesRemaining: number;
   player: CampaignPlayer; sites: CampaignSite[]; actors: CampaignActor[];
