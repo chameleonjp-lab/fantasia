@@ -22,5 +22,5 @@ test('K hero, camera, flight, shared dialog and renderer lifecycle remain pinned
   }
   const readme = readFileSync('README.md', 'utf8');
   assert.ok(readme.startsWith('# fantasia\nファンタジア\n'));
-  assert.ok(readme.includes('速度調整レバー（統合待ち）'));
+  assert.ok(readme.includes('速度調整レバー（共通UI候補）'));
 });
