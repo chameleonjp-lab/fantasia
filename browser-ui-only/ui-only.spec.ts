@@ -79,15 +79,30 @@ async function checkGeometry(page: Page, selector: string) {
   const result = await page.evaluate(scopeSelector => {
     const scope = document.querySelector<HTMLElement>(scopeSelector);
     if (!scope) throw new Error(`Missing geometry scope ${scopeSelector}`);
+    const visibleRect = (element: HTMLElement) => {
+      const own = element.getBoundingClientRect();
+      const rect = { left: own.left, top: own.top, right: own.right, bottom: own.bottom };
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent), box = parent.getBoundingClientRect();
+        const left = box.left + parent.clientLeft, top = box.top + parent.clientTop;
+        const right = left + parent.clientWidth, bottom = top + parent.clientHeight;
+        if (style.overflowX !== 'visible') { rect.left = Math.max(rect.left, left); rect.right = Math.min(rect.right, right); }
+        if (style.overflowY !== 'visible') { rect.top = Math.max(rect.top, top); rect.bottom = Math.min(rect.bottom, bottom); }
+      }
+      rect.left = Math.max(0, rect.left); rect.top = Math.max(0, rect.top);
+      rect.right = Math.min(innerWidth, rect.right); rect.bottom = Math.min(innerHeight, rect.bottom);
+      return rect.right - rect.left > 1 && rect.bottom - rect.top > 1 ? rect : null;
+    };
     const visible = (element: HTMLElement) => {
       const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
-      return !element.hidden && style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0 && !element.closest('[hidden]');
+      return !element.hidden && style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0 && !element.closest('[hidden]') && visibleRect(element) !== null;
     };
     const targets = [...scope.querySelectorAll<HTMLElement>('button:not(.preview-control), input[type="range"], select, summary, [role="slider"], label:has(> input[type="radio"])')].filter(visible);
     const small = targets.filter(element => { const rect = element.getBoundingClientRect(); return rect.width < 44 || rect.height < 44; }).map(element => element.id || element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 32));
     const overlaps: string[] = [];
     for (let i = 0; i < targets.length; i++) for (let j = i + 1; j < targets.length; j++) {
-      const a = targets[i].getBoundingClientRect(), b = targets[j].getBoundingClientRect();
+      const a = visibleRect(targets[i]), b = visibleRect(targets[j]);
+      if (!a || !b) continue;
       const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
       if (w > 1 && h > 1) overlaps.push(`${targets[i].id || targets[i].textContent?.trim()} × ${targets[j].id || targets[j].textContent?.trim()}`);
     }
@@ -353,7 +368,14 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   await page.setViewportSize({ width: 320, height: 568 });
   let fixture = await paintedFixture(page, 'easy', 'outside');
   expect(fixture.screen).toBe('playing');
-  await expect(page.locator('#hud')).toBeVisible(); await expect(page.locator('#normal-controls')).toBeHidden();
+  const hudState = await page.evaluate(() => {
+    const hud = document.querySelector<HTMLElement>('#hud'), app = document.querySelector<HTMLElement>('#app');
+    const read = (window as any).__fantasiaReadState?.(false);
+    return { hidden: hud?.hidden, screen: app?.dataset.screen, engineScreen: read?.screen,
+      graphicsReady: read?.graphicsReady, renderStatus: read?.renderStatus, drawCalls: read?.render?.drawCalls };
+  });
+  expect(hudState.hidden, `fixed HUD screen state ${JSON.stringify(hudState)}`).toBe(false);
+  await expect(page.locator('#normal-controls')).toBeHidden();
   await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
   await expect(page.locator('#warning')).toContainText('作戦圏へ戻って');
   await expect(page.locator('#campaign-threat')).toContainText('砲台の魔法');
