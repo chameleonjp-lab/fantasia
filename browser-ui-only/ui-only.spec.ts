@@ -1,7 +1,31 @@
-import { expect, test, type Page, type TestInfo } from '@playwright/test';
+import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 
 type Timings = { name: string; setupMs: number; tourMs: number; captureMs: number };
+type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn'; priority: 0 | 4 };
+type TypographySample = { key: string; selector: string; basePx: number; inlineValue?: string; inlinePriority?: string; inlineBefore?: string; text: string; parent?: string; appliedPx?: number };
 const timings: Timings[] = [];
+
+const HUD_CASES: HudCase[] = [
+  { name: 'hud-easy-outside-small-portrait-text-200-priority-0.png', width: 320, height: 568, mode: 'easy', alert: 'outside', priority: 0 },
+  { name: 'hud-easy-outside-small-portrait-text-200-priority-4.png', width: 320, height: 568, mode: 'easy', alert: 'outside', priority: 4 },
+  { name: 'hud-normal-protected-small-landscape-text-200-priority-0.png', width: 568, height: 320, mode: 'normal', alert: 'protected', priority: 0 },
+  { name: 'hud-normal-protected-small-landscape-text-200-priority-4.png', width: 568, height: 320, mode: 'normal', alert: 'protected', priority: 4 },
+  { name: 'hud-normal-low-warning-small-landscape-text-200-priority-4.png', width: 568, height: 320, mode: 'normal', alert: 'low', priority: 4 },
+  { name: 'hud-easy-clear-small-landscape-text-200-priority-0.png', width: 568, height: 320, mode: 'easy', alert: 'clear', priority: 0 },
+  { name: 'hud-easy-clear-small-landscape-text-200-priority-4.png', width: 568, height: 320, mode: 'easy', alert: 'clear', priority: 4 },
+  { name: 'hud-easy-warning-small-landscape-text-200-priority-4.png', width: 568, height: 320, mode: 'easy', alert: 'low', priority: 4 },
+  { name: 'hud-normal-respawn-small-portrait-text-200-priority-0.png', width: 320, height: 568, mode: 'normal', alert: 'respawn', priority: 0 },
+  { name: 'hud-normal-respawn-small-portrait-text-200-priority-4.png', width: 320, height: 568, mode: 'normal', alert: 'respawn', priority: 4 },
+];
+
+const TYPOGRAPHY_SELECTORS = [
+  '#hud', '#announcement', '#hud-mode', '.campaign-site[data-site]', '.campaign-site-number', '.campaign-site-owner',
+  '.campaign-site-state', '.campaign-site-force', '.campaign-site-wave', '.target-tally', '.target-tally > span',
+  '.target-tally > b', '.target-tally > small', '.time-block', '.health-label', '#health', '.health-track',
+  '.instrument', '#altitude', '#speed', '.wingmen', '#allies-count', '#reserves-count', '.campaign-limit',
+  '#remaining-time', '.score-readout', '#score', '.ammo', '#mg-ammo', '#cannon-ammo', '#campaign-threat',
+  '#warning', '#reload-status', '#respawn-status', '#flight-tip', '#loop-status', '#bomb-hint', '#fire', '#throttle',
+];
 
 async function setup(page: Page): Promise<number> {
   const start = performance.now();
@@ -61,6 +85,130 @@ async function act(page: Page, method: string, ...args: unknown[]) {
   return page.evaluate(async ({ method, args }) => await (window as any).__fantasiaUiOnlyTest[method](...args), { method, args });
 }
 
+async function typographySnapshot(page: Page) {
+  return page.evaluate(selectors => {
+    const samples = selectors.flatMap(selector => [...document.querySelectorAll<HTMLElement>(selector)].map((node, index) => {
+      const style = getComputedStyle(node), site = node.closest<HTMLElement>('[data-site]')?.dataset.site
+        ?? node.closest<HTMLElement>('[data-site-detail]')?.dataset.siteDetail;
+      const owner = node.id ? `#${node.id}` : site ? `site-${site}.${[...node.classList].join('.') || node.tagName.toLowerCase()}`
+        : `match-${index}.${[...node.classList].join('.') || node.tagName.toLowerCase()}`;
+      let parent = node.parentElement, parentPath = '';
+      while (parent && parentPath.split(' > ').length < 5) {
+        const name = parent.id ? `#${parent.id}` : parent.dataset.site ? `.campaign-site[data-site="${parent.dataset.site}"]`
+          : parent.dataset.campaignDetail ? `[data-campaign-detail="${parent.dataset.campaignDetail}"]`
+            : parent.classList[0] ? `.${parent.classList[0]}` : parent.tagName.toLowerCase();
+        parentPath = parentPath ? `${name} > ${parentPath}` : name;
+        parent = parent.parentElement;
+      }
+      return {
+        key: `${selector}::${owner}`, selector, basePx: parseFloat(style.fontSize) || 16,
+        inlineValue: node.style.getPropertyValue('font-size'), inlinePriority: node.style.getPropertyPriority('font-size'),
+        text: node.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) ?? '', parent: parentPath,
+      };
+    }));
+    return { viewport: { width: innerWidth, height: innerHeight }, samples };
+  }, TYPOGRAPHY_SELECTORS);
+}
+
+function compareTypography(expected: { samples: TypographySample[] }, actual: { samples: TypographySample[] }) {
+  const baseline = new Map(expected.samples.map(sample => [sample.key, sample]));
+  return actual.samples.map(sample => {
+    const reference = baseline.get(sample.key);
+    const appliedPx = (sample as TypographySample & { appliedPx?: number }).appliedPx;
+    return {
+      key: sample.key, selector: sample.selector, text: sample.text,
+      expectedBasePx: reference?.basePx ?? null, actualBasePx: sample.basePx,
+      freshInlineValue: reference?.inlineValue ?? null, actualInlineValue: sample.inlineValue ?? sample.inlineBefore ?? '',
+      matchesFreshBaseline: Boolean(reference && Math.abs(sample.basePx - reference.basePx) < 0.1),
+      expectedAppliedPx: reference ? reference.basePx * 2 : null, actualAppliedPx: appliedPx ?? null,
+      matchesExpected200: appliedPx === undefined || Boolean(reference && Math.abs(appliedPx - reference.basePx * 2) < 0.1),
+      referenceParent: reference?.parent ?? null, actualParent: sample.parent ?? null,
+    };
+  });
+}
+
+type AreaRect = { id?: string; x: number; y: number; width: number; height: number };
+
+function clippedArea(rect: AreaRect, bounds: AreaRect) {
+  const left = Math.max(rect.x, bounds.x), top = Math.max(rect.y, bounds.y);
+  const right = Math.min(rect.x + rect.width, bounds.x + bounds.width), bottom = Math.min(rect.y + rect.height, bounds.y + bounds.height);
+  return right > left && bottom > top ? { left, right, top, bottom } : null;
+}
+
+/** Exact rectangle-union area, so overlapping fixed reservations are counted once. */
+function rectangleUnionArea(rectangles: AreaRect[], bounds: AreaRect, gap = 0) {
+  const clipped = rectangles.flatMap(rect => {
+    const expanded = { x: rect.x - gap, y: rect.y - gap, width: rect.width + gap * 2, height: rect.height + gap * 2 };
+    const value = clippedArea(expanded, bounds);
+    return value ? [value] : [];
+  });
+  const xs = [...new Set(clipped.flatMap(rect => [rect.left, rect.right]))].sort((a, b) => a - b);
+  let total = 0;
+  for (let index = 0; index + 1 < xs.length; index++) {
+    const left = xs[index], right = xs[index + 1];
+    if (right <= left) continue;
+    const intervals = clipped.filter(rect => rect.left < right && rect.right > left)
+      .map(rect => [rect.top, rect.bottom] as const).sort((a, b) => a[0] - b[0]);
+    let covered = 0, start = Number.NaN, end = Number.NaN;
+    for (const [top, bottom] of intervals) {
+      if (Number.isNaN(start)) { start = top; end = bottom; }
+      else if (top <= end) end = Math.max(end, bottom);
+      else { covered += end - start; start = top; end = bottom; }
+    }
+    if (!Number.isNaN(start)) covered += end - start;
+    total += (right - left) * covered;
+  }
+  return total;
+}
+
+function campaignHudAreaEvidence(searchInput: any, sight: any, layout: any): any {
+  const bounds = searchInput?.bounds, canvas = searchInput?.canvas;
+  if (!bounds || !canvas || !sight || !layout?.radar?.rect || !Array.isArray(searchInput.obstacles)
+    || !Array.isArray(searchInput.panels)) return { status: 'unavailable', reason: 'incomplete measured search input' };
+  const radius = canvas.width < 360 ? 42 : 49;
+  const radar = { id: 'radar', width: layout.radar.rect.width, height: layout.radar.rect.height };
+  const items = [...searchInput.panels, ...(searchInput.movableControls ?? []), ...(searchInput.canvasLabels ?? []), radar];
+  const fixed = [...searchInput.obstacles,
+    { id: 'central-flight-lane', x: canvas.width / 2 - 42, y: canvas.height / 2 - 42, width: 84, height: 84 },
+    { ...sight, id: 'aim-and-reload-ring' }];
+  if (![...items, ...fixed, bounds].every(rect => [rect.x ?? 0, rect.y ?? 0, rect.width, rect.height].every(Number.isFinite) && rect.width > 0 && rect.height > 0)) {
+    return { status: 'invalid', reason: 'non-finite or non-positive measured rectangle', items, fixed, bounds };
+  }
+  const safeArea = bounds.width * bounds.height;
+  const requiredArea = items.reduce((sum, item) => sum + item.width * item.height, 0);
+  const fixedUnionAreaGap0 = rectangleUnionArea(fixed, bounds);
+  const fixedUnionAreaGap4 = rectangleUnionArea(fixed, bounds, 4);
+  const fixedNaiveAreaGap0 = fixed.reduce((sum, item) => {
+    const clipped = clippedArea(item, bounds); return sum + (clipped ? (clipped.right - clipped.left) * (clipped.bottom - clipped.top) : 0);
+  }, 0);
+  const fixedNaiveAreaGap4 = fixed.reduce((sum, item) => {
+    const clipped = clippedArea({ x: item.x - 4, y: item.y - 4, width: item.width + 8, height: item.height + 8 }, bounds);
+    return sum + (clipped ? (clipped.right - clipped.left) * (clipped.bottom - clipped.top) : 0);
+  }, 0);
+  const availableUpperBoundGap0 = safeArea - fixedUnionAreaGap0;
+  const availableUpperBoundGap4 = safeArea - fixedUnionAreaGap4;
+  return {
+    status: 'measured', bounds, safeArea, items, requiredArea,
+    necessaryPackingBound: {
+      status: requiredArea > availableUpperBoundGap0 + 0.5 ? 'impossible-even-at-zero-gap'
+        : requiredArea > availableUpperBoundGap4 + 0.5 ? 'impossible-at-product-gap-4' : 'area-alone-does-not-prove-impossibility',
+      note: 'required area is the sum of full-size mobile rectangles; available area subtracts the union of fixed blockers. Passing this necessary bound does not prove a valid packing.',
+    },
+    fixedObstacles: fixed,
+    fixedNaiveAreaGap0, fixedNaiveAreaGap4,
+    fixedUnionAreaGap0, fixedUnionAreaGap4,
+    overlapAreaDedupedGap0: fixedNaiveAreaGap0 - fixedUnionAreaGap0,
+    overlapAreaDedupedGap4: fixedNaiveAreaGap4 - fixedUnionAreaGap4,
+    availableUpperBoundGap0, availableUpperBoundGap4,
+    deficitGap0: Math.max(0, requiredArea - availableUpperBoundGap0),
+    deficitGap4: Math.max(0, requiredArea - availableUpperBoundGap4),
+    shortageGap0: requiredArea > availableUpperBoundGap0 + 0.5,
+    shortageGap4: requiredArea > availableUpperBoundGap4 + 0.5,
+    gap4Method: 'fixed-obstacle rectangles expanded by the product 4 CSS px clearance, clipped to bounds, then unioned; mobile item area is a lower bound',
+    radarRadius: radius,
+  };
+}
+
 async function capture(page: Page, info: TestInfo, name: string): Promise<number> {
   const start = performance.now();
   const body = await page.screenshot({ animations: 'disabled' });
@@ -76,7 +224,7 @@ async function record(name: string, setupMs: number, started: number, captureMs:
 }
 
 async function enlargeText(page: Page) {
-  return page.evaluate(() => {
+  return page.evaluate(selectors => {
     type SavedFont = { value: string; priority: string };
     const targetWindow = window as Window & { __fantasiaUiOnlyFontOverrides?: Map<HTMLElement, SavedFont> };
     const overrides = targetWindow.__fantasiaUiOnlyFontOverrides ?? new Map<HTMLElement, SavedFont>();
@@ -97,15 +245,19 @@ async function enlargeText(page: Page) {
       overrides.set(node, saved);
       node.style.setProperty('font-size', `${base * 2}px`, 'important');
     }
-    const sampleSelectors = ['#hud', '#announcement', '.health-label', '#health', '.instrument', '#speed', '.campaign-site-heading'];
-    const fontBaselines = sampleSelectors.flatMap(selector => {
-      const node = document.querySelector<HTMLElement>(selector);
-      if (!node) return [];
-      const basePx = measurements.find(item => item.node === node)?.base ?? parseFloat(getComputedStyle(node).fontSize);
-      return [{ selector, basePx, appliedPx: parseFloat(getComputedStyle(node).fontSize) }];
-    });
+    const fontBaselines = selectors.flatMap(selector => [...document.querySelectorAll<HTMLElement>(selector)].map((node, index) => {
+      const measured = measurements.find(item => item.node === node);
+      const site = node.closest<HTMLElement>('[data-site]')?.dataset.site ?? node.closest<HTMLElement>('[data-site-detail]')?.dataset.siteDetail;
+      const owner = node.id ? `#${node.id}` : site ? `site-${site}.${[...node.classList].join('.') || node.tagName.toLowerCase()}`
+        : `match-${index}.${[...node.classList].join('.') || node.tagName.toLowerCase()}`;
+      return {
+        key: `${selector}::${owner}`, selector, basePx: measured?.base ?? parseFloat(getComputedStyle(node).fontSize),
+        appliedPx: parseFloat(getComputedStyle(node).fontSize), inlineBefore: measured?.saved.value ?? '',
+        inlinePriorityBefore: measured?.saved.priority ?? '', text: node.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) ?? '',
+      };
+    }));
     return { nodeCount: nodes.length, fontBaselines, viewport: { width: innerWidth, height: innerHeight } };
-  });
+  }, TYPOGRAPHY_SELECTORS);
 }
 
 async function checkGeometry(page: Page, selector: string) {
@@ -272,6 +424,115 @@ async function repaintFixedFixture(page: Page) {
   return painted;
 }
 
+async function inspectAnnouncementReachability(page: Page, priority: number) {
+  return page.evaluate(priorityValue => {
+    const node = document.querySelector<HTMLElement>('#announcement');
+    const details = document.querySelector<HTMLElement>('#campaign-hud-details');
+    if (!node) return { ok: false, priority: priorityValue, reason: 'missing original #announcement node', glyphs: [], clipChain: [] };
+    const liveCount = document.querySelectorAll('#announcement').length;
+    const oldScrollTop = details?.scrollTop ?? 0;
+    const issues: string[] = [];
+    const innerBox = (element: HTMLElement) => {
+      const rect = element.getBoundingClientRect(), left = rect.left + element.clientLeft, top = rect.top + element.clientTop;
+      return { left, top, right: left + element.clientWidth, bottom: top + element.clientHeight };
+    };
+    const clipChain = [];
+    for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor), rect = ancestor.getBoundingClientRect();
+      clipChain.push({ id: ancestor.id || null, className: typeof ancestor.className === 'string' ? ancestor.className : '',
+        hidden: ancestor.hidden, display: style.display, visibility: style.visibility, opacity: style.opacity,
+        contentVisibility: style.contentVisibility, overflowX: style.overflowX, overflowY: style.overflowY,
+        clip: style.clip, clipPath: style.clipPath, contain: style.contain,
+        rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom },
+        contentBox: { left: rect.left + ancestor.clientLeft, top: rect.top + ancestor.clientTop,
+          right: rect.left + ancestor.clientLeft + ancestor.clientWidth, bottom: rect.top + ancestor.clientTop + ancestor.clientHeight } });
+    }
+    const firstNonVisible = clipChain.find(item => item.hidden || item.display === 'none'
+      || item.visibility === 'hidden' || item.visibility === 'collapse' || item.opacity === '0' || item.contentVisibility === 'hidden');
+    if (liveCount !== 1) issues.push(`expected one live announcement node, found ${liveCount}`);
+    if (firstNonVisible) issues.push(`announcement has non-visible ancestor ${firstNonVisible.id || firstNonVisible.className}`);
+    if (clipChain.some(item => item.clipPath !== 'none' || item.clip !== 'auto' || item.contain.split(/\s+/).includes('paint')))
+      issues.push('announcement has clip-path, legacy clip, or paint containment that this geometry check cannot resolve');
+    if (priorityValue < 1) {
+      if (!details || !details.contains(node)) issues.push('priority-0 live announcement is outside the permitted secondary detail viewport');
+      if (details && !['auto', 'scroll'].includes(getComputedStyle(details).overflowY)) issues.push('priority-0 detail viewport is not vertically scrollable');
+    } else if (details?.contains(node)) issues.push('priority-4 announcement depends on the secondary scroll viewport');
+
+    const glyphs: Array<{ index: number; character: string; whitespace: boolean; initialRect: any; testedScrollTop: number | null; visibleRect: any; visible: boolean; clips: string[] }> = [];
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+    let textNode: Node | null, characterIndex = 0;
+    const records: Array<{ index: number; character: string; whitespace: boolean; range: Range }> = [];
+    while ((textNode = walker.nextNode())) {
+      const text = textNode.textContent ?? '';
+      let offset = 0;
+      for (const character of Array.from(text)) {
+        const range = document.createRange(); range.setStart(textNode, offset); range.setEnd(textNode, offset + character.length);
+        records.push({ index: characterIndex++, character, whitespace: /^\s+$/u.test(character), range });
+        offset += character.length;
+      }
+    }
+    const visibleRectFor = (range: Range, allowCaret = false) => {
+      let rect = range.getBoundingClientRect(), geometry = 'glyph';
+      if ((rect.width <= 0 || rect.height <= 0) && allowCaret) {
+        const caret = range.cloneRange(); caret.collapse(true);
+        const caretRect = caret.getBoundingClientRect();
+        if (caretRect.height > 0) { rect = caretRect; geometry = 'whitespace caret'; }
+      }
+      if (rect.width <= 0 || rect.height <= 0) return { rect: null, clips: ['no glyph or whitespace-caret rectangle'], visible: false, geometry };
+      let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom;
+      const clips: string[] = [];
+      for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
+        const style = getComputedStyle(ancestor), box = innerBox(ancestor);
+        const name = ancestor.id || ancestor.className || ancestor.tagName.toLowerCase();
+        if (style.overflowX !== 'visible') {
+          if (left < box.left - 0.5 || right > box.right + 0.5) clips.push(`${name}:x`);
+          left = Math.max(left, box.left); right = Math.min(right, box.right);
+        }
+        if (style.overflowY !== 'visible') {
+          if (top < box.top - 0.5 || bottom > box.bottom + 0.5) clips.push(`${name}:y`);
+          top = Math.max(top, box.top); bottom = Math.min(bottom, box.bottom);
+        }
+      }
+      if (left < -0.5 || right > innerWidth + 0.5) clips.push('browser-viewport:x');
+      if (top < -0.5 || bottom > innerHeight + 0.5) clips.push('browser-viewport:y');
+      left = Math.max(0, left); top = Math.max(0, top); right = Math.min(innerWidth, right); bottom = Math.min(innerHeight, bottom);
+      const fullyVisible = clips.length === 0 && left <= rect.left + 0.5 && top <= rect.top + 0.5 && right >= rect.right - 0.5 && bottom >= rect.bottom - 0.5;
+      return { rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, clips, visible: fullyVisible, geometry };
+    };
+
+    for (const record of records) {
+      const initial = visibleRectFor(record.range, record.whitespace);
+      let testedScrollTop: number | null = null, result = initial;
+      if (priorityValue < 1 && details && initial.rect) {
+        const box = innerBox(details), maxScroll = Math.max(0, details.scrollHeight - details.clientHeight);
+        const startHeight = initial.rect.bottom - initial.rect.top;
+        const delta = initial.rect.top - box.top - (details.clientHeight - startHeight) / 2;
+        details.scrollTop = Math.max(0, Math.min(maxScroll, details.scrollTop + delta));
+        testedScrollTop = details.scrollTop;
+        result = visibleRectFor(record.range, record.whitespace);
+      }
+      const visible = result.visible;
+      if (!visible) issues.push(`character ${record.index} ${JSON.stringify(record.character)} is never fully visible${result.clips.length ? ` (${result.clips.join(',')})` : ''}`);
+      glyphs.push({ index: record.index, character: record.character, whitespace: record.whitespace,
+        initialRect: initial.rect, initialGeometry: initial.geometry, testedScrollTop, visibleRect: result.rect,
+        visibleGeometry: result.geometry, visible, clips: result.clips });
+    }
+    if (details) details.scrollTop = oldScrollTop;
+    const allGlyphsVisible = glyphs.length > 0 && glyphs.every(glyph => glyph.visible);
+    if (!glyphs.length) issues.push('announcement contains no measurable characters');
+    const visibleBox = visibleRectFor((() => { const range = document.createRange(); range.selectNodeContents(node); return range; })());
+    return { ok: issues.length === 0 && allGlyphsVisible, priority: priorityValue, liveCount,
+      route: priorityValue < 1 ? 'scroll-only secondary details' : 'direct visible critical announcement',
+      text: node.textContent, elementRect: (() => { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })(),
+      visibleBox, viewport: { width: innerWidth, height: innerHeight },
+      secondaryDetails: details ? { containsLiveNode: details.contains(node), hidden: details.hidden,
+        rect: (() => { const r = details.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })(),
+        clientWidth: details.clientWidth, clientHeight: details.clientHeight, scrollWidth: details.scrollWidth, scrollHeight: details.scrollHeight,
+        overflowX: getComputedStyle(details).overflowX, overflowY: getComputedStyle(details).overflowY } : null,
+      clipChain, glyphs, issues };
+  }, priority);
+}
+
 async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: any) {
   const pixels = await page.evaluate(({ mode, canvas }) => {
     const element = document.querySelector<HTMLCanvasElement>('#markers');
@@ -326,9 +587,11 @@ async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: an
   if (mode === 'normal') for (const [index, count] of pixels.crosshair.entries()) expect(count, `normal crosshair arm ${index}`).toBeGreaterThan(0);
 }
 
-async function inspectAndCaptureHudCase(page: Page, info: TestInfo, name: string, mode: 'easy' | 'normal', canvas: any, fixture: any, fontScale: any, failures: string[]) {
+async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: HudCase, canvas: any, fixture: any, fontScale: any, freshBaseline: any, provenance: 'fresh-page' | 'rotation-stress', failures: string[]) {
+  const { name, mode } = hudCase;
   const screenshotMs = await capture(page, info, name);
   const layoutEvidence = await act(page, 'evidence');
+  const announcementReachability = await inspectAnnouncementReachability(page, hudCase.priority);
   const domEvidence = await page.evaluate(() => {
     const selectors = [
       '.hud-top', '.hud-top .time-block', '#campaign-sites .campaign-site[data-site]', '.flight-data > *',
@@ -353,35 +616,79 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, name: string
         text: announcement?.textContent, critical: announcement?.dataset.campaignCritical }, nodes };
   });
   const layout = layoutEvidence?.layout;
+  const areaBound = campaignHudAreaEvidence(layoutEvidence?.searchInput, layoutEvidence?.sight, layout);
   const blockedReasons = layout?.status === 'blocked'
     ? [
       ...(layout.fixedConflicts?.length ? [{ kind: 'fixed-conflicts', pairs: layout.fixedConflicts }] : []),
       ...(layout.searchChecks >= 120000 ? [{ kind: 'bounded-search-exhausted', checks: layout.searchChecks, limit: 120000 }] : []),
       ...(!layout.fixedConflicts?.length && layout.searchChecks < 120000 ? [{ kind: 'no-complete-full-size-packing', searchChecks: layout.searchChecks }] : []),
+      ...(areaBound.status === 'measured' && areaBound.shortageGap0 ? [{ kind: 'necessary-area-shortage', gap: 0, required: areaBound.requiredArea, availableUpperBound: areaBound.availableUpperBoundGap0, deficit: areaBound.deficitGap0 }] : []),
+      ...(areaBound.status === 'measured' && areaBound.shortageGap4 ? [{ kind: 'necessary-area-shortage', gap: 4, required: areaBound.requiredArea, availableUpperBound: areaBound.availableUpperBoundGap4, deficit: areaBound.deficitGap4 }] : []),
     ]
     : layout?.status === 'invalid' ? [{ kind: 'invalid-search-geometry', searchInput: layoutEvidence.searchInput, sight: layoutEvidence.sight }]
       : [];
   if (layout?.status !== 'placed') failures.push(`${name}: Canvas HUD placement status=${layout?.status ?? 'missing'}; blockedReasons=${JSON.stringify(blockedReasons)}; searchChecks=${layout?.searchChecks ?? 'missing'}; fixedConflicts=${JSON.stringify(layout?.fixedConflicts ?? [])}`);
+  if (areaBound.status !== 'measured') failures.push(`${name}: necessary-area evidence unavailable or invalid: ${JSON.stringify(areaBound).slice(0, 700)}`);
+  else {
+    if (areaBound.shortageGap0) failures.push(`${name}: necessary area exceeds free-space upper bound at gap 0: required=${areaBound.requiredArea}; available=${areaBound.availableUpperBoundGap0}; deficit=${areaBound.deficitGap0}`);
+    if (areaBound.shortageGap4) failures.push(`${name}: necessary area exceeds free-space upper bound at product gap 4: required=${areaBound.requiredArea}; available=${areaBound.availableUpperBoundGap4}; deficit=${areaBound.deficitGap4}`);
+  }
+  if (!announcementReachability.ok) failures.push(`${name}: announcement characters are not fully reachable through actual ancestor clipping: ${JSON.stringify(announcementReachability.issues).slice(0, 700)}`);
+  const freshSamples = freshBaseline?.baseline?.samples ?? [];
+  const fontComparisons = compareTypography({ samples: freshSamples }, { samples: fontScale.fontBaselines ?? [] });
+  const announcementTypography = fontComparisons.find(sample => sample.selector === '#announcement');
+  const missingFreshProbes = fontComparisons.filter(sample => sample.expectedBasePx === null);
+  const actualTypographyKeys = new Set((fontScale.fontBaselines ?? []).map((sample: TypographySample) => sample.key));
+  const missingCurrentProbes = freshSamples.filter((sample: TypographySample) => !actualTypographyKeys.has(sample.key));
+  const staleFontSamples = fontComparisons.filter(sample => !sample.matchesFreshBaseline || !sample.matchesExpected200);
+  const cssAnnouncementBaseline = freshBaseline?.cssBeforeFixture?.samples?.find((sample: TypographySample) => sample.selector === '#announcement');
+  const expectedCssAnnouncementBaseline = hudCase.width > hudCase.height && hudCase.height <= 600 ? 10 : 12;
+  if (!freshBaseline) failures.push(`${name}: matching fresh-page counterpart is missing`);
+  if (cssAnnouncementBaseline && Math.abs(cssAnnouncementBaseline.basePx - expectedCssAnnouncementBaseline) >= 0.1) {
+    failures.push(`${name}: fresh CSS announcement baseline was ${cssAnnouncementBaseline.basePx}px, expected ${expectedCssAnnouncementBaseline}px for ${hudCase.width}×${hudCase.height}`);
+  }
+  if (missingFreshProbes.length) failures.push(`${name}: typography probes are missing from the fresh counterpart: ${JSON.stringify(missingFreshProbes.map(sample => sample.key)).slice(0, 700)}`);
+  if (missingCurrentProbes.length) failures.push(`${name}: fresh typography probes are missing from the rotation/stress state: ${JSON.stringify(missingCurrentProbes.map((sample: TypographySample) => sample.key)).slice(0, 700)}`);
+  if (staleFontSamples.length) failures.push(`${name}: current base/applied typography differs from the fresh-page values: ${JSON.stringify(staleFontSamples.slice(0, 6)).slice(0, 700)}`);
+  if (freshBaseline?.fixtureBaselineDrift?.length) failures.push(`${name}: fresh fixture changed a CSS font baseline during reparenting: ${JSON.stringify(freshBaseline.fixtureBaselineDrift.slice(0, 6)).slice(0, 700)}`);
   const evidence = {
     case: name,
+    provenance,
     viewport: domEvidence.viewport,
     mode,
     announcementPriority: fixture.announcementPriority,
     announcement: domEvidence.announcement,
+    announcementReachability,
     dom: domEvidence,
+    freshBaseline: freshBaseline ? { viewportBeforeSetup: freshBaseline.viewportBeforeSetup,
+      cssBeforeFixture: freshBaseline.cssBeforeFixture, baseline: freshBaseline.baseline,
+      fixtureBaselineDrift: freshBaseline.fixtureBaselineDrift, fixtureInlineStyleChanges: freshBaseline.fixtureInlineStyleChanges } : null,
     fontBaselines: fontScale.fontBaselines,
+    fontComparisons,
+    missingFreshProbes: missingFreshProbes.map(sample => sample.key),
+    missingCurrentProbes: missingCurrentProbes.map((sample: TypographySample) => sample.key),
     searchInput: layoutEvidence.searchInput,
     sight: layoutEvidence.sight,
     layout,
+    areaBound,
+    searchBudget: { checks: layout?.searchChecks ?? null, limit: 120000,
+      state: layout?.status === 'placed' ? 'completed' : layout?.searchChecks >= 120000 ? 'exhausted' : 'stopped-before-limit',
+      classification: areaBound.status === 'measured' && areaBound.shortageGap0 ? 'necessary-area-shortage'
+        : layout?.status === 'blocked' && layout?.searchChecks >= 120000 ? 'bounded-search-exhaustion-without-proven-area-shortage'
+          : layout?.status === 'placed' ? 'placed' : layout?.status ?? 'missing' },
     blockedReasons,
   };
   await info.attach(`${name}.json`, { body: Buffer.from(JSON.stringify(evidence, null, 2)), contentType: 'application/json' });
-  console.log(`[ui-only-layout-evidence] ${JSON.stringify({ case: name, viewport: evidence.viewport, mode, announcementPriority: fixture.announcementPriority,
-    layoutStatus: layout?.status ?? 'missing', searchChecks: layout?.searchChecks ?? null, fixedConflicts: layout?.fixedConflicts ?? [], blockedReasons })}`);
+  console.log(`[ui-only-layout-evidence] ${JSON.stringify({ case: name, provenance, viewport: evidence.viewport, mode, announcementPriority: fixture.announcementPriority,
+    layoutStatus: layout?.status ?? 'missing', searchChecks: layout?.searchChecks ?? null, fixedConflicts: layout?.fixedConflicts ?? [],
+    safeArea: areaBound.safeArea ?? null, requiredArea: areaBound.requiredArea ?? null,
+    availableUpperBoundGap0: areaBound.availableUpperBoundGap0 ?? null, availableUpperBoundGap4: areaBound.availableUpperBoundGap4 ?? null,
+    shortageGap0: areaBound.shortageGap0 ?? null, shortageGap4: areaBound.shortageGap4 ?? null,
+    announcementReachable: announcementReachability.ok, announcementTypography, typographyMismatchCount: staleFontSamples.length, blockedReasons })}`);
   expect(domEvidence.announcement.visible, `${name} keeps its announcement visible for priority ${fixture.announcementPriority}`).toBe(true);
   expect(domEvidence.announcement.text, `${name} preserves the announcement text`).toContain('砲台の予告');
   expect(domEvidence.announcement.critical, `${name} records the actual priority-derived critical flag` ).toBe(String(fixture.announcementPriority >= 1));
-  for (const font of fontScale.fontBaselines ?? []) expect(Math.abs(font.appliedPx - font.basePx * 2), `${name} applies 200% of fresh ${font.selector} baseline at ${evidence.viewport.width}×${evidence.viewport.height}`).toBeLessThan(0.1);
+  for (const font of fontScale.fontBaselines ?? []) expect(Math.abs(font.appliedPx - font.basePx * 2), `${name} applies 200% of current ${font.selector} baseline at ${evidence.viewport.width}×${evidence.viewport.height}`).toBeLessThan(0.1);
   for (const [selector, expectedBasePx] of [['#hud', 16], ['.instrument', 10], ['#health', 15]] as const) {
     const sample = fontScale.fontBaselines?.find((font: any) => font.selector === selector);
     expect(sample?.basePx, `${name} reads the product ${selector} baseline fresh at ${evidence.viewport.width}×${evidence.viewport.height}`).toBe(expectedBasePx);
@@ -487,13 +794,62 @@ test('Storage failure offers session-only settings and expires after reload', as
   await record('storage-failure-session-only', setupMs, started, captureMs);
 });
 
-test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page }, info) => {
-  const setupMs = await setup(page); let captureMs = 0; const started = performance.now();
+test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page, browser }, info) => {
+  let setupMs = await setup(page); let captureMs = 0; const started = performance.now();
   const hudFailures: string[] = [];
+  const freshBaselineByCase = new Map<string, any>();
+  const freshBaselineEvidence: unknown[] = [];
+  const groups = [...new Set(HUD_CASES.map(hudCase => `${hudCase.width}x${hudCase.height}/${hudCase.mode}`))];
+  for (const group of groups) {
+    const groupCases = HUD_CASES.filter(hudCase => `${hudCase.width}x${hudCase.height}/${hudCase.mode}` === group);
+    const representative = groupCases[0];
+    const freshPage = await browser.newPage({ viewport: { width: representative.width, height: representative.height } });
+    try {
+      const viewportBeforeSetup = freshPage.viewportSize();
+      expect(viewportBeforeSetup, `${group} fixes its viewport before setup`).toEqual({ width: representative.width, height: representative.height });
+      setupMs += await setup(freshPage);
+      const cssBeforeFixture = await typographySnapshot(freshPage);
+      for (const hudCase of groupCases) {
+        await paintedFixture(freshPage, hudCase.mode, hudCase.alert, hudCase.priority);
+        const baseline = await typographySnapshot(freshPage);
+        const layoutEvidence = await act(freshPage, 'evidence');
+        const beforeMap = new Map(cssBeforeFixture.samples.map((sample: TypographySample) => [sample.key, sample]));
+        const fixtureBaselineDrift = baseline.samples.flatMap((sample: TypographySample) => {
+          const original = beforeMap.get(sample.key);
+          return original && Math.abs(original.basePx - sample.basePx) >= 0.1
+            ? [{ key: sample.key, selector: sample.selector, originalBasePx: original.basePx, afterFixtureBasePx: sample.basePx,
+              originalInlineValue: original.inlineValue, afterFixtureInlineValue: sample.inlineValue, originalParent: original.parent, afterFixtureParent: sample.parent }]
+            : [];
+        });
+        const fixtureInlineStyleChanges = baseline.samples.flatMap((sample: TypographySample) => {
+          const original = beforeMap.get(sample.key);
+          return original && (original.inlineValue !== sample.inlineValue || original.inlinePriority !== sample.inlinePriority)
+            ? [{ key: sample.key, selector: sample.selector, originalBasePx: original.basePx, afterFixtureBasePx: sample.basePx,
+              originalInlineValue: original.inlineValue, originalInlinePriority: original.inlinePriority,
+              afterFixtureInlineValue: sample.inlineValue, afterFixtureInlinePriority: sample.inlinePriority,
+              originalParent: original.parent, afterFixtureParent: sample.parent }]
+            : [];
+        });
+        const freshBaseline = { case: hudCase.name, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority,
+          viewportBeforeSetup, cssBeforeFixture, baseline, fixtureBaselineDrift, fixtureInlineStyleChanges,
+          searchInput: layoutEvidence.searchInput, sight: layoutEvidence.sight, layout: layoutEvidence.layout };
+        freshBaselineByCase.set(hudCase.name, freshBaseline);
+        freshBaselineEvidence.push(freshBaseline);
+      }
+    } finally {
+      await freshPage.close();
+    }
+  }
+  await info.attach('fresh-page-hud-baselines.json', { body: Buffer.from(JSON.stringify(freshBaselineEvidence, null, 2)), contentType: 'application/json' });
   const inspectFixedHud = async (name: string, mode: 'easy' | 'normal', fixture: any) => {
+    const hudCase = HUD_CASES.find(candidate => candidate.name === name);
+    const freshBaseline = freshBaselineByCase.get(name);
+    if (!hudCase || !freshBaseline) throw new Error(`Missing fresh-page HUD counterpart for ${name}`);
+    expect(hudCase.mode).toBe(mode);
     const fontScale = await enlargeText(page);
     const painted = await repaintFixedFixture(page);
-    captureMs += await inspectAndCaptureHudCase(page, info, name, mode, painted, fixture, fontScale, hudFailures);
+    captureMs += await inspectAndCaptureHudCase(page, info, hudCase, painted, fixture, fontScale,
+      freshBaseline, 'rotation-stress', hudFailures);
   };
   const originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
   await setViewportAndWait(page, 320, 568);
