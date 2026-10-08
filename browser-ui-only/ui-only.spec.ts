@@ -5,13 +5,38 @@ const timings: Timings[] = [];
 
 async function setup(page: Page): Promise<number> {
   const start = performance.now();
+  const browserErrors: string[] = [];
+  page.on('pageerror', error => browserErrors.push(`pageerror: ${error.stack ?? error.message}`));
+  page.on('console', message => { if (message.type() === 'error') browserErrors.push(`console: ${message.text()}`); });
+  page.on('requestfailed', request => browserErrors.push(`requestfailed: ${request.url()} ${request.failure()?.errorText ?? ''}`));
   await page.goto('/__ui-only');
-  await page.waitForFunction(() => {
-    const win = window as any;
-    const read = Object.getOwnPropertyDescriptor(window, '__fantasiaReadState');
-    const start = document.getElementById('start') as HTMLButtonElement | null;
-    return typeof win.__fantasiaUiOnlyTest?.hud === 'function' && typeof read?.value === 'function' && read.writable === false && start !== null && !start.disabled;
-  }, undefined, { timeout: 5000 });
+  try {
+    await page.waitForFunction(() => {
+      const win = window as any;
+      const read = Object.getOwnPropertyDescriptor(window, '__fantasiaReadState');
+      const start = document.getElementById('start') as HTMLButtonElement | null;
+      return typeof win.__fantasiaUiOnlyTest?.hud === 'function' && typeof read?.value === 'function' && read.writable === false && start !== null && !start.disabled;
+    }, undefined, { timeout: 5000 });
+  } catch (error) {
+    const state = await page.evaluate(() => {
+      const win = window as any;
+      const read = Object.getOwnPropertyDescriptor(window, '__fantasiaReadState');
+      const start = document.getElementById('start') as HTMLButtonElement | null;
+      let snapshot: unknown = null;
+      try { snapshot = typeof read?.value === 'function' ? read.value(false) : null; } catch (snapshotError) { snapshot = String(snapshotError); }
+      return {
+        url: location.href,
+        title: document.title,
+        uiOnlyTest: typeof win.__fantasiaUiOnlyTest?.hud === 'function',
+        readOnlyState: typeof read?.value === 'function' && read.writable === false,
+        start: start ? { disabled: start.disabled, text: start.textContent } : null,
+        startupError: document.getElementById('startup-error')?.textContent,
+        body: document.body.innerText.slice(0, 1200),
+        snapshot,
+      };
+    });
+    throw new Error(`UI-only setup timed out: ${JSON.stringify({ state, browserErrors, cause: String(error) })}`);
+  }
   return performance.now() - start;
 }
 
