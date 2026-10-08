@@ -2,6 +2,9 @@ import { expect, test, type Browser, type Page, type TestInfo } from '@playwrigh
 
 type Timings = { name: string; setupMs: number; tourMs: number; captureMs: number };
 type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn'; priority: 0 | 4 };
+type HudProvenance = 'fresh-page' | 'rotation-stress';
+type HudFailureRecord = { case: string; provenance: HudProvenance | 'aggregate'; stage: string; message: string; stack?: string };
+type HudCaseCoverage = { case: string; attempted: boolean; evidenceCompleted: boolean; imageSaved: boolean; jsonSaved: boolean; exceptionMessage?: string; notRunReason?: string };
 type TypographySample = { key: string; selector: string; basePx: number; inlineValue?: string; inlinePriority?: string; inlineBefore?: string; text: string; parent?: string; appliedPx?: number };
 const timings: Timings[] = [];
 
@@ -87,7 +90,9 @@ async function act(page: Page, method: string, ...args: unknown[]) {
 
 async function typographySnapshot(page: Page) {
   return page.evaluate(selectors => {
-    const samples = selectors.flatMap(selector => [...document.querySelectorAll<HTMLElement>(selector)].map((node, index) => {
+    const samples = selectors.flatMap(selector => [...document.querySelectorAll<HTMLElement>(selector)]
+      .filter(node => !(selector === '.target-tally > small' && node.textContent?.trim() === '現在機を含む'))
+      .map((node, index) => {
       const style = getComputedStyle(node), site = node.closest<HTMLElement>('[data-site]')?.dataset.site
         ?? node.closest<HTMLElement>('[data-site-detail]')?.dataset.siteDetail;
       const owner = node.id ? `#${node.id}` : site ? `site-${site}.${[...node.classList].join('.') || node.tagName.toLowerCase()}`
@@ -106,8 +111,59 @@ async function typographySnapshot(page: Page) {
         text: node.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) ?? '', parent: parentPath,
       };
     }));
-    return { viewport: { width: innerWidth, height: innerHeight }, samples };
+    const parentPathFor = (node: HTMLElement) => {
+      let parent = node.parentElement, parentPath = '';
+      while (parent && parentPath.split(' > ').length < 5) {
+        const name = parent.id ? `#${parent.id}` : parent.dataset.site ? `.campaign-site[data-site="${parent.dataset.site}"]`
+          : parent.dataset.campaignDetail ? `[data-campaign-detail="${parent.dataset.campaignDetail}"]`
+            : parent.classList[0] ? `.${parent.classList[0]}` : parent.tagName.toLowerCase();
+        parentPath = parentPath ? `${name} > ${parentPath}` : name;
+        parent = parent.parentElement;
+      }
+      return parentPath;
+    };
+    const liveNotes = [...document.querySelectorAll<HTMLElement>('#app small')]
+      .filter(node => node.textContent?.trim() === '現在機を含む');
+    const semanticSamples = liveNotes.map(node => {
+      const style = getComputedStyle(node);
+      return { key: 'semantic::target-lives-note', selector: 'semantic::target-lives-note', basePx: parseFloat(style.fontSize) || 16,
+        inlineValue: node.style.getPropertyValue('font-size'), inlinePriority: node.style.getPropertyPriority('font-size'),
+        text: node.textContent?.trim() ?? '', parent: parentPathFor(node) };
+    });
+    samples.push(...semanticSamples);
+    const semanticNodes = { targetLivesNote: { count: liveNotes.length, nodes: liveNotes.map(node => ({
+      text: node.textContent?.trim() ?? '', parent: parentPathFor(node), connected: node.isConnected,
+      inTargetTally: Boolean(node.closest('.target-tally')),
+      inSecondaryDetails: Boolean(node.closest('#campaign-hud-details')),
+      campaignDetail: node.dataset.campaignDetail ?? null,
+    })) } };
+    return { viewport: { width: innerWidth, height: innerHeight }, samples, semanticNodes };
   }, TYPOGRAPHY_SELECTORS);
+}
+
+async function semanticTypographyIdentity(page: Page, originalNode: any) {
+  return page.evaluate(original => {
+    const parentPathFor = (node: HTMLElement) => {
+      let parent = node.parentElement, path = '';
+      while (parent && path.split(' > ').length < 5) {
+        const name = parent.id ? `#${parent.id}` : parent.dataset.site ? `.campaign-site[data-site="${parent.dataset.site}"]`
+          : parent.dataset.campaignDetail ? `[data-campaign-detail="${parent.dataset.campaignDetail}"]`
+            : parent.classList[0] ? `.${parent.classList[0]}` : parent.tagName.toLowerCase();
+        path = path ? `${name} > ${path}` : name;
+        parent = parent.parentElement;
+      }
+      return path;
+    };
+    const nodes = [...document.querySelectorAll<HTMLElement>('#app small')]
+      .filter(node => node.textContent?.trim() === '現在機を含む');
+    const originalElement = original instanceof HTMLElement ? original : null;
+    return { count: nodes.length, sameOriginalNodeFound: Boolean(originalElement && nodes.includes(originalElement)),
+      sameOriginalNodeConnected: Boolean(originalElement?.isConnected), nodes: nodes.map(node => ({ text: node.textContent?.trim() ?? '', parent: parentPathFor(node),
+      connected: node.isConnected, inTargetTally: Boolean(node.closest('.target-tally')),
+      inSecondaryDetails: Boolean(node.closest('#campaign-hud-details')), campaignDetail: node.dataset.campaignDetail ?? null,
+      fontSize: parseFloat(getComputedStyle(node).fontSize) || 16,
+      inlineValue: node.style.getPropertyValue('font-size'), inlinePriority: node.style.getPropertyPriority('font-size') })) };
+  }, originalNode);
 }
 
 function compareTypography(expected: { samples: TypographySample[] }, actual: { samples: TypographySample[] }) {
@@ -119,6 +175,8 @@ function compareTypography(expected: { samples: TypographySample[] }, actual: { 
       key: sample.key, selector: sample.selector, text: sample.text,
       expectedBasePx: reference?.basePx ?? null, actualBasePx: sample.basePx,
       freshInlineValue: reference?.inlineValue ?? null, actualInlineValue: sample.inlineValue ?? sample.inlineBefore ?? '',
+      actualInlineBeforeOverride: sample.inlineBefore ?? '', actualInlinePriorityBeforeOverride: sample.inlinePriorityBefore ?? '',
+      appliedInlineValue: sample.appliedInlineValue ?? null, appliedInlinePriority: sample.appliedInlinePriority ?? null,
       matchesFreshBaseline: Boolean(reference && Math.abs(sample.basePx - reference.basePx) < 0.1),
       expectedAppliedPx: reference ? reference.basePx * 2 : null, actualAppliedPx: appliedPx ?? null,
       matchesExpected200: appliedPx === undefined || Boolean(reference && Math.abs(appliedPx - reference.basePx * 2) < 0.1),
@@ -161,18 +219,48 @@ function rectangleUnionArea(rectangles: AreaRect[], bounds: AreaRect, gap = 0) {
   return total;
 }
 
-function campaignHudAreaEvidence(searchInput: any, sight: any, layout: any): any {
+function campaignHudAreaEvidence(searchInput: any, sight: any, layout: any, mode: 'easy' | 'normal'): any {
   const bounds = searchInput?.bounds, canvas = searchInput?.canvas;
+  const layoutObstacles = layout?.obstacles;
+  const movableControls = Array.isArray(searchInput?.movableControls) ? searchInput.movableControls : [];
+  const ringCandidates = Array.isArray(layoutObstacles) ? layoutObstacles.filter((rect: any) => rect.id === 'aim-and-reload-ring') : [];
+  const measuredRing = ringCandidates.length === 1 ? ringCandidates[0] : null;
+  const movableControlIds = movableControls.map((rect: any) => rect.id);
+  const movableControlIdSet = new Set(movableControlIds);
+  const duplicateMovableControlIds = movableControlIds.filter((id: string, index: number) => movableControlIds.indexOf(id) !== index);
+  const movableControlPlacements = Array.isArray(layoutObstacles) ? movableControlIds.map((id: string) => ({
+    id, matches: layoutObstacles.filter((rect: any) => rect.id === id).length,
+  })) : [];
+  const unplacedMovableControls = movableControlPlacements.filter((item: { matches: number }) => item.matches !== 1);
+  const inputEvidence = { bounds, canvas, sight, mode, searchObstacles: searchInput?.obstacles,
+    panels: searchInput?.panels, movableControls: searchInput?.movableControls, canvasLabels: searchInput?.canvasLabels,
+    radarRect: layout?.radar?.rect, layoutObstacles, ringCandidates, movableControlIds,
+    movableControlPlacements, unplacedMovableControls, duplicateMovableControlIds };
   if (!bounds || !canvas || !sight || !layout?.radar?.rect || !Array.isArray(searchInput.obstacles)
-    || !Array.isArray(searchInput.panels)) return { status: 'unavailable', reason: 'incomplete measured search input' };
-  const radius = canvas.width < 360 ? 42 : 49;
-  const radar = { id: 'radar', width: layout.radar.rect.width, height: layout.radar.rect.height };
+    || !Array.isArray(searchInput.panels) || (searchInput.movableControls !== undefined && !Array.isArray(searchInput.movableControls))
+    || !Array.isArray(layoutObstacles) || ringCandidates.length !== 1 || duplicateMovableControlIds.length > 0
+    || unplacedMovableControls.length > 0 || movableControlIdSet.has('aim-and-reload-ring')) {
+    return { status: 'invalid', reason: 'incomplete measured search input or product aim-and-reload-ring rectangle', inputEvidence };
+  }
+  const sightRadius = mode === 'normal' ? Math.max(26, Math.min(38, Math.min(canvas.width, canvas.height) * .085))
+    : Math.min(canvas.width, canvas.height) * .135;
+  const sightExtent = sightRadius + 10;
+  const inferredRing = { id: 'aim-and-reload-ring-inferred', x: sight.x - sightExtent, y: sight.y - sightExtent,
+    width: sightExtent * 2, height: sightExtent * 2 };
+  const inferenceComparison = {
+    source: 'test-only radius derivation compared with the product measured layout.obstacles rectangle',
+    matches: ['x', 'y', 'width', 'height'].every(key => Math.abs(measuredRing[key] - inferredRing[key]) < 0.01),
+    toleranceCssPx: 0.01, measuredProductRect: measuredRing, inferredRect: inferredRing,
+  };
+  const radar = { ...layout.radar.rect, id: 'radar' };
   const items = [...searchInput.panels, ...(searchInput.movableControls ?? []), ...(searchInput.canvasLabels ?? []), radar];
-  const fixed = [...searchInput.obstacles,
-    { id: 'central-flight-lane', x: canvas.width / 2 - 42, y: canvas.height / 2 - 42, width: 84, height: 84 },
-    { ...sight, id: 'aim-and-reload-ring' }];
-  if (![...items, ...fixed, bounds].every(rect => [rect.x ?? 0, rect.y ?? 0, rect.width, rect.height].every(Number.isFinite) && rect.width > 0 && rect.height > 0)) {
-    return { status: 'invalid', reason: 'non-finite or non-positive measured rectangle', items, fixed, bounds };
+  // The product layout is authoritative: it includes the exact measured site/control,
+  // central-lane and aim/reload reservations used by the placement algorithm.
+  // layout.obstacles also reports the already-placed compact controls. They are
+  // packing items, not fixed blockers; subtracting them here would count them twice.
+  const fixed = layoutObstacles.filter((rect: any) => !movableControlIdSet.has(rect.id));
+  if (![...items, ...fixed, bounds].every(rect => [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) && rect.width > 0 && rect.height > 0)) {
+    return { status: 'invalid', reason: 'non-finite or non-positive measured rectangle', inputEvidence, items, fixed, bounds, inferenceComparison };
   }
   const safeArea = bounds.width * bounds.height;
   const requiredArea = items.reduce((sum, item) => sum + item.width * item.height, 0);
@@ -194,7 +282,9 @@ function campaignHudAreaEvidence(searchInput: any, sight: any, layout: any): any
         : requiredArea > availableUpperBoundGap4 + 0.5 ? 'impossible-at-product-gap-4' : 'area-alone-does-not-prove-impossibility',
       note: 'required area is the sum of full-size mobile rectangles; available area subtracts the union of fixed blockers. Passing this necessary bound does not prove a valid packing.',
     },
-    fixedObstacles: fixed,
+    inputEvidence, fixedObstacles: fixed,
+    placedMovableControlObstacles: layoutObstacles.filter((rect: any) => movableControlIdSet.has(rect.id)),
+    excludedMovableControlIds: movableControlIds, measuredRing, inferredRing, inferenceComparison,
     fixedNaiveAreaGap0, fixedNaiveAreaGap4,
     fixedUnionAreaGap0, fixedUnionAreaGap4,
     overlapAreaDedupedGap0: fixedNaiveAreaGap0 - fixedUnionAreaGap0,
@@ -205,14 +295,80 @@ function campaignHudAreaEvidence(searchInput: any, sight: any, layout: any): any
     shortageGap0: requiredArea > availableUpperBoundGap0 + 0.5,
     shortageGap4: requiredArea > availableUpperBoundGap4 + 0.5,
     gap4Method: 'fixed-obstacle rectangles expanded by the product 4 CSS px clearance, clipped to bounds, then unioned; mobile item area is a lower bound',
-    radarRadius: radius,
+    sightRadius, sightExtent,
   };
 }
 
-async function capture(page: Page, info: TestInfo, name: string): Promise<number> {
+const HISTORICAL_AREA_REGRESSION_SOURCE = {
+  runId: 37821453451, artifactId: 11569571799,
+  archiveSha256: '8f43013ca9cd01b5eb5ebbf8039314727c51594f081ebbfe8b03ab5a9a0746d0',
+};
+const HISTORICAL_AREA_REGRESSION_EXPECTED = { states: 10, measured: 10, gap0Shortages: 8, gap4Shortages: 9, gap4OnlyShortages: 1 };
+type HistoricalAreaRectRow = [string | null, number, number, number, number];
+type HistoricalAreaFixture = {
+  case: string; mode: 'easy' | 'normal'; bounds: [number, number, number, number]; canvas: [number, number, number, number];
+  sight: [number, number]; searchObstacles: HistoricalAreaRectRow[]; panels: HistoricalAreaRectRow[];
+  movableControls: HistoricalAreaRectRow[]; layoutObstacles: HistoricalAreaRectRow[]; radarRect: HistoricalAreaRectRow;
+};
+// Exact area-calculator inputs from the ten original rotation JSON attachments. Tuple order is [id,x,y,width,height].
+// Historical counts apply only to this regression fixture; fresh-page results never use them as thresholds.
+const HISTORICAL_AREA_REGRESSION_FIXTURE: HistoricalAreaFixture[] = [
+  {"case":"hud-easy-outside-small-portrait-text-200-priority-0.png","mode":"easy","bounds":[8,8,304,552],"canvas":[0,0,320,568],"sight":[160,284],"searchObstacles":[["campaign-site",8,8,74.5,62.59375],["campaign-site",84.5,8,74.5,62.59375],["campaign-site",161,8,74.5,62.59375],["campaign-site",237.5,8,74.5,62.59375],["campaign-site",8,72.59375,74.5,87.984375],["campaign-site",84.5,72.59375,74.5,87.984375],["campaign-site",161,72.59375,74.5,87.984375]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",12,201.515625,114,191.484375],["reload-status",29.875,345.1875,260.25,57.5],["warning",80,262.609375,160,136.390625],["campaign-hud-details",8,220,114,80],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",88.53125,502.5625,72.53125,62.6875],["loop",222.4921875,315.578125,86.203125,118.59375]],"layoutObstacles":[["campaign-site",8,8,74.5,62.59375],["campaign-site",84.5,8,74.5,62.59375],["campaign-site",161,8,74.5,62.59375],["campaign-site",237.5,8,74.5,62.59375],["campaign-site",8,72.59375,74.5,87.984375],["campaign-site",84.5,72.59375,74.5,87.984375],["campaign-site",161,72.59375,74.5,87.984375],["central-flight-lane",118,242,84,84],["aim-and-reload-ring",106.8,230.8,106.4,106.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",88.53125,497.3125,72.53125,62.6875],["loop",222.4921875,315.578125,86.203125,118.59375]],"radarRect":["radar",8,8,86,102]},
+  {"case":"hud-easy-outside-small-portrait-text-200-priority-4.png","mode":"easy","bounds":[8,8,304,552],"canvas":[0,0,320,568],"sight":[160,284],"searchObstacles":[["campaign-site",8,8,74.5,62.59375],["campaign-site",84.5,8,74.5,62.59375],["campaign-site",161,8,74.5,62.59375],["campaign-site",237.5,8,74.5,62.59375],["campaign-site",8,72.59375,74.5,87.984375],["campaign-site",84.5,72.59375,74.5,87.984375],["campaign-site",161,72.59375,74.5,87.984375]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",12,201.515625,114,191.484375],["reload-status",29.875,345.1875,260.25,57.5],["warning",80,262.609375,160,136.390625],["announcement",97,455.1875,114,96],["campaign-hud-details",8,220,114,80],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",88.53125,502.5625,72.53125,62.6875],["loop",222.4921875,315.578125,86.203125,118.59375]],"layoutObstacles":[["campaign-site",8,8,74.5,62.59375],["campaign-site",84.5,8,74.5,62.59375],["campaign-site",161,8,74.5,62.59375],["campaign-site",237.5,8,74.5,62.59375],["campaign-site",8,72.59375,74.5,87.984375],["campaign-site",84.5,72.59375,74.5,87.984375],["campaign-site",161,72.59375,74.5,87.984375],["central-flight-lane",118,242,84,84],["aim-and-reload-ring",106.8,230.8,106.4,106.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",88.53125,497.3125,72.53125,62.6875],["loop",222.4921875,315.578125,86.203125,118.59375]],"radarRect":["radar",8,8,86,102]},
+  {"case":"hud-normal-protected-small-landscape-text-200-priority-0.png","mode":"normal","bounds":[8,8,552,304],"canvas":[0,0,568,320],"sight":[283.99999999999994,116.2089291012429],"searchObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",162.859375,86.40625,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",376,150,180,76],["reload-status",153.875,168.203125,260.25,57.5],["warning",142,130,284,82],["campaign-hud-details",8,220,114,96],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44],["bomb-hint",8,140,110,18.40625]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",185.25,255.046875,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625],["fire",440.4375,243.203125,62,51.1875],["throttle",70.953125,188.8046875,51.1875,102.390625]],"layoutObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",162.859375,86.40625,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625],["central-flight-lane",242,118,84,84],["aim-and-reload-ring",246.79999999999995,79.0089291012429,74.4,74.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",185.25,249.3125,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625],["fire",440.4375,243.203125,62,51.1875],["throttle",70.953125,188.8046875,51.1875,102.390625]],"radarRect":["radar",451,55.60000000000001,100,116]},
+  {"case":"hud-normal-protected-small-landscape-text-200-priority-4.png","mode":"normal","bounds":[8,8,552,304],"canvas":[0,0,568,320],"sight":[283.99999999999994,116.2089291012429],"searchObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",162.859375,86.40625,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",376,150,180,76],["reload-status",153.875,168.203125,260.25,57.5],["warning",142,130,284,82],["announcement",376,118,180,64],["campaign-hud-details",8,220,114,96],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44],["bomb-hint",8,140,110,18.40625]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",185.25,255.046875,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625],["fire",440.4375,243.203125,62,51.1875],["throttle",70.953125,188.8046875,51.1875,102.390625]],"layoutObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",162.859375,86.40625,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625],["central-flight-lane",242,118,84,84],["aim-and-reload-ring",246.79999999999995,79.0089291012429,74.4,74.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",185.25,249.3125,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625],["fire",440.4375,243.203125,62,51.1875],["throttle",70.953125,188.8046875,51.1875,102.390625]],"radarRect":["radar",451,55.60000000000001,100,116]},
+  {"case":"hud-normal-low-warning-small-landscape-text-200-priority-4.png","mode":"normal","bounds":[8,8,552,304],"canvas":[0,0,568,320],"sight":[283.99999999999994,116.2089291012429],"searchObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",162.859375,86.40625,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",376,150,180,109],["reload-status",153.875,168.203125,260.25,57.5],["warning",160.4609375,164,247.078125,48],["announcement",376,118,180,64],["campaign-hud-details",8,220,114,96],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",185.25,255.046875,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625],["fire",440.4375,243.203125,62,51.1875],["throttle",70.953125,188.8046875,51.1875,102.390625]],"layoutObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",162.859375,86.40625,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625],["central-flight-lane",242,118,84,84],["aim-and-reload-ring",246.79999999999995,79.0089291012429,74.4,74.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",185.25,249.3125,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625],["fire",440.4375,243.203125,62,51.1875],["throttle",70.953125,188.8046875,51.1875,102.390625]],"radarRect":["radar",451,55.60000000000001,100,116]},
+  {"case":"hud-easy-clear-small-landscape-text-200-priority-0.png","mode":"easy","bounds":[8,8,552,304],"canvas":[0,0,568,320],"sight":[284,160],"searchObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",245.421875,8,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",376,150,180,109],["reload-status",153.875,221.1875,260.25,57.5],["campaign-hud-details",8,220,114,96],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",185.25,255.046875,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625]],"layoutObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",245.421875,8,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625],["central-flight-lane",242,118,84,84],["aim-and-reload-ring",230.8,106.8,106.4,106.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",185.25,249.3125,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625]],"radarRect":["radar",451,55.60000000000001,100,116]},
+  {"case":"hud-easy-clear-small-landscape-text-200-priority-4.png","mode":"easy","bounds":[8,8,552,304],"canvas":[0,0,568,320],"sight":[284,160],"searchObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",245.421875,8,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",376,150,180,109],["reload-status",153.875,221.1875,260.25,57.5],["announcement",376,118,180,64],["campaign-hud-details",8,220,114,96],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",185.25,255.046875,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625]],"layoutObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",245.421875,8,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625],["central-flight-lane",242,118,84,84],["aim-and-reload-ring",230.8,106.8,106.4,106.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",185.25,249.3125,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625]],"radarRect":["radar",451,55.60000000000001,100,116]},
+  {"case":"hud-easy-warning-small-landscape-text-200-priority-4.png","mode":"easy","bounds":[8,8,552,304],"canvas":[0,0,568,320],"sight":[284,160],"searchObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",245.421875,8,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",376,150,180,109],["reload-status",153.875,221.1875,260.25,57.5],["warning",160.4609375,164,247.078125,48],["announcement",376,118,180,64],["campaign-hud-details",8,220,114,96],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",185.25,255.046875,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625]],"layoutObstacles":[["campaign-site",8,8,77.140625,76.40625],["campaign-site",87.140625,8,77.140625,76.40625],["campaign-site",166.28125,8,77.140625,76.40625],["campaign-site",245.421875,8,77.140625,76.40625],["campaign-site",324.5625,8,77.140625,76.40625],["campaign-site",403.703125,8,77.140625,76.40625],["campaign-site",482.84375,8,77.15625,76.40625],["central-flight-lane",242,118,84,84],["aim-and-reload-ring",230.8,106.8,106.4,106.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",185.25,249.3125,72.53125,62.6875],["loop",428.3359375,160.9921875,86.203125,100.390625]],"radarRect":["radar",451,55.60000000000001,100,116]},
+  {"case":"hud-normal-respawn-small-portrait-text-200-priority-0.png","mode":"normal","bounds":[8,8,304,552],"canvas":[0,0,320,568],"sight":[159.99999999999994,206.27084915470616],"searchObstacles":[["campaign-site",8,8,74.5,62.59375],["campaign-site",84.5,8,74.5,62.59375],["campaign-site",161,8,74.5,62.59375],["campaign-site",237.5,8,74.5,62.59375],["campaign-site",8,72.59375,74.5,87.984375],["campaign-site",84.5,72.59375,74.5,87.984375],["campaign-site",161,72.59375,74.5,87.984375]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",12,237.8125,114,155.1875],["reload-status",29.875,258.265625,260.25,57.5],["respawn-status",15,329.4375,290,96],["campaign-hud-details",8,220,114,80],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",88.53125,502.5625,72.53125,62.6875],["loop",222.4921875,315.578125,86.203125,118.59375],["fire",216,429.109375,96,96],["throttle",22.390625,362,64,128]],"layoutObstacles":[["campaign-site",8,8,74.5,62.59375],["campaign-site",84.5,8,74.5,62.59375],["campaign-site",161,8,74.5,62.59375],["campaign-site",237.5,8,74.5,62.59375],["campaign-site",8,72.59375,74.5,87.984375],["campaign-site",84.5,72.59375,74.5,87.984375],["campaign-site",161,72.59375,74.5,87.984375],["central-flight-lane",118,242,84,84],["aim-and-reload-ring",122.79999999999994,169.07084915470614,74.4,74.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",88.53125,497.3125,72.53125,62.6875],["loop",222.4921875,315.578125,86.203125,118.59375],["fire",216,429.109375,96,96],["throttle",22.390625,362,64,128]],"radarRect":["radar",8,8,86,102]},
+  {"case":"hud-normal-respawn-small-portrait-text-200-priority-4.png","mode":"normal","bounds":[8,8,304,552],"canvas":[0,0,320,568],"sight":[159.99999999999994,206.27084915470616],"searchObstacles":[["campaign-site",8,8,74.5,62.59375],["campaign-site",84.5,8,74.5,62.59375],["campaign-site",161,8,74.5,62.59375],["campaign-site",237.5,8,74.5,62.59375],["campaign-site",8,72.59375,74.5,87.984375],["campaign-site",84.5,72.59375,74.5,87.984375],["campaign-site",161,72.59375,74.5,87.984375]],"panels":[["health-label",8,140,122.375,35],["health-track",8,140,110,3],["instrument",8,140,110,50],["campaign-limit",8,140,110,51],["ammo",8,140,110,56],["campaign-threat",12,237.8125,114,155.1875],["reload-status",29.875,258.265625,260.25,57.5],["respawn-status",15,329.4375,290,96],["announcement",97,455.1875,114,96],["campaign-hud-details",8,220,114,80],["campaign-mode-status",8,140,72,24],["target-tally",8,140,70.625,44]],"movableControls":[["game-sound",0,0,81.296875,44],["pause",0,0,44,50],["bomb",88.53125,502.5625,72.53125,62.6875],["loop",222.4921875,315.578125,86.203125,118.59375],["fire",216,429.109375,96,96],["throttle",22.390625,362,64,128]],"layoutObstacles":[["campaign-site",8,8,74.5,62.59375],["campaign-site",84.5,8,74.5,62.59375],["campaign-site",161,8,74.5,62.59375],["campaign-site",237.5,8,74.5,62.59375],["campaign-site",8,72.59375,74.5,87.984375],["campaign-site",84.5,72.59375,74.5,87.984375],["campaign-site",161,72.59375,74.5,87.984375],["central-flight-lane",118,242,84,84],["aim-and-reload-ring",122.79999999999994,169.07084915470614,74.4,74.4],["game-sound",8,8,81.296875,44],["pause",8,8,44,50],["bomb",88.53125,497.3125,72.53125,62.6875],["loop",222.4921875,315.578125,86.203125,118.59375],["fire",216,429.109375,96,96],["throttle",22.390625,362,64,128]],"radarRect":["radar",8,8,86,102]}
+];
+
+function expandHistoricalAreaFixture(fixture: HistoricalAreaFixture) {
+  const rowRect = ([id, x, y, width, height]: HistoricalAreaRectRow) => ({ ...(id ? { id } : {}), x, y, width, height });
+  const [boundsX, boundsY, boundsWidth, boundsHeight] = fixture.bounds;
+  const [canvasX, canvasY, canvasWidth, canvasHeight] = fixture.canvas;
+  const [sightX, sightY] = fixture.sight;
+  return {
+    searchInput: {
+      bounds: { x: boundsX, y: boundsY, width: boundsWidth, height: boundsHeight },
+      canvas: { x: canvasX, y: canvasY, width: canvasWidth, height: canvasHeight },
+      obstacles: fixture.searchObstacles.map(rowRect), panels: fixture.panels.map(rowRect),
+      movableControls: fixture.movableControls.map(rowRect),
+    },
+    sight: { x: sightX, y: sightY },
+    layout: { obstacles: fixture.layoutObstacles.map(rowRect), radar: { rect: rowRect(fixture.radarRect) } },
+  };
+}
+
+test('historical PR #10 area replay remains an isolated regression fixture', async ({}, info) => {
+  const replay = HISTORICAL_AREA_REGRESSION_FIXTURE.map(fixture => {
+    const input = expandHistoricalAreaFixture(fixture);
+    return { case: fixture.case, mode: fixture.mode,
+      areaBound: campaignHudAreaEvidence(input.searchInput, input.sight, input.layout, fixture.mode) };
+  });
+  const counts = {
+    states: replay.length,
+    measured: replay.filter(item => item.areaBound.status === 'measured').length,
+    gap0Shortages: replay.filter(item => item.areaBound.shortageGap0 === true).length,
+    gap4Shortages: replay.filter(item => item.areaBound.shortageGap4 === true).length,
+    gap4OnlyShortages: replay.filter(item => item.areaBound.shortageGap4 === true && item.areaBound.shortageGap0 !== true).length,
+  };
+  await info.attach('historical-area-regression-fixture-replay.json', {
+    body: Buffer.from(JSON.stringify({ source: HISTORICAL_AREA_REGRESSION_SOURCE, expected: HISTORICAL_AREA_REGRESSION_EXPECTED, counts, replay }, null, 2)),
+    contentType: 'application/json',
+  });
+  expect(replay.map(item => item.case)).toEqual(HUD_CASES.map(item => item.name));
+  expect(replay.filter(item => item.areaBound.status !== 'measured').map(item => ({ case: item.case, evidence: item.areaBound }))).toEqual([]);
+  expect(counts).toEqual(HISTORICAL_AREA_REGRESSION_EXPECTED);
+});
+
+async function capture(page: Page, info: TestInfo, name: string, coverage?: HudCaseCoverage): Promise<number> {
   const start = performance.now();
   const body = await page.screenshot({ animations: 'disabled' });
   await info.attach(name, { body, contentType: 'image/png' });
+  if (coverage) coverage.imageSaved = true;
   return performance.now() - start;
 }
 
@@ -245,7 +401,20 @@ async function enlargeText(page: Page) {
       overrides.set(node, saved);
       node.style.setProperty('font-size', `${base * 2}px`, 'important');
     }
-    const fontBaselines = selectors.flatMap(selector => [...document.querySelectorAll<HTMLElement>(selector)].map((node, index) => {
+    const parentPathFor = (node: HTMLElement) => {
+      let parent = node.parentElement, path = '';
+      while (parent && path.split(' > ').length < 5) {
+        const name = parent.id ? `#${parent.id}` : parent.dataset.site ? `.campaign-site[data-site="${parent.dataset.site}"]`
+          : parent.dataset.campaignDetail ? `[data-campaign-detail="${parent.dataset.campaignDetail}"]`
+            : parent.classList[0] ? `.${parent.classList[0]}` : parent.tagName.toLowerCase();
+        path = path ? `${name} > ${path}` : name;
+        parent = parent.parentElement;
+      }
+      return path;
+    };
+    const fontBaselines = selectors.flatMap(selector => [...document.querySelectorAll<HTMLElement>(selector)]
+      .filter(node => !(selector === '.target-tally > small' && node.textContent?.trim() === '現在機を含む'))
+      .map((node, index) => {
       const measured = measurements.find(item => item.node === node);
       const site = node.closest<HTMLElement>('[data-site]')?.dataset.site ?? node.closest<HTMLElement>('[data-site-detail]')?.dataset.siteDetail;
       const owner = node.id ? `#${node.id}` : site ? `site-${site}.${[...node.classList].join('.') || node.tagName.toLowerCase()}`
@@ -253,9 +422,22 @@ async function enlargeText(page: Page) {
       return {
         key: `${selector}::${owner}`, selector, basePx: measured?.base ?? parseFloat(getComputedStyle(node).fontSize),
         appliedPx: parseFloat(getComputedStyle(node).fontSize), inlineBefore: measured?.saved.value ?? '',
-        inlinePriorityBefore: measured?.saved.priority ?? '', text: node.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) ?? '',
+        inlinePriorityBefore: measured?.saved.priority ?? '', appliedInlineValue: node.style.getPropertyValue('font-size'),
+        appliedInlinePriority: node.style.getPropertyPriority('font-size'), parent: parentPathFor(node),
+        text: node.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) ?? '',
       };
     }));
+    const liveNotes = [...document.querySelectorAll<HTMLElement>('#app small')]
+      .filter(node => node.textContent?.trim() === '現在機を含む');
+    for (const node of liveNotes) {
+      const measured = measurements.find(item => item.node === node);
+      fontBaselines.push({ key: 'semantic::target-lives-note', selector: 'semantic::target-lives-note',
+        basePx: measured?.base ?? parseFloat(getComputedStyle(node).fontSize),
+        appliedPx: parseFloat(getComputedStyle(node).fontSize), inlineBefore: measured?.saved.value ?? '',
+        inlinePriorityBefore: measured?.saved.priority ?? '', appliedInlineValue: node.style.getPropertyValue('font-size'),
+        appliedInlinePriority: node.style.getPropertyPriority('font-size'), parent: parentPathFor(node),
+        text: node.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) ?? '' });
+    }
     return { nodeCount: nodes.length, fontBaselines, viewport: { width: innerWidth, height: innerHeight } };
   }, TYPOGRAPHY_SELECTORS);
 }
@@ -424,12 +606,17 @@ async function repaintFixedFixture(page: Page) {
   return painted;
 }
 
-async function inspectAnnouncementReachability(page: Page, priority: number) {
-  return page.evaluate(priorityValue => {
+async function inspectAnnouncementReachability(page: Page, priority: number, originalAnnouncementHandle: any) {
+  return page.evaluate(({ priorityValue, originalAnnouncement }) => {
     const node = document.querySelector<HTMLElement>('#announcement');
     const details = document.querySelector<HTMLElement>('#campaign-hud-details');
     if (!node) return { ok: false, priority: priorityValue, reason: 'missing original #announcement node', glyphs: [], clipChain: [] };
+    const originalNode = originalAnnouncement instanceof HTMLElement ? originalAnnouncement : null;
+    const originalNodeConnected = Boolean(originalNode?.isConnected);
+    const sameOriginalNode = Boolean(originalNode && originalNode === node);
     const liveCount = document.querySelectorAll('#announcement').length;
+    const app = document.querySelector<HTMLElement>('#app');
+    const compactMode = app?.dataset.campaignHud === 'compact';
     const oldScrollTop = details?.scrollTop ?? 0;
     const issues: string[] = [];
     const innerBox = (element: HTMLElement) => {
@@ -447,16 +634,23 @@ async function inspectAnnouncementReachability(page: Page, priority: number) {
         contentBox: { left: rect.left + ancestor.clientLeft, top: rect.top + ancestor.clientTop,
           right: rect.left + ancestor.clientLeft + ancestor.clientWidth, bottom: rect.top + ancestor.clientTop + ancestor.clientHeight } });
     }
+    const nodeVisibility = getComputedStyle(node).visibility;
     const firstNonVisible = clipChain.find(item => item.hidden || item.display === 'none'
-      || item.visibility === 'hidden' || item.visibility === 'collapse' || item.opacity === '0' || item.contentVisibility === 'hidden');
+      || item.opacity === '0' || item.contentVisibility === 'hidden');
     if (liveCount !== 1) issues.push(`expected one live announcement node, found ${liveCount}`);
+    if (!originalNodeConnected || !sameOriginalNode) issues.push('original live announcement node was removed or replaced');
     if (firstNonVisible) issues.push(`announcement has non-visible ancestor ${firstNonVisible.id || firstNonVisible.className}`);
+    if (nodeVisibility === 'hidden' || nodeVisibility === 'collapse') issues.push(`announcement computed visibility is ${nodeVisibility}`);
     if (clipChain.some(item => item.clipPath !== 'none' || item.clip !== 'auto' || item.contain.split(/\s+/).includes('paint')))
       issues.push('announcement has clip-path, legacy clip, or paint containment that this geometry check cannot resolve');
-    if (priorityValue < 1) {
-      if (!details || !details.contains(node)) issues.push('priority-0 live announcement is outside the permitted secondary detail viewport');
-      if (details && !['auto', 'scroll'].includes(getComputedStyle(details).overflowY)) issues.push('priority-0 detail viewport is not vertically scrollable');
-    } else if (details?.contains(node)) issues.push('priority-4 announcement depends on the secondary scroll viewport');
+    const compactPriorityZero = priorityValue < 1 && compactMode;
+    if (compactPriorityZero) {
+      if (!details || !details.contains(node)) issues.push('compact priority-0 live announcement is outside the permitted secondary detail viewport');
+      if (details && !['auto', 'scroll'].includes(getComputedStyle(details).overflowY)) issues.push('compact priority-0 detail viewport is not vertically scrollable');
+    } else if (details && priorityValue >= 1 && details.contains(node)) {
+      issues.push('priority-4 announcement depends on the secondary scroll viewport');
+    }
+    if (!compactPriorityZero && details) details.scrollTop = 0;
 
     const glyphs: Array<{ index: number; character: string; whitespace: boolean; initialRect: any; testedScrollTop: number | null; visibleRect: any; visible: boolean; clips: string[] }> = [];
     const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
@@ -473,12 +667,16 @@ async function inspectAnnouncementReachability(page: Page, priority: number) {
     }
     const visibleRectFor = (range: Range, allowCaret = false) => {
       let rect = range.getBoundingClientRect(), geometry = 'glyph';
+      if (allowCaret && rect.width === 0 && rect.height > 0) geometry = 'zero-width whitespace line position';
       if ((rect.width <= 0 || rect.height <= 0) && allowCaret) {
-        const caret = range.cloneRange(); caret.collapse(true);
-        const caretRect = caret.getBoundingClientRect();
-        if (caretRect.height > 0) { rect = caretRect; geometry = 'whitespace caret'; }
+        const candidates = [range.cloneRange(), range.cloneRange()];
+        candidates[0].collapse(true); candidates[1].collapse(false);
+        const caretRect = candidates.map(caret => caret.getBoundingClientRect()).find(candidate => candidate.height > 0);
+        if (caretRect) { rect = caretRect; geometry = caretRect.width === 0 ? 'zero-width whitespace caret' : 'whitespace caret'; }
       }
-      if (rect.width <= 0 || rect.height <= 0) return { rect: null, clips: ['no glyph or whitespace-caret rectangle'], visible: false, geometry };
+      const zeroWidthWhitespacePosition = allowCaret && geometry.startsWith('zero-width whitespace') && rect.width === 0 && rect.height > 0;
+      if ((!zeroWidthWhitespacePosition && rect.width <= 0) || rect.height <= 0)
+        return { rect: null, clips: ['no glyph or whitespace-caret line-position rectangle'], visible: false, geometry };
       let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom;
       const clips: string[] = [];
       for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
@@ -497,19 +695,29 @@ async function inspectAnnouncementReachability(page: Page, priority: number) {
       if (top < -0.5 || bottom > innerHeight + 0.5) clips.push('browser-viewport:y');
       left = Math.max(0, left); top = Math.max(0, top); right = Math.min(innerWidth, right); bottom = Math.min(innerHeight, bottom);
       const fullyVisible = clips.length === 0 && left <= rect.left + 0.5 && top <= rect.top + 0.5 && right >= rect.right - 0.5 && bottom >= rect.bottom - 0.5;
-      return { rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom }, clips, visible: fullyVisible, geometry };
+      return { rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height }, clips, visible: fullyVisible, geometry };
+    };
+    const characterRectFor = (record: { whitespace: boolean; range: Range }) => {
+      const direct = visibleRectFor(record.range, record.whitespace);
+      if (direct.rect || !record.whitespace) return direct;
+      const container = record.range.startContainer, text = container.textContent ?? '';
+      const context = document.createRange();
+      context.setStart(container, Math.max(0, record.range.startOffset - 1));
+      context.setEnd(container, Math.min(text.length, record.range.endOffset + 1));
+      const measured = visibleRectFor(context);
+      return { ...measured, geometry: measured.rect ? 'whitespace context' : measured.geometry };
     };
 
     for (const record of records) {
-      const initial = visibleRectFor(record.range, record.whitespace);
+      const initial = characterRectFor(record);
       let testedScrollTop: number | null = null, result = initial;
-      if (priorityValue < 1 && details && initial.rect) {
+      if (compactPriorityZero && details && initial.rect) {
         const box = innerBox(details), maxScroll = Math.max(0, details.scrollHeight - details.clientHeight);
         const startHeight = initial.rect.bottom - initial.rect.top;
         const delta = initial.rect.top - box.top - (details.clientHeight - startHeight) / 2;
         details.scrollTop = Math.max(0, Math.min(maxScroll, details.scrollTop + delta));
         testedScrollTop = details.scrollTop;
-        result = visibleRectFor(record.range, record.whitespace);
+        result = characterRectFor(record);
       }
       const visible = result.visible;
       if (!visible) issues.push(`character ${record.index} ${JSON.stringify(record.character)} is never fully visible${result.clips.length ? ` (${result.clips.join(',')})` : ''}`);
@@ -522,7 +730,8 @@ async function inspectAnnouncementReachability(page: Page, priority: number) {
     if (!glyphs.length) issues.push('announcement contains no measurable characters');
     const visibleBox = visibleRectFor((() => { const range = document.createRange(); range.selectNodeContents(node); return range; })());
     return { ok: issues.length === 0 && allGlyphsVisible, priority: priorityValue, liveCount,
-      route: priorityValue < 1 ? 'scroll-only secondary details' : 'direct visible critical announcement',
+      route: compactPriorityZero ? 'compact secondary details with per-character scroll reachability' : 'direct visible announcement',
+      campaignHudMode: compactMode ? 'compact' : 'full', sameOriginalNode, originalNodeConnected,
       text: node.textContent, elementRect: (() => { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })(),
       visibleBox, viewport: { width: innerWidth, height: innerHeight },
       secondaryDetails: details ? { containsLiveNode: details.contains(node), hidden: details.hidden,
@@ -530,7 +739,7 @@ async function inspectAnnouncementReachability(page: Page, priority: number) {
         clientWidth: details.clientWidth, clientHeight: details.clientHeight, scrollWidth: details.scrollWidth, scrollHeight: details.scrollHeight,
         overflowX: getComputedStyle(details).overflowX, overflowY: getComputedStyle(details).overflowY } : null,
       clipChain, glyphs, issues };
-  }, priority);
+  }, { priorityValue: priority, originalAnnouncement: originalAnnouncementHandle });
 }
 
 async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: any) {
@@ -587,11 +796,80 @@ async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: an
   if (mode === 'normal') for (const [index, count] of pixels.crosshair.entries()) expect(count, `normal crosshair arm ${index}`).toBeGreaterThan(0);
 }
 
-async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: HudCase, canvas: any, fixture: any, fontScale: any, freshBaseline: any, provenance: 'fresh-page' | 'rotation-stress', failures: string[]) {
+function recordHudFailure(failures: HudFailureRecord[], provenance: HudProvenance | 'aggregate', caseName: string, stage: string, message: string, stack?: string) {
+  failures.push({ case: caseName, provenance, stage, message, ...(stack ? { stack } : {}) });
+}
+
+function recordHudError(failures: HudFailureRecord[], provenance: HudProvenance | 'aggregate', caseName: string, stage: string, error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? error.stack : undefined;
+  recordHudFailure(failures, provenance, caseName, stage, message, stack);
+}
+
+function recordHudAssertion(failures: HudFailureRecord[], provenance: HudProvenance, caseName: string, stage: string, assertion: () => void) {
+  try { assertion(); } catch (error) { recordHudError(failures, provenance, caseName, stage, error); }
+}
+
+async function recordHudAsyncAssertion(failures: HudFailureRecord[], provenance: HudProvenance, caseName: string, stage: string, assertion: () => Promise<unknown>) {
+  try { await assertion(); } catch (error) { recordHudError(failures, provenance, caseName, stage, error); }
+}
+
+async function captureHudFailureEvidence(page: Page | undefined, info: TestInfo, coverage: HudCaseCoverage,
+  failures: HudFailureRecord[], provenance: HudProvenance, caseName: string, stage: string, error: unknown, extra: unknown = null): Promise<number> {
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? error.stack : undefined;
+  recordHudFailure(failures, provenance, caseName, stage, message, stack);
+  coverage.exceptionMessage = message;
+  let screenshotMs = 0;
+  const safeName = caseName.replace(/\.png$/i, '').replace(/[^a-z0-9-]/gi, '-');
+  if (page) {
+    try {
+      const started = performance.now();
+      const body = await page.screenshot({ animations: 'disabled' });
+      await info.attach(`${provenance}-failure-${safeName}.png`, { body, contentType: 'image/png' });
+      coverage.imageSaved = true;
+      screenshotMs = performance.now() - started;
+    } catch (captureError) {
+      recordHudError(failures, provenance, caseName, 'failure-png-capture', captureError);
+    }
+  }
+  let pageSnapshot: unknown = page ? null : { available: false, reason: 'page was not created or is unavailable' };
+  if (page) {
+    try {
+      pageSnapshot = await page.evaluate(() => {
+        const app = document.querySelector<HTMLElement>('#app');
+        const read = (window as any).__fantasiaReadState;
+        let state: unknown = null;
+        try { state = typeof read === 'function' ? read(false) : null; } catch (error) { state = { readError: error instanceof Error ? error.message : String(error) }; }
+        return { url: location.href, title: document.title, viewport: { width: innerWidth, height: innerHeight },
+          app: app ? { mode: app.dataset.mode ?? null, screen: app.dataset.screen ?? null, campaignHud: app.dataset.campaignHud ?? null } : null,
+          text: document.body?.innerText?.slice(0, 12000) ?? '', announcement: document.querySelector('#announcement')?.textContent ?? null,
+          state, canvases: [...document.querySelectorAll<HTMLCanvasElement>('canvas')].map(canvas => ({ id: canvas.id, width: canvas.width, height: canvas.height })) };
+      });
+    } catch (snapshotError) {
+      pageSnapshot = { unavailable: true, exactError: snapshotError instanceof Error ? snapshotError.message : String(snapshotError) };
+      recordHudError(failures, provenance, caseName, 'failure-json-page-snapshot', snapshotError);
+    }
+  }
+  const failure = { case: caseName, provenance, stage, message, ...(stack ? { stack } : {}) };
+  try {
+    await info.attach(`${provenance}-failure-${safeName}.json`, {
+      body: Buffer.from(JSON.stringify({ failure, pageAvailable: Boolean(page), pageSnapshot, coverage, extra }, null, 2)),
+      contentType: 'application/json',
+    });
+    coverage.jsonSaved = true;
+  } catch (attachError) {
+    recordHudError(failures, provenance, caseName, 'failure-json-attach', attachError);
+  }
+  return screenshotMs;
+}
+
+async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: HudCase, canvas: any, fixture: any, fontScale: any, freshBaseline: any, originalLivesNoteHandle: any, originalAnnouncementHandle: any, provenance: HudProvenance, failures: HudFailureRecord[], coverage: HudCaseCoverage) {
   const { name, mode } = hudCase;
-  const screenshotMs = await capture(page, info, name);
+  const evidenceName = provenance === 'fresh-page' ? `fresh-page-${name}` : name;
+  const screenshotMs = await capture(page, info, evidenceName, coverage);
   const layoutEvidence = await act(page, 'evidence');
-  const announcementReachability = await inspectAnnouncementReachability(page, hudCase.priority);
+  const announcementReachability = await inspectAnnouncementReachability(page, hudCase.priority, originalAnnouncementHandle);
   const domEvidence = await page.evaluate(() => {
     const selectors = [
       '.hud-top', '.hud-top .time-block', '#campaign-sites .campaign-site[data-site]', '.flight-data > *',
@@ -616,7 +894,28 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
         text: announcement?.textContent, critical: announcement?.dataset.campaignCritical }, nodes };
   });
   const layout = layoutEvidence?.layout;
-  const areaBound = campaignHudAreaEvidence(layoutEvidence?.searchInput, layoutEvidence?.sight, layout);
+  const areaBound = campaignHudAreaEvidence(layoutEvidence?.searchInput, layoutEvidence?.sight, layout, mode);
+  const productRing = layout?.obstacles?.find((rect: any) => rect.id === 'aim-and-reload-ring');
+  const pointOnlyLayout = layout?.obstacles ? { ...layout, obstacles: layout.obstacles.map((rect: any) => rect.id === 'aim-and-reload-ring'
+    ? { id: rect.id, x: layoutEvidence?.sight?.x, y: layoutEvidence?.sight?.y } : rect) } : layout;
+  const missingRingLayout = layout?.obstacles ? { ...layout, obstacles: layout.obstacles.filter((rect: any) => rect.id !== 'aim-and-reload-ring') } : layout;
+  const duplicateRingLayout = layout?.obstacles && productRing ? { ...layout, obstacles: [...layout.obstacles, { ...productRing }] } : layout;
+  const malformedRingLayout = layout?.obstacles ? { ...layout, obstacles: layout.obstacles.map((rect: any) => rect.id === 'aim-and-reload-ring'
+    ? { ...rect, width: 0 } : rect) } : layout;
+  const pointOnlyAreaEvidence = campaignHudAreaEvidence(layoutEvidence?.searchInput, layoutEvidence?.sight, pointOnlyLayout, mode);
+  const missingRingAreaEvidence = campaignHudAreaEvidence(layoutEvidence?.searchInput, layoutEvidence?.sight, missingRingLayout, mode);
+  const duplicateRingAreaEvidence = campaignHudAreaEvidence(layoutEvidence?.searchInput, layoutEvidence?.sight, duplicateRingLayout, mode);
+  const malformedRingAreaEvidence = campaignHudAreaEvidence(layoutEvidence?.searchInput, layoutEvidence?.sight, malformedRingLayout, mode);
+  const overlapFixtureRects = [
+    { x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 0, width: 10, height: 10 },
+  ];
+  const overlapFixtureBounds = { x: 0, y: 0, width: 20, height: 10 };
+  const overlappingAreaFixture = rectangleUnionArea(overlapFixtureRects, overlapFixtureBounds);
+  recordHudAssertion(failures, provenance, name, 'fixed-rectangle-union-regression', () => expect(overlappingAreaFixture).toBe(150));
+  recordHudAssertion(failures, provenance, name, 'point-only-aim-reload-reservation-rejection', () => expect(pointOnlyAreaEvidence.status).toBe('invalid'));
+  recordHudAssertion(failures, provenance, name, 'missing-aim-reload-reservation-rejection', () => expect(missingRingAreaEvidence.status).toBe('invalid'));
+  recordHudAssertion(failures, provenance, name, 'duplicate-aim-reload-reservation-rejection', () => expect(duplicateRingAreaEvidence.status).toBe('invalid'));
+  recordHudAssertion(failures, provenance, name, 'malformed-aim-reload-reservation-rejection', () => expect(malformedRingAreaEvidence.status).toBe('invalid'));
   const blockedReasons = layout?.status === 'blocked'
     ? [
       ...(layout.fixedConflicts?.length ? [{ kind: 'fixed-conflicts', pairs: layout.fixedConflicts }] : []),
@@ -627,30 +926,54 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
     ]
     : layout?.status === 'invalid' ? [{ kind: 'invalid-search-geometry', searchInput: layoutEvidence.searchInput, sight: layoutEvidence.sight }]
       : [];
-  if (layout?.status !== 'placed') failures.push(`${name}: Canvas HUD placement status=${layout?.status ?? 'missing'}; blockedReasons=${JSON.stringify(blockedReasons)}; searchChecks=${layout?.searchChecks ?? 'missing'}; fixedConflicts=${JSON.stringify(layout?.fixedConflicts ?? [])}`);
-  if (areaBound.status !== 'measured') failures.push(`${name}: necessary-area evidence unavailable or invalid: ${JSON.stringify(areaBound).slice(0, 700)}`);
+  if (layout?.status !== 'placed') recordHudFailure(failures, provenance, name, 'canvas-hud-placement', `${name}: Canvas HUD placement status=${layout?.status ?? 'missing'}; blockedReasons=${JSON.stringify(blockedReasons)}; searchChecks=${layout?.searchChecks ?? 'missing'}; fixedConflicts=${JSON.stringify(layout?.fixedConflicts ?? [])}`);
+  if (areaBound.status !== 'measured') recordHudFailure(failures, provenance, name, 'necessary-area-evidence', `${name}: necessary-area evidence unavailable or invalid: ${JSON.stringify(areaBound)}`);
   else {
-    if (areaBound.shortageGap0) failures.push(`${name}: necessary area exceeds free-space upper bound at gap 0: required=${areaBound.requiredArea}; available=${areaBound.availableUpperBoundGap0}; deficit=${areaBound.deficitGap0}`);
-    if (areaBound.shortageGap4) failures.push(`${name}: necessary area exceeds free-space upper bound at product gap 4: required=${areaBound.requiredArea}; available=${areaBound.availableUpperBoundGap4}; deficit=${areaBound.deficitGap4}`);
+    if (!areaBound.inferenceComparison?.matches) recordHudFailure(failures, provenance, name, 'product-measured-ring-comparison', `${name}: radius-derived aim/reload rectangle disagrees with the product measured layout.obstacles rectangle: ${JSON.stringify(areaBound.inferenceComparison)}`);
+    if (areaBound.shortageGap0) recordHudFailure(failures, provenance, name, 'necessary-area-shortage-gap-0', `${name}: necessary area exceeds free-space upper bound at gap 0: required=${areaBound.requiredArea}; available=${areaBound.availableUpperBoundGap0}; deficit=${areaBound.deficitGap0}`);
+    if (areaBound.shortageGap4) recordHudFailure(failures, provenance, name, 'necessary-area-shortage-product-gap-4', `${name}: necessary area exceeds free-space upper bound at product gap 4: required=${areaBound.requiredArea}; available=${areaBound.availableUpperBoundGap4}; deficit=${areaBound.deficitGap4}`);
   }
-  if (!announcementReachability.ok) failures.push(`${name}: announcement characters are not fully reachable through actual ancestor clipping: ${JSON.stringify(announcementReachability.issues).slice(0, 700)}`);
+  if (!announcementReachability.ok) recordHudFailure(failures, provenance, name, 'announcement-character-reachability', `${name}: announcement characters are not fully reachable through actual ancestor clipping: ${JSON.stringify(announcementReachability.issues)}`);
+  const semanticLiveNote = await semanticTypographyIdentity(page, originalLivesNoteHandle);
+  const expectedLiveNote = freshBaseline?.baseline?.semanticNodes?.targetLivesNote;
+  const semanticLiveNoteIssues: string[] = [];
+  if (!expectedLiveNote || expectedLiveNote.count !== 1) semanticLiveNoteIssues.push(`fresh baseline expected exactly one lives-note, got ${expectedLiveNote?.count ?? 'missing'}`);
+  if (semanticLiveNote.count !== 1) semanticLiveNoteIssues.push(`current DOM expected exactly one lives-note, got ${semanticLiveNote.count}`);
+  if (!semanticLiveNote.sameOriginalNodeConnected || !semanticLiveNote.sameOriginalNodeFound) semanticLiveNoteIssues.push('original lives-note DOM node was removed or replaced');
+  let semanticLiveNoteValid = false;
+  if (semanticLiveNote.count === 1) {
+    const actual = semanticLiveNote.nodes[0], original = expectedLiveNote?.nodes?.[0];
+    if (!actual.connected) semanticLiveNoteIssues.push('lives-note node is disconnected');
+    if (actual.text !== original?.text) semanticLiveNoteIssues.push(`lives-note text changed from ${JSON.stringify(original?.text)} to ${JSON.stringify(actual.text)}`);
+    const allowedLocation = actual.inTargetTally || (actual.inSecondaryDetails && actual.campaignDetail === 'lives-note');
+    if (!allowedLocation) semanticLiveNoteIssues.push(`lives-note is outside its target tally and permitted secondary detail slot: ${JSON.stringify(actual)}`);
+    semanticLiveNoteValid = Boolean(actual.connected && semanticLiveNote.sameOriginalNodeConnected && semanticLiveNote.sameOriginalNodeFound
+      && actual.text === original?.text && allowedLocation);
+  }
+  if (semanticLiveNoteIssues.length) recordHudFailure(failures, provenance, name, 'semantic-lives-note-identity', `${name}: semantic lives-note identity/reparenting failed: ${JSON.stringify(semanticLiveNoteIssues)}`);
   const freshSamples = freshBaseline?.baseline?.samples ?? [];
   const fontComparisons = compareTypography({ samples: freshSamples }, { samples: fontScale.fontBaselines ?? [] });
   const announcementTypography = fontComparisons.find(sample => sample.selector === '#announcement');
-  const missingFreshProbes = fontComparisons.filter(sample => sample.expectedBasePx === null);
+  const isValidSemanticTallyReparentProbe = (sample: any) => semanticLiveNoteValid
+    && sample.selector === '.target-tally > small' && sample.text === '現在機を含む';
+  const unexpectedCurrentProbes = fontComparisons.filter(sample => sample.expectedBasePx === null && !isValidSemanticTallyReparentProbe(sample));
   const actualTypographyKeys = new Set((fontScale.fontBaselines ?? []).map((sample: TypographySample) => sample.key));
-  const missingCurrentProbes = freshSamples.filter((sample: TypographySample) => !actualTypographyKeys.has(sample.key));
-  const staleFontSamples = fontComparisons.filter(sample => !sample.matchesFreshBaseline || !sample.matchesExpected200);
+  const livesNoteTallyProbeKeys = new Set(freshSamples.filter((sample: TypographySample) =>
+    sample.selector === '.target-tally > small' && sample.text === '現在機を含む').map((sample: TypographySample) => sample.key));
+  const missingCurrentProbes = freshSamples.filter((sample: TypographySample) => !actualTypographyKeys.has(sample.key)
+    && !(semanticLiveNoteValid && livesNoteTallyProbeKeys.has(sample.key)));
+  const staleFontSamples = fontComparisons.filter(sample => (!sample.matchesFreshBaseline || !sample.matchesExpected200)
+    && !isValidSemanticTallyReparentProbe(sample));
   const cssAnnouncementBaseline = freshBaseline?.cssBeforeFixture?.samples?.find((sample: TypographySample) => sample.selector === '#announcement');
   const expectedCssAnnouncementBaseline = hudCase.width > hudCase.height && hudCase.height <= 600 ? 10 : 12;
-  if (!freshBaseline) failures.push(`${name}: matching fresh-page counterpart is missing`);
+  if (!freshBaseline) recordHudFailure(failures, provenance, name, 'matching-fresh-baseline', `${name}: matching fresh-page counterpart is missing`);
   if (cssAnnouncementBaseline && Math.abs(cssAnnouncementBaseline.basePx - expectedCssAnnouncementBaseline) >= 0.1) {
-    failures.push(`${name}: fresh CSS announcement baseline was ${cssAnnouncementBaseline.basePx}px, expected ${expectedCssAnnouncementBaseline}px for ${hudCase.width}×${hudCase.height}`);
+    recordHudFailure(failures, provenance, name, 'fresh-css-announcement-baseline', `${name}: fresh CSS announcement baseline was ${cssAnnouncementBaseline.basePx}px, expected ${expectedCssAnnouncementBaseline}px for ${hudCase.width}×${hudCase.height}`);
   }
-  if (missingFreshProbes.length) failures.push(`${name}: typography probes are missing from the fresh counterpart: ${JSON.stringify(missingFreshProbes.map(sample => sample.key)).slice(0, 700)}`);
-  if (missingCurrentProbes.length) failures.push(`${name}: fresh typography probes are missing from the rotation/stress state: ${JSON.stringify(missingCurrentProbes.map((sample: TypographySample) => sample.key)).slice(0, 700)}`);
-  if (staleFontSamples.length) failures.push(`${name}: current base/applied typography differs from the fresh-page values: ${JSON.stringify(staleFontSamples.slice(0, 6)).slice(0, 700)}`);
-  if (freshBaseline?.fixtureBaselineDrift?.length) failures.push(`${name}: fresh fixture changed a CSS font baseline during reparenting: ${JSON.stringify(freshBaseline.fixtureBaselineDrift.slice(0, 6)).slice(0, 700)}`);
+  if (unexpectedCurrentProbes.length) recordHudFailure(failures, provenance, name, 'unexpected-typography-probes', `${name}: current typography probes lack a matching fresh-page entry: ${JSON.stringify(unexpectedCurrentProbes.map(sample => sample.key))}`);
+  if (missingCurrentProbes.length) recordHudFailure(failures, provenance, name, 'missing-typography-probes', `${name}: fresh typography probes are missing from the rotation/stress state: ${JSON.stringify(missingCurrentProbes.map((sample: TypographySample) => sample.key))}`);
+  if (staleFontSamples.length) recordHudFailure(failures, provenance, name, 'fresh-typography-comparison', `${name}: current base/applied typography differs from the fresh-page values: ${JSON.stringify(staleFontSamples)}`);
+  if (freshBaseline?.fixtureBaselineDrift?.length) recordHudFailure(failures, provenance, name, 'fixture-font-baseline-drift', `${name}: fresh fixture changed a CSS font baseline during reparenting: ${JSON.stringify(freshBaseline.fixtureBaselineDrift)}`);
   const evidence = {
     case: name,
     provenance,
@@ -659,50 +982,70 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
     announcementPriority: fixture.announcementPriority,
     announcement: domEvidence.announcement,
     announcementReachability,
+    semanticLiveNote,
+    semanticLiveNoteIssues,
     dom: domEvidence,
     freshBaseline: freshBaseline ? { viewportBeforeSetup: freshBaseline.viewportBeforeSetup,
       cssBeforeFixture: freshBaseline.cssBeforeFixture, baseline: freshBaseline.baseline,
       fixtureBaselineDrift: freshBaseline.fixtureBaselineDrift, fixtureInlineStyleChanges: freshBaseline.fixtureInlineStyleChanges } : null,
     fontBaselines: fontScale.fontBaselines,
     fontComparisons,
-    missingFreshProbes: missingFreshProbes.map(sample => sample.key),
+    unexpectedCurrentProbes: unexpectedCurrentProbes.map(sample => sample.key),
     missingCurrentProbes: missingCurrentProbes.map((sample: TypographySample) => sample.key),
     searchInput: layoutEvidence.searchInput,
     sight: layoutEvidence.sight,
     layout,
     areaBound,
+    areaDiagnosticRegression: {
+      pointOnlyRingInput: { input: { id: 'aim-and-reload-ring', x: layoutEvidence?.sight?.x, y: layoutEvidence?.sight?.y }, expectedStatus: 'invalid', actualStatus: pointOnlyAreaEvidence.status },
+      missingRing: { expectedStatus: 'invalid', actualStatus: missingRingAreaEvidence.status },
+      duplicateRing: { expectedStatus: 'invalid', candidateCount: 2, actualStatus: duplicateRingAreaEvidence.status },
+      malformedRing: { expectedStatus: 'invalid', input: { ...productRing, width: 0 }, actualStatus: malformedRingAreaEvidence.status },
+      overlappingFixedRectangles: { rectangles: overlapFixtureRects, bounds: overlapFixtureBounds,
+        naiveArea: overlapFixtureRects.reduce((sum, rect) => sum + rect.width * rect.height, 0),
+        unionArea: overlappingAreaFixture, deduplicatedArea: 50 },
+    },
     searchBudget: { checks: layout?.searchChecks ?? null, limit: 120000,
       state: layout?.status === 'placed' ? 'completed' : layout?.searchChecks >= 120000 ? 'exhausted' : 'stopped-before-limit',
-      classification: areaBound.status === 'measured' && areaBound.shortageGap0 ? 'necessary-area-shortage'
-        : layout?.status === 'blocked' && layout?.searchChecks >= 120000 ? 'bounded-search-exhaustion-without-proven-area-shortage'
-          : layout?.status === 'placed' ? 'placed' : layout?.status ?? 'missing' },
+      areaClassification: areaBound.status !== 'measured' ? 'invalid-area-evidence'
+        : areaBound.shortageGap0 ? 'necessary-area-shortage-even-at-zero-gap'
+          : areaBound.shortageGap4 ? 'necessary-area-shortage-at-product-gap-4'
+            : 'area-alone-does-not-prove-impossibility',
+      searchClassification: layout?.status === 'blocked' && layout?.searchChecks >= 120000 ? 'bounded-search-exhaustion'
+        : layout?.status === 'blocked' ? 'blocked-before-search-limit'
+          : layout?.status ?? 'missing' },
     blockedReasons,
   };
-  await info.attach(`${name}.json`, { body: Buffer.from(JSON.stringify(evidence, null, 2)), contentType: 'application/json' });
+  await info.attach(`${evidenceName}.json`, { body: Buffer.from(JSON.stringify(evidence, null, 2)), contentType: 'application/json' });
+  coverage.jsonSaved = true;
   console.log(`[ui-only-layout-evidence] ${JSON.stringify({ case: name, provenance, viewport: evidence.viewport, mode, announcementPriority: fixture.announcementPriority,
     layoutStatus: layout?.status ?? 'missing', searchChecks: layout?.searchChecks ?? null, fixedConflicts: layout?.fixedConflicts ?? [],
     safeArea: areaBound.safeArea ?? null, requiredArea: areaBound.requiredArea ?? null,
     availableUpperBoundGap0: areaBound.availableUpperBoundGap0 ?? null, availableUpperBoundGap4: areaBound.availableUpperBoundGap4 ?? null,
     shortageGap0: areaBound.shortageGap0 ?? null, shortageGap4: areaBound.shortageGap4 ?? null,
     announcementReachable: announcementReachability.ok, announcementTypography, typographyMismatchCount: staleFontSamples.length, blockedReasons })}`);
-  expect(domEvidence.announcement.visible, `${name} keeps its announcement visible for priority ${fixture.announcementPriority}`).toBe(true);
-  expect(domEvidence.announcement.text, `${name} preserves the announcement text`).toContain('砲台の予告');
-  expect(domEvidence.announcement.critical, `${name} records the actual priority-derived critical flag` ).toBe(String(fixture.announcementPriority >= 1));
-  for (const font of fontScale.fontBaselines ?? []) expect(Math.abs(font.appliedPx - font.basePx * 2), `${name} applies 200% of current ${font.selector} baseline at ${evidence.viewport.width}×${evidence.viewport.height}`).toBeLessThan(0.1);
+  recordHudAssertion(failures, provenance, name, 'announcement-visible',
+    () => expect(domEvidence.announcement.visible).toBe(true));
+  recordHudAssertion(failures, provenance, name, 'announcement-text',
+    () => expect(domEvidence.announcement.text).toContain('砲台の予告'));
+  recordHudAssertion(failures, provenance, name, 'announcement-priority-flag',
+    () => expect(domEvidence.announcement.critical).toBe(String(fixture.announcementPriority >= 1)));
+  for (const font of fontScale.fontBaselines ?? []) recordHudAssertion(failures,
+    provenance, name, `200-percent-font-size-${font.selector}`,
+    () => expect(Math.abs(font.appliedPx - font.basePx * 2)).toBeLessThan(0.1));
   for (const [selector, expectedBasePx] of [['#hud', 16], ['.instrument', 10], ['#health', 15]] as const) {
     const sample = fontScale.fontBaselines?.find((font: any) => font.selector === selector);
-    expect(sample?.basePx, `${name} reads the product ${selector} baseline fresh at ${evidence.viewport.width}×${evidence.viewport.height}`).toBe(expectedBasePx);
+    recordHudAssertion(failures, provenance, name, `fresh-product-font-baseline-${selector}`,
+      () => expect(sample?.basePx).toBe(expectedBasePx));
   }
   const runCheck = async (label: string, check: () => Promise<unknown>) => {
-    try { await check(); } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      failures.push(`${name} / ${label}: ${message.split('\n').slice(0, 3).join(' | ').slice(0, 700)}`);
-    }
+    try { await check(); } catch (error) { recordHudError(failures, provenance, name, label, error); }
   };
   await runCheck('Canvas pixels', () => checkCanvasPixels(page, mode, canvas));
   await runCheck('DOM and Canvas HUD geometry', () => checkHudGeometry(page));
   await runCheck('44px HUD controls', () => checkGeometry(page, '#hud'));
-  return screenshotMs;
+  return { screenshotMs, areaBound, areaClassification: evidence.searchBudget.areaClassification,
+    layoutStatus: layout?.status ?? 'missing', searchChecks: layout?.searchChecks ?? null, blockedReasons };
 }
 
 test.afterAll(() => {
@@ -795,140 +1138,288 @@ test('Storage failure offers session-only settings and expires after reload', as
 });
 
 test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page, browser }, info) => {
-  let setupMs = await setup(page); let captureMs = 0; const started = performance.now();
-  const hudFailures: string[] = [];
+  let setupMs = 0; let captureMs = 0; const started = performance.now();
+  const hudFailures: HudFailureRecord[] = [];
   const freshBaselineByCase = new Map<string, any>();
   const freshBaselineEvidence: unknown[] = [];
-  const groups = [...new Set(HUD_CASES.map(hudCase => `${hudCase.width}x${hudCase.height}/${hudCase.mode}`))];
-  for (const group of groups) {
-    const groupCases = HUD_CASES.filter(hudCase => `${hudCase.width}x${hudCase.height}/${hudCase.mode}` === group);
-    const representative = groupCases[0];
-    const freshPage = await browser.newPage({ viewport: { width: representative.width, height: representative.height } });
+  const freshAreaEvidence: Array<Record<string, any>> = [];
+  const rotationAreaEvidence: Array<Record<string, any>> = [];
+  const freshCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
+  const rotationCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
+  const freshCoverageByCase = new Map(freshCoverage.map(coverage => [coverage.case, coverage]));
+  const rotationCoverageByCase = new Map(rotationCoverage.map(coverage => [coverage.case, coverage]));
+  let rotationReady = false;
+  let originalReadState: any = null;
+  let originalLivesNoteHandle: any = null;
+  let originalAnnouncementHandle: any = null;
+
+  try {
+    setupMs += await setup(page);
+    originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
+    originalLivesNoteHandle = await page.evaluateHandle(() => [...document.querySelectorAll<HTMLElement>('#app small')]
+      .find(node => node.textContent?.trim() === '現在機を含む') ?? null);
+    originalAnnouncementHandle = await page.evaluateHandle(() => document.querySelector<HTMLElement>('#announcement'));
+    rotationReady = true;
+  } catch (error) {
+    const setupCoverage: HudCaseCoverage = { case: 'rotation-stress-setup', attempted: true, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+    captureMs += await captureHudFailureEvidence(page, info, setupCoverage, hudFailures, 'rotation-stress', 'rotation-stress-setup', 'shared-page-setup', error);
+    for (const coverage of rotationCoverage) coverage.notRunReason = `shared rotation page setup failed: ${setupCoverage.exceptionMessage ?? String(error)}`;
+  }
+
+  for (const hudCase of HUD_CASES) {
+    // Every fixed state gets its own document with its viewport set before UI setup.
+    // This prevents a previous mode/priority/rotation from becoming its baseline.
+    const coverage = freshCoverageByCase.get(hudCase.name)!;
+    coverage.attempted = true;
+    let freshPage: Page | undefined;
+    let measuredArea: any = null;
     try {
+      freshPage = await browser.newPage({ viewport: { width: hudCase.width, height: hudCase.height } });
       const viewportBeforeSetup = freshPage.viewportSize();
-      expect(viewportBeforeSetup, `${group} fixes its viewport before setup`).toEqual({ width: representative.width, height: representative.height });
+      if (viewportBeforeSetup?.width !== hudCase.width || viewportBeforeSetup.height !== hudCase.height)
+        recordHudFailure(hudFailures, 'fresh-page', hudCase.name, 'viewport-before-setup', `${hudCase.name}: fresh-page viewport before setup was ${JSON.stringify(viewportBeforeSetup)}`);
       setupMs += await setup(freshPage);
       const cssBeforeFixture = await typographySnapshot(freshPage);
-      for (const hudCase of groupCases) {
-        await paintedFixture(freshPage, hudCase.mode, hudCase.alert, hudCase.priority);
-        const baseline = await typographySnapshot(freshPage);
-        const layoutEvidence = await act(freshPage, 'evidence');
-        const beforeMap = new Map(cssBeforeFixture.samples.map((sample: TypographySample) => [sample.key, sample]));
-        const fixtureBaselineDrift = baseline.samples.flatMap((sample: TypographySample) => {
-          const original = beforeMap.get(sample.key);
-          return original && Math.abs(original.basePx - sample.basePx) >= 0.1
-            ? [{ key: sample.key, selector: sample.selector, originalBasePx: original.basePx, afterFixtureBasePx: sample.basePx,
-              originalInlineValue: original.inlineValue, afterFixtureInlineValue: sample.inlineValue, originalParent: original.parent, afterFixtureParent: sample.parent }]
-            : [];
-        });
-        const fixtureInlineStyleChanges = baseline.samples.flatMap((sample: TypographySample) => {
-          const original = beforeMap.get(sample.key);
-          return original && (original.inlineValue !== sample.inlineValue || original.inlinePriority !== sample.inlinePriority)
-            ? [{ key: sample.key, selector: sample.selector, originalBasePx: original.basePx, afterFixtureBasePx: sample.basePx,
-              originalInlineValue: original.inlineValue, originalInlinePriority: original.inlinePriority,
-              afterFixtureInlineValue: sample.inlineValue, afterFixtureInlinePriority: sample.inlinePriority,
-              originalParent: original.parent, afterFixtureParent: sample.parent }]
-            : [];
-        });
-        const freshBaseline = { case: hudCase.name, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority,
-          viewportBeforeSetup, cssBeforeFixture, baseline, fixtureBaselineDrift, fixtureInlineStyleChanges,
-          searchInput: layoutEvidence.searchInput, sight: layoutEvidence.sight, layout: layoutEvidence.layout };
-        freshBaselineByCase.set(hudCase.name, freshBaseline);
-        freshBaselineEvidence.push(freshBaseline);
-      }
+      const originalLivesNoteHandle = await freshPage.evaluateHandle(() => [...document.querySelectorAll<HTMLElement>('#app small')]
+        .find(node => node.textContent?.trim() === '現在機を含む') ?? null);
+      const originalAnnouncementHandle = await freshPage.evaluateHandle(() => document.querySelector<HTMLElement>('#announcement'));
+      const fixture = await paintedFixture(freshPage, hudCase.mode, hudCase.alert, hudCase.priority);
+      const baseline = await typographySnapshot(freshPage);
+      const layoutEvidence = await act(freshPage, 'evidence');
+      const beforeMap = new Map(cssBeforeFixture.samples.map((sample: TypographySample) => [sample.key, sample]));
+      const fixtureBaselineDrift = baseline.samples.flatMap((sample: TypographySample) => {
+        const original = beforeMap.get(sample.key);
+        return original && Math.abs(original.basePx - sample.basePx) >= 0.1
+          ? [{ key: sample.key, selector: sample.selector, originalBasePx: original.basePx, afterFixtureBasePx: sample.basePx,
+            originalInlineValue: original.inlineValue, afterFixtureInlineValue: sample.inlineValue, originalParent: original.parent, afterFixtureParent: sample.parent }]
+          : [];
+      });
+      const fixtureInlineStyleChanges = baseline.samples.flatMap((sample: TypographySample) => {
+        const original = beforeMap.get(sample.key);
+        return original && (original.inlineValue !== sample.inlineValue || original.inlinePriority !== sample.inlinePriority)
+          ? [{ key: sample.key, selector: sample.selector, originalBasePx: original.basePx, afterFixtureBasePx: sample.basePx,
+            originalInlineValue: original.inlineValue, originalInlinePriority: original.inlinePriority,
+            afterFixtureInlineValue: sample.inlineValue, afterFixtureInlinePriority: sample.inlinePriority,
+            originalParent: original.parent, afterFixtureParent: sample.parent }]
+          : [];
+      });
+      const freshBaseline = { case: hudCase.name, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority,
+        viewportBeforeSetup, cssBeforeFixture, baseline, fixtureBaselineDrift, fixtureInlineStyleChanges,
+        searchInput: layoutEvidence.searchInput, sight: layoutEvidence.sight, layout: layoutEvidence.layout };
+      freshBaselineByCase.set(hudCase.name, freshBaseline);
+      freshBaselineEvidence.push(freshBaseline);
+      const fontScale = await enlargeText(freshPage);
+      const painted = await repaintFixedFixture(freshPage);
+      const inspection = await inspectAndCaptureHudCase(freshPage, info, hudCase, painted, fixture, fontScale,
+        freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, 'fresh-page', hudFailures, coverage);
+      captureMs += inspection.screenshotMs;
+      measuredArea = { status: inspection.areaBound.status, areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
+        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons };
+      coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
+    } catch (error) {
+      captureMs += await captureHudFailureEvidence(freshPage, info, coverage, hudFailures, 'fresh-page', hudCase.name, 'case-exception', error,
+        { viewport: { width: hudCase.width, height: hudCase.height }, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority, measuredArea });
     } finally {
-      await freshPage.close();
+      if (freshPage) {
+        try { await freshPage.close(); }
+        catch (error) { recordHudError(hudFailures, 'fresh-page', hudCase.name, 'page-close', error); }
+      }
+      freshAreaEvidence.push({ case: hudCase.name, ...(measuredArea ?? { status: 'not-measured', areaBound: null,
+        areaClassification: 'not-run-or-interrupted-before-area-inspection', layoutStatus: 'not-measured', searchChecks: null, blockedReasons: [] }) });
     }
   }
-  await info.attach('fresh-page-hud-baselines.json', { body: Buffer.from(JSON.stringify(freshBaselineEvidence, null, 2)), contentType: 'application/json' });
-  const inspectFixedHud = async (name: string, mode: 'easy' | 'normal', fixture: any) => {
-    const hudCase = HUD_CASES.find(candidate => candidate.name === name);
-    const freshBaseline = freshBaselineByCase.get(name);
-    if (!hudCase || !freshBaseline) throw new Error(`Missing fresh-page HUD counterpart for ${name}`);
-    expect(hudCase.mode).toBe(mode);
+
+  const inspectFixedHud = async (hudCase: HudCase, mode: 'easy' | 'normal', fixture: any, coverage: HudCaseCoverage) => {
+    const name = hudCase.name;
+    const freshBaseline = freshBaselineByCase.get(name) ?? null;
+    if (!freshBaseline) recordHudFailure(hudFailures, 'rotation-stress', name, 'matching-fresh-baseline', `${name}: matching fresh-page counterpart is missing before rotation capture`);
+    recordHudAssertion(hudFailures, 'rotation-stress', name, 'rotation-mode-matches-hud-case', () => expect(hudCase.mode).toBe(mode));
     const fontScale = await enlargeText(page);
     const painted = await repaintFixedFixture(page);
-    captureMs += await inspectAndCaptureHudCase(page, info, hudCase, painted, fixture, fontScale,
-      freshBaseline, 'rotation-stress', hudFailures);
+    const inspection = await inspectAndCaptureHudCase(page, info, hudCase, painted, fixture, fontScale,
+      freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, 'rotation-stress', hudFailures, coverage);
+    captureMs += inspection.screenshotMs;
+    coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
+    rotationAreaEvidence.push({ case: hudCase.name, status: inspection.areaBound.status,
+      areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
+      layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons });
   };
-  const originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
-  await setViewportAndWait(page, 320, 568);
-  let fixture = await paintedFixture(page, 'easy', 'outside', 0);
-  expect(fixture.screen).toBe('playing');
-  const hudState = await page.evaluate(() => {
-    const hud = document.querySelector<HTMLElement>('#hud'), app = document.querySelector<HTMLElement>('#app');
-    const read = (window as any).__fantasiaReadState?.(false);
-    return { hidden: hud?.hidden, screen: app?.dataset.screen, engineScreen: read?.screen,
-      graphicsReady: read?.graphicsReady, renderStatus: read?.renderStatus, drawCalls: read?.render?.drawCalls };
+
+  const runRotationCase = async (name: string, operation: (coverage: HudCaseCoverage) => Promise<void>) => {
+    const coverage = rotationCoverageByCase.get(name);
+    if (!coverage) {
+      recordHudFailure(hudFailures, 'rotation-stress', name, 'coverage-definition', `Missing HUD case coverage definition for rotation state ${name}`);
+      return;
+    }
+    if (!rotationReady) return;
+    coverage.attempted = true;
+    const failuresBefore = hudFailures.length;
+    try { await operation(coverage); }
+    catch (error) {
+      captureMs += await captureHudFailureEvidence(page, info, coverage, hudFailures, 'rotation-stress', name, 'case-exception', error);
+    }
+    if (!coverage.evidenceCompleted && !coverage.exceptionMessage)
+      recordHudFailure(hudFailures, 'rotation-stress', name, 'incomplete-evidence', `${name}: rotation-stress case returned without complete PNG and JSON evidence`);
+    if (hudFailures.length > failuresBefore && !coverage.exceptionMessage) {
+      coverage.exceptionMessage = hudFailures.slice(failuresBefore).map(failure => failure.message).join('\n');
+    }
+  };
+
+  const easyOutside0 = HUD_CASES[0], easyOutside4 = HUD_CASES[1], normalProtected0 = HUD_CASES[2], normalProtected4 = HUD_CASES[3];
+  const normalLow4 = HUD_CASES[4], easyClear0 = HUD_CASES[5], easyClear4 = HUD_CASES[6], easyWarning4 = HUD_CASES[7];
+  const normalRespawn0 = HUD_CASES[8], normalRespawn4 = HUD_CASES[9];
+  const inspect = (hudCase: HudCase, mode: 'easy' | 'normal', fixture: any, coverage: HudCaseCoverage) => inspectFixedHud(hudCase, mode, fixture, coverage);
+
+  await runRotationCase(easyOutside0.name, async coverage => {
+    await setViewportAndWait(page, 320, 568);
+    const fixture = await paintedFixture(page, 'easy', 'outside', 0);
+    expect(fixture.screen).toBe('playing');
+    const hudState = await page.evaluate(() => {
+      const hud = document.querySelector<HTMLElement>('#hud'), app = document.querySelector<HTMLElement>('#app');
+      const read = (window as any).__fantasiaReadState?.(false);
+      return { hidden: hud?.hidden, screen: app?.dataset.screen, engineScreen: read?.screen,
+        graphicsReady: read?.graphicsReady, renderStatus: read?.renderStatus, drawCalls: read?.render?.drawCalls };
+    });
+    expect(hudState.hidden, `fixed HUD screen state ${JSON.stringify(hudState)}`).toBe(false);
+    await expect(page.locator('#normal-controls')).toBeHidden();
+    await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
+    await expect(page.locator('#warning')).toContainText('作戦圏へ戻って');
+    await expect(page.locator('#campaign-threat')).toContainText('砲台の魔法');
+    await expect(page.locator('#reload-status')).toContainText('再装填中');
+    await inspect(easyOutside0, 'easy', fixture, coverage);
   });
-  expect(hudState.hidden, `fixed HUD screen state ${JSON.stringify(hudState)}`).toBe(false);
-  await expect(page.locator('#normal-controls')).toBeHidden();
-  await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
-  await expect(page.locator('#warning')).toContainText('作戦圏へ戻って');
-  await expect(page.locator('#campaign-threat')).toContainText('砲台の魔法');
-  await expect(page.locator('#reload-status')).toContainText('再装填中');
-  await inspectFixedHud('hud-easy-outside-small-portrait-text-200-priority-0.png', 'easy', fixture);
-  fixture = await paintedFixture(page, 'easy', 'outside', 4);
-  await inspectFixedHud('hud-easy-outside-small-portrait-text-200-priority-4.png', 'easy', fixture);
-  const easyAim = await page.evaluate(async () => {
-    const { aimRadius } = await import('/src/aim-indicator.ts');
-    const flight = document.querySelector('#flight')!.getBoundingClientRect(), markers = document.querySelector('#markers')!.getBoundingClientRect();
-    return { radius: aimRadius('easy', innerWidth, innerHeight), sameCanvas: flight.width === markers.width && flight.height === markers.height, pointerEvents: getComputedStyle(document.querySelector('#markers')!).pointerEvents };
+  await runRotationCase(easyOutside4.name, async coverage => {
+    const fixture = await paintedFixture(page, 'easy', 'outside', 4);
+    await inspect(easyOutside4, 'easy', fixture, coverage);
+    const easyAim = await page.evaluate(async () => {
+      const { aimRadius } = await import('/src/aim-indicator.ts');
+      const flight = document.querySelector('#flight')!.getBoundingClientRect(), markers = document.querySelector('#markers')!.getBoundingClientRect();
+      return { radius: aimRadius('easy', innerWidth, innerHeight), sameCanvas: flight.width === markers.width && flight.height === markers.height, pointerEvents: getComputedStyle(document.querySelector('#markers')!).pointerEvents };
+    });
+    expect(easyAim.radius).toBeCloseTo(320 * .135); expect(easyAim.sameCanvas).toBe(true); expect(easyAim.pointerEvents).toBe('none');
   });
-  expect(easyAim.radius).toBeCloseTo(320 * .135); expect(easyAim.sameCanvas).toBe(true); expect(easyAim.pointerEvents).toBe('none');
-
-  await act(page, 'reset'); await setViewportAndWait(page, 568, 320);
-  fixture = await paintedFixture(page, 'normal', 'protected', 0);
-  const normalModeState = await page.evaluate(() => {
-    const controls = document.querySelector<HTMLElement>('#normal-controls');
-    const app = document.querySelector<HTMLElement>('#app');
-    const read = (window as any).__fantasiaReadState?.(false);
-    return { appMode: app?.dataset.mode, stateMode: read?.mode, controlsHidden: controls?.hidden, screen: app?.dataset.screen };
+  await runRotationCase(normalProtected0.name, async coverage => {
+    await act(page, 'reset'); await setViewportAndWait(page, 568, 320);
+    const fixture = await paintedFixture(page, 'normal', 'protected', 0);
+    const normalModeState = await page.evaluate(() => {
+      const controls = document.querySelector<HTMLElement>('#normal-controls');
+      const app = document.querySelector<HTMLElement>('#app');
+      const read = (window as any).__fantasiaReadState?.(false);
+      return { appMode: app?.dataset.mode, stateMode: read?.mode, controlsHidden: controls?.hidden, screen: app?.dataset.screen };
+    });
+    expect(fixture.mode, `fixed Normal fixture ${JSON.stringify(normalModeState)}`).toBe('normal');
+    expect(normalModeState.appMode).toBe('normal'); expect(normalModeState.stateMode).toBe('normal'); expect(normalModeState.controlsHidden).toBe(false);
+    await expect(page.locator('#fire')).toBeVisible(); await expect(page.locator('#throttle')).toBeVisible();
+    await expect(page.locator('#warning')).toContainText('復活保護'); await expect(page.locator('#reload-status')).toContainText('再装填中');
+    await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
+    await inspect(normalProtected0, 'normal', fixture, coverage);
+    const normalAim = await page.evaluate(async () => {
+      const { aimRadius } = await import('/src/aim-indicator.ts');
+      const flight = document.querySelector('#flight')!.getBoundingClientRect(), markers = document.querySelector('#markers')!.getBoundingClientRect();
+      return { radius: aimRadius('normal', innerWidth, innerHeight), sameCanvas: flight.width === markers.width && flight.height === markers.height, pointerEvents: getComputedStyle(document.querySelector('#markers')!).pointerEvents };
+    });
+    expect(normalAim.radius).toBeGreaterThanOrEqual(26); expect(normalAim.sameCanvas).toBe(true); expect(normalAim.pointerEvents).toBe('none');
   });
-  expect(fixture.mode, `fixed Normal fixture ${JSON.stringify(normalModeState)}`).toBe('normal');
-  expect(normalModeState.appMode).toBe('normal');
-  expect(normalModeState.stateMode).toBe('normal');
-  expect(normalModeState.controlsHidden).toBe(false);
-  // The wrapper has no height because its flight controls are absolutely positioned.
-  // Assert the actual controls that players see and operate instead.
-  await expect(page.locator('#fire')).toBeVisible(); await expect(page.locator('#throttle')).toBeVisible();
-  await expect(page.locator('#warning')).toContainText('復活保護');
-  await expect(page.locator('#reload-status')).toContainText('再装填中');
-  await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
-  await inspectFixedHud('hud-normal-protected-small-landscape-text-200-priority-0.png', 'normal', fixture);
-  const normalAim = await page.evaluate(async () => {
-    const { aimRadius } = await import('/src/aim-indicator.ts');
-    const flight = document.querySelector('#flight')!.getBoundingClientRect(), markers = document.querySelector('#markers')!.getBoundingClientRect();
-    return { radius: aimRadius('normal', innerWidth, innerHeight), sameCanvas: flight.width === markers.width && flight.height === markers.height, pointerEvents: getComputedStyle(document.querySelector('#markers')!).pointerEvents };
+  await runRotationCase(normalProtected4.name, async coverage => {
+    await setViewportAndWait(page, 568, 320);
+    const fixture = await paintedFixture(page, 'normal', 'protected', 4);
+    await inspect(normalProtected4, 'normal', fixture, coverage);
   });
-  expect(normalAim.radius).toBeGreaterThanOrEqual(26); expect(normalAim.sameCanvas).toBe(true); expect(normalAim.pointerEvents).toBe('none');
+  await runRotationCase(normalLow4.name, async coverage => {
+    await setViewportAndWait(page, 568, 320);
+    const fixture = await paintedFixture(page, 'normal', 'low', 4); await expect(page.locator('#warning')).toContainText('低空注意');
+    await inspect(normalLow4, 'normal', fixture, coverage);
+  });
+  await runRotationCase(easyClear0.name, async coverage => {
+    // Retain the original mode/rotation sequence: this state follows the Normal landscape cases.
+    await setViewportAndWait(page, 568, 320);
+    const fixture = await paintedFixture(page, 'easy', 'clear', 0);
+    await inspect(easyClear0, 'easy', fixture, coverage);
+  });
+  await runRotationCase(easyClear4.name, async coverage => {
+    await setViewportAndWait(page, 568, 320);
+    const fixture = await paintedFixture(page, 'easy', 'clear', 4);
+    await inspect(easyClear4, 'easy', fixture, coverage);
+    await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
+  });
+  await runRotationCase(easyWarning4.name, async coverage => {
+    await setViewportAndWait(page, 568, 320);
+    const fixture = await paintedFixture(page, 'easy', 'low', 4); await expect(page.locator('#warning')).toContainText('低空注意');
+    await inspect(easyWarning4, 'easy', fixture, coverage);
+  });
+  await runRotationCase(normalRespawn0.name, async coverage => {
+    await act(page, 'reset'); await setViewportAndWait(page, 320, 568);
+    const fixture = await paintedFixture(page, 'normal', 'respawn', 0);
+    expect(fixture.status).toBe('respawning'); await expect(page.locator('#respawn-status')).toBeVisible();
+    await expect(page.locator('#respawn-status')).toContainText('復活まで 3秒');
+    await expect(page.locator('#warning')).toBeHidden(); await expect(page.locator('#reload-status')).toContainText('再装填中');
+    await inspect(normalRespawn0, 'normal', fixture, coverage);
+  });
+  await runRotationCase(normalRespawn4.name, async coverage => {
+    await setViewportAndWait(page, 320, 568);
+    const fixture = await paintedFixture(page, 'normal', 'respawn', 4);
+    await inspect(normalRespawn4, 'normal', fixture, coverage);
+  });
+  if (rotationReady) {
+    await recordHudAsyncAssertion(hudFailures, 'rotation-stress', 'rotation-stress-read-only-state-identity', 'read-only-state-function-identity', () =>
+      expect(page.evaluate((readState) => window.__fantasiaReadState === readState, originalReadState)).resolves.toBe(true));
+  }
 
-  fixture = await paintedFixture(page, 'normal', 'protected', 4);
-  await inspectFixedHud('hud-normal-protected-small-landscape-text-200-priority-4.png', 'normal', fixture);
-  fixture = await paintedFixture(page, 'normal', 'low', 4); await expect(page.locator('#warning')).toContainText('低空注意');
-  await inspectFixedHud('hud-normal-low-warning-small-landscape-text-200-priority-4.png', 'normal', fixture);
-
-  // Keep the existing Easy landscape clear case, then add the missing Easy landscape warning.
-  fixture = await paintedFixture(page, 'easy', 'clear', 0);
-  await inspectFixedHud('hud-easy-clear-small-landscape-text-200-priority-0.png', 'easy', fixture);
-  fixture = await paintedFixture(page, 'easy', 'clear', 4);
-  await inspectFixedHud('hud-easy-clear-small-landscape-text-200-priority-4.png', 'easy', fixture);
-  await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
-  fixture = await paintedFixture(page, 'easy', 'low', 4); await expect(page.locator('#warning')).toContainText('低空注意');
-  await inspectFixedHud('hud-easy-warning-small-landscape-text-200-priority-4.png', 'easy', fixture);
-
-  await act(page, 'reset'); await setViewportAndWait(page, 320, 568);
-  fixture = await paintedFixture(page, 'normal', 'respawn', 0);
-  expect(fixture.status).toBe('respawning'); await expect(page.locator('#respawn-status')).toBeVisible();
-  await expect(page.locator('#respawn-status')).toContainText('復活まで 3秒');
-  await expect(page.locator('#warning')).toBeHidden(); await expect(page.locator('#reload-status')).toContainText('再装填中');
-  await inspectFixedHud('hud-normal-respawn-small-portrait-text-200-priority-0.png', 'normal', fixture);
-  fixture = await paintedFixture(page, 'normal', 'respawn', 4);
-  await inspectFixedHud('hud-normal-respawn-small-portrait-text-200-priority-4.png', 'normal', fixture);
-
-  expect(await page.evaluate((readState) => window.__fantasiaReadState === readState, originalReadState)).toBe(true);
   await record('hud-modes-sites-aim-alerts', setupMs, started, captureMs);
-  expect(hudFailures, 'all Easy/Normal portrait/landscape HUD cases, Canvas pixels and 44px geometry').toEqual([]);
+  const summarizeAreaEvidence = (provenance: 'fresh-page-200%' | 'rotation-stress-200%', cases: Array<Record<string, any>>) => ({
+    provenance,
+    statesCaptured: cases.length,
+    counts: {
+      measured: cases.filter(item => item.status === 'measured').length,
+      invalidOrMissing: cases.filter(item => item.status !== 'measured').length,
+      gap0Shortages: cases.filter(item => item.areaBound?.shortageGap0 === true).length,
+      gap4Shortages: cases.filter(item => item.areaBound?.shortageGap4 === true).length,
+      gap4OnlyShortages: cases.filter(item => item.areaBound?.shortageGap4 === true && item.areaBound?.shortageGap0 !== true).length,
+      searchExhausted: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks >= 120000).length,
+      blockedBeforeSearchLimit: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks < 120000).length,
+    },
+    cases,
+  });
+  for (const coverage of rotationCoverage) {
+    if (!rotationReady) continue;
+    const caseEvidence = rotationAreaEvidence.find(item => item.case === coverage.case);
+    if (!caseEvidence) rotationAreaEvidence.push({ case: coverage.case, status: 'not-measured', areaBound: null,
+      areaClassification: 'case-failed-before-area-inspection', layoutStatus: 'not-measured', searchChecks: null, blockedReasons: [] });
+  }
+  const buildCoverageSummary = (provenance: HudProvenance, coverages: HudCaseCoverage[]) => {
+    const cases = coverages.map(coverage => {
+      let caseFailures = hudFailures.filter(failure => failure.provenance === provenance && failure.case === coverage.case);
+      if (coverage.attempted && !coverage.evidenceCompleted && !caseFailures.length) {
+        recordHudFailure(hudFailures, provenance, coverage.case, 'incomplete-evidence', `${coverage.case}: attempted case did not complete JSON/PNG evidence capture`);
+        caseFailures = hudFailures.filter(failure => failure.provenance === provenance && failure.case === coverage.case);
+      }
+      const status = !coverage.attempted ? 'not-run' : caseFailures.length || !coverage.evidenceCompleted ? 'failed' : 'completed';
+      return { ...coverage, status, failureRecords: caseFailures };
+    });
+    const counts = { attempted: cases.filter(item => item.attempted).length, completed: cases.filter(item => item.status === 'completed').length,
+      failed: cases.filter(item => item.status === 'failed').length, notRun: cases.filter(item => item.status === 'not-run').length };
+    return { provenance, counts, cases };
+  };
+  const freshAreaSummary = summarizeAreaEvidence('fresh-page-200%', freshAreaEvidence);
+  const rotationAreaSummary = summarizeAreaEvidence('rotation-stress-200%', rotationAreaEvidence);
+  const freshCoverageSummary = buildCoverageSummary('fresh-page', freshCoverage);
+  const rotationCoverageSummary = buildCoverageSummary('rotation-stress', rotationCoverage);
+  const attachSummary = async (name: string, body: unknown, provenance: HudProvenance | 'aggregate', stage: string) => {
+    try { await info.attach(name, { body: Buffer.from(JSON.stringify(body, null, 2)), contentType: 'application/json' }); }
+    catch (error) { recordHudError(hudFailures, provenance, `summary:${name}`, stage, error); }
+  };
+  await attachSummary('fresh-page-hud-baselines.json', freshBaselineEvidence, 'fresh-page', 'baseline-summary-attach');
+  await attachSummary('fresh-page-hud-area-summary.json', freshAreaSummary, 'fresh-page', 'area-summary-attach');
+  await attachSummary('rotation-stress-hud-area-summary.json', rotationAreaSummary, 'rotation-stress', 'area-summary-attach');
+  await attachSummary('fresh-page-hud-coverage.json', freshCoverageSummary, 'fresh-page', 'coverage-summary-attach');
+  await attachSummary('rotation-stress-hud-coverage.json', rotationCoverageSummary, 'rotation-stress', 'coverage-summary-attach');
+  const commonAggregate = { freshPage: { coverage: freshCoverageSummary, area: freshAreaSummary },
+    rotationStress: { coverage: rotationCoverageSummary, area: rotationAreaSummary }, collectedFailures: hudFailures };
+  await attachSummary('hud-fixed-state-common-aggregate.json', commonAggregate, 'aggregate', 'common-aggregate-attach');
+  console.log(`[ui-only-hud-common-aggregate] ${JSON.stringify({ freshPage: freshCoverageSummary.counts,
+    rotationStress: rotationCoverageSummary.counts, area: { freshPage: freshAreaSummary.counts, rotationStress: rotationAreaSummary.counts },
+    failureCount: hudFailures.length, failureCases: hudFailures.map(failure => ({ provenance: failure.provenance, case: failure.case, stage: failure.stage })) })}`);
+  expect(hudFailures, 'fresh-page and original rotation-stress cases completed independently; full HUD geometry, Canvas pixels, text and 44px checks pass').toEqual([]);
 });
 
 test('Pause screen details, Rules and settings remain usable without advancing a run', async ({ page }, info) => {
