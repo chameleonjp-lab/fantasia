@@ -10,7 +10,9 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
   }
 
   function uiOnlyPaint() {
-    if (screen !== 'playing' || !['running', 'respawning'].includes(state.status)) throw new Error('UI-only paint requires a fixed HUD state');
+    if (screen !== 'playing' || !['running', 'respawning'].includes(state.status)) {
+      throw new Error(`UI-only paint requires a fixed HUD state: screen=${screen}; status=${state.status}; pauseReasons=${[...pauseReasons].join(',')}`);
+    }
     scene.setOverlayVisible(true);
     if (!scene.render(state, player, state.mode)) throw new Error('UI-only Canvas2D painter did not render');
     return uiOnlyCanvas();

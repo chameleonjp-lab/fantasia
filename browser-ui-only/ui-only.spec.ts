@@ -310,7 +310,8 @@ test('Home, Rules, touch and keyboard settings save through product dialogs', as
   await checkGeometry(page, '#control-settings'); await checkBodyPanels(page, '#control-settings');
   captureMs += await capture(page, info, 'settings-touch.png');
   const oldSize = await page.locator('#control-size').inputValue();
-  await page.locator('#control-size').focus(); await page.keyboard.press('ArrowRight');
+  const sizeRange = await page.locator('#control-size').evaluate(element => ({ min: Number((element as HTMLInputElement).min), max: Number((element as HTMLInputElement).max) }));
+  await page.locator('#control-size').focus(); await page.keyboard.press(Number(oldSize) >= sizeRange.max ? 'ArrowLeft' : 'ArrowRight');
   expect(await page.locator('#control-size').inputValue()).not.toBe(oldSize);
   await page.click('#control-editor-keyboard'); await page.click('[data-key-action="bomb"]'); await page.keyboard.press('x');
   await expect(page.locator('[data-key-action="bomb"]')).toHaveText('X');
