@@ -45,6 +45,18 @@ async function setup(page: Page): Promise<number> {
   return performance.now() - start;
 }
 
+async function setViewportAndWait(page: Page, width: number, height: number) {
+  const current = page.viewportSize();
+  if (current?.width !== width || current.height !== height) {
+    const resized = page.evaluate(() => new Promise<void>(resolve => {
+      window.addEventListener('resize', () => resolve(), { once: true });
+    }));
+    await page.setViewportSize({ width, height });
+    await resized;
+  }
+  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+}
+
 async function act(page: Page, method: string, ...args: unknown[]) {
   return page.evaluate(async ({ method, args }) => await (window as any).__fantasiaUiOnlyTest[method](...args), { method, args });
 }
@@ -288,30 +300,31 @@ test.afterAll(() => {
 
 test('Home, Rules, touch and keyboard settings save through product dialogs', async ({ page }, info) => {
   const setupMs = await setup(page); let captureMs = 0; const started = performance.now();
-  await page.setViewportSize({ width: 320, height: 568 });
+  await setViewportAndWait(page, 320, 568);
   expect(await enlargeText(page)).toBeGreaterThan(20);
   await expect(page.locator('#home')).toBeVisible();
   await checkGeometry(page, '#home');
   await checkBodyPanels(page, '#home');
   captureMs += await capture(page, info, 'home-portrait-text-200.png');
-  await page.setViewportSize({ width: 568, height: 320 });
+  await setViewportAndWait(page, 568, 320);
   await checkGeometry(page, '#home'); await checkBodyPanels(page, '#home'); captureMs += await capture(page, info, 'home-landscape-text-200.png');
   await page.reload();
-  await page.setViewportSize({ width: 568, height: 320 });
+  await setViewportAndWait(page, 568, 320);
   await page.click('#home-rules'); await expect(page.locator('#rules-guide[open]')).toBeVisible();
   await enlargeText(page);
   await checkGeometry(page, '#rules-guide'); await checkBodyPanels(page, '#rules-guide'); captureMs += await capture(page, info, 'rules-landscape-text-200.png');
   await page.locator('#rules-content').evaluate(element => { element.scrollTop = element.scrollHeight; });
   expect(await page.locator('#rules-content').evaluate(element => element.scrollTop + element.clientHeight >= element.scrollHeight - 1)).toBe(true);
   await page.click('#rules-back');
-  await page.setViewportSize({ width: 393, height: 852 });
+  await setViewportAndWait(page, 393, 852);
   await page.click('#home-controls'); await expect(page.locator('#control-settings[open]')).toBeVisible();
   await enlargeText(page);
   await checkGeometry(page, '#control-settings'); await checkBodyPanels(page, '#control-settings');
   captureMs += await capture(page, info, 'settings-touch.png');
-  const oldSize = await page.locator('#control-size').inputValue();
-  const sizeRange = await page.locator('#control-size').evaluate(element => ({ min: Number((element as HTMLInputElement).min), max: Number((element as HTMLInputElement).max) }));
-  await page.locator('#control-size').focus(); await page.keyboard.press(Number(oldSize) >= sizeRange.max ? 'ArrowLeft' : 'ArrowRight');
+  const sizeInput = page.locator('#control-size');
+  const oldSize = await sizeInput.inputValue();
+  const sizeRange = await sizeInput.evaluate(element => ({ min: Number((element as HTMLInputElement).min), max: Number((element as HTMLInputElement).max) }));
+  await sizeInput.press(Number(oldSize) >= sizeRange.max ? 'ArrowLeft' : 'ArrowRight');
   expect(await page.locator('#control-size').inputValue()).not.toBe(oldSize);
   await page.click('#control-editor-keyboard'); await page.click('[data-key-action="bomb"]'); await page.keyboard.press('x');
   await expect(page.locator('[data-key-action="bomb"]')).toHaveText('X');
@@ -366,7 +379,7 @@ test('Storage failure offers session-only settings and expires after reload', as
 test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page }, info) => {
   const setupMs = await setup(page); let captureMs = 0; const started = performance.now();
   const originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
-  await page.setViewportSize({ width: 320, height: 568 });
+  await setViewportAndWait(page, 320, 568);
   let fixture = await paintedFixture(page, 'easy', 'outside');
   expect(fixture.screen).toBe('playing');
   const hudState = await page.evaluate(() => {
@@ -393,7 +406,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   });
   expect(easyAim.radius).toBeCloseTo(320 * .135); expect(easyAim.sameCanvas).toBe(true); expect(easyAim.pointerEvents).toBe('none');
 
-  await act(page, 'reset'); await page.setViewportSize({ width: 568, height: 320 });
+  await act(page, 'reset'); await setViewportAndWait(page, 568, 320);
   fixture = await paintedFixture(page, 'normal', 'protected');
   await expect(page.locator('#normal-controls')).toBeVisible(); await expect(page.locator('#warning')).toContainText('復活保護');
   await expect(page.locator('#reload-status')).toContainText('再装填中');
@@ -419,7 +432,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   await checkCanvasPixels(page, 'easy', fixture.canvas); await checkHudGeometry(page); await checkGeometry(page, '#hud');
   captureMs += await capture(page, info, 'hud-easy-warning-small-landscape-text-200.png');
 
-  await act(page, 'reset'); await page.setViewportSize({ width: 320, height: 568 });
+  await act(page, 'reset'); await setViewportAndWait(page, 320, 568);
   fixture = await paintedFixture(page, 'normal', 'respawn');
   expect(fixture.status).toBe('respawning'); await expect(page.locator('#respawn-status')).toBeVisible();
   await expect(page.locator('#respawn-status')).toContainText('復活まで 3秒');
@@ -456,7 +469,7 @@ test('Every victory and defeat result reason displays details and reaches the fi
     ['残機なし', 'すべての機体を失いました', '作戦終了'], ['全軍の再建不能', '味方地上軍の生存兵と予備兵が尽き、再建できません', '作戦終了'],
     ['作戦期限20分', '20分の作戦期限に達しました', '作戦終了'],
   ] as const;
-  await page.setViewportSize({ width: 320, height: 568 });
+  await setViewportAndWait(page, 320, 568);
   for (const [reason, message, title] of cases) {
     const result = await act(page, 'result', reason);
     expect(result.screen).toBe('result');
