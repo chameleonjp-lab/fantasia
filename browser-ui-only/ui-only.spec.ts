@@ -334,6 +334,7 @@ test('Home, Rules, touch and keyboard settings save through product dialogs', as
   await checkGeometry(page, '#control-settings'); await checkBodyPanels(page, '#control-settings');
   captureMs += await capture(page, info, 'settings-touch.png');
   const sizeInput = page.locator('#control-size');
+  await sizeInput.scrollIntoViewIfNeeded();
   const oldSize = await sizeInput.inputValue();
   const sliderBox = await sizeInput.boundingBox();
   const sliderState = await sizeInput.evaluate(element => ({ min: Number((element as HTMLInputElement).min), max: Number((element as HTMLInputElement).max), step: Number((element as HTMLInputElement).step), disabled: (element as HTMLInputElement).disabled }));
