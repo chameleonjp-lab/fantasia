@@ -10,10 +10,10 @@ import { criticalRuntimeEvidence, CriticalAcquisitionDriver } from '../browser-a
 import { RealRendererDriver } from '../browser-acceptance/real-driver';
 
 const neutral: FlightInput = { turn: 0, climb: 0, accelerate: false, brake: false, fire: false, bomb: false, loop: false, viewAspect: 1, steeringRevision: 0 };
-function sortie(mode: 'normal' | 'easy' = 'normal') {
+function sortie(mode: 'normal' | 'easy' = 'normal', viewAspect = 1) {
   const campaign = new Campaign(mode), flight = new CampaignFlightController(campaign.state);
   const read = (): CriticalRuntime => ({ screen: 'playing', phase: campaign.state.status === 'respawning' ? 'respawning' : 'playing', campaign: campaign.snapshot(), player: { reloadTicksRemaining: flight.player.reloadTicksRemaining } });
-  const step = (input: Partial<FlightInput> = {}) => { campaign.step(flight.step(campaign.state, { ...neutral, ...input })); flight.sync(campaign.state); };
+  const step = (input: Partial<FlightInput> = {}) => { campaign.step(flight.step(campaign.state, { ...neutral, viewAspect, ...input })); flight.sync(campaign.state); };
   const reach = (kind: CriticalKind, input: Partial<FlightInput> = {}, limit = 1300) => {
     for (let n = 0; n < limit; n++) {
       step(input); const raw = read(); if (criticalStateActive(kind, raw)) return raw;
@@ -67,6 +67,32 @@ for (const mode of ['normal', 'easy'] as const) {
     assert.equal(criticalStateActive('bomb-announcement', s.read(), { ...witness, runId: 'other-run' }), false);
   });
 }
+
+for (const [width, height] of [[320, 568], [568, 320], [393, 852]]) {
+  test(`Easy ${width}x${height}: gentle manual climb reaches boundary despite visible-target assistance`, () => {
+    const s = sortie('easy', width / height);
+    s.reach('enemy-targeting', {}, 500);
+    for (let i = 0; i < 6; i++) s.step();
+    const start = s.campaign.state.simTick;
+    const boundary = s.reach('boundary', { climb: .4 }, 1000);
+    assert.ok(boundary.campaign.simTick - start < 1000);
+    assert.equal(boundary.campaign.selfLosses, 0);
+    assert.ok(boundary.campaign.player.boundaryTicks >= 590);
+    // Releasing the native pointer precedes the unchanged display proof.
+    for (let i = 0; i < 6; i++) s.step();
+    assert.equal(criticalStateActive('boundary', s.read()), true);
+    s.step({ bomb: true });
+    assert.equal(criticalStateActive('bomb-announcement', s.read()), true);
+  });
+}
+
+test('Easy landscape neutral assistance reproduces the slow CI boundary acquisition', () => {
+  const s = sortie('easy', 568 / 320);
+  for (let i = 0; i < 314 + 1222; i++) s.step();
+  assert.equal(s.campaign.state.status, 'running');
+  assert.equal(criticalStateActive('boundary', s.read()), false);
+  assert.ok(Math.hypot(s.campaign.state.player.position.x, s.campaign.state.player.position.z) < 1300);
+});
 
 test('bomb announcement witness expires and cannot be a label-only claim', () => {
   const s = sortie(); s.step({ bomb: true }); const raw = s.read();

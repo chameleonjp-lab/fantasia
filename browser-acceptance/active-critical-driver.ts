@@ -53,7 +53,8 @@ export class CriticalAcquisitionDriver extends RealRendererDriver {
 export async function acquireCritical(d: CriticalAcquisitionDriver, kind: CriticalKind): Promise<CriticalWitness> {
   const key = ['low-altitude', 'respawning', 'protection'].includes(kind) ? 'ArrowDown' : kind === 'reload' ? 'Space' : kind === 'bomb-announcement' ? 'z' : null;
   const before = await d.full();
-  let down = false, last = before, reached = false;
+  let down = false, pointerDown = false, last = before, reached = false;
+  let boundaryPiloting: Record<string, unknown> | null = null;
   try {
     // Protection is reached only after a real crash and the real 3-second
     // respawn countdown; release steering as soon as that countdown begins.
@@ -62,6 +63,21 @@ export async function acquireCritical(d: CriticalAcquisitionDriver, kind: Critic
       // A native click returns ownership to the real canvas before piloting.
       await d.click('#flight'); await expect(d.page.locator('#flight')).toBeFocused();
       if (key) { await d.page.keyboard.down(key); down = true; }
+      if (kind === 'boundary' && before.mode === 'easy') {
+        // Easy's visible-target assistance can turn a neutral sortie back into
+        // the operation area, especially in landscape. Pilot a gentle climb
+        // with the real canvas stick so manual intent keeps a straight course.
+        const point = await d.point('#flight');
+        await d.call('position boundary pilot pointer', () => d.page.mouse.move(point.x, point.y));
+        await d.call('hold native boundary pilot pointer', () => d.page.mouse.down()); pointerDown = true;
+        await d.call('native boundary pilot climb', () => d.page.mouse.move(point.x, point.y - 16));
+        last = await d.full();
+        expect(last.controlsInput.steerPointer).not.toBeNull();
+        expect(Math.abs(last.controlsInput.turn)).toBeLessThan(.001);
+        expect(last.controlsInput.climb).toBeGreaterThanOrEqual(.35);
+        expect(last.controlsInput.climb).toBeLessThanOrEqual(.45);
+        boundaryPiloting = { type: 'native-canvas-stick', dragY: -16, input: last.controlsInput };
+      }
     }
     for (let frame = 0; frame < 1800; frame++) {
       if (criticalStateActive(kind, last)) {
@@ -75,11 +91,17 @@ export async function acquireCritical(d: CriticalAcquisitionDriver, kind: Critic
         const event = last.campaign.events.find((e: any) => e.kind === 'shot' && e.weapon === 'bomb' && e.sourceRef?.id === last.campaign.player.id);
         const witness: CriticalWitness = { kind, runId: last.campaign.runId, tick: last.tick, activeTicks: last.activeTicks, ...(event ? { eventId: event.id } : {}) };
         reached = true;
-        d.evidence.push({ label: 'critical-native-acquisition', kind, frames: d.budget.steps, probes: frame, key, before: criticalRuntimeEvidence(before), reached: criticalRuntimeEvidence(last), witness, audit: await d.audit() });
+        d.evidence.push({ label: 'critical-native-acquisition', kind, frames: d.budget.steps, probes: frame, key, boundaryPiloting, before: criticalRuntimeEvidence(before), reached: criticalRuntimeEvidence(last), witness, audit: await d.audit() });
         expect(last.performanceInterrupted).toBe(false); expect(last.fatalLogicError).toBeNull(); expect(d.pageErrors).toEqual([]);
         return witness;
       }
       if (last.phase === 'respawning' && down) { await d.page.keyboard.up(key!); down = false; }
+      if (pointerDown) {
+        expect(last.controlsInput.steerPointer).not.toBeNull();
+        expect(Math.abs(last.controlsInput.turn)).toBeLessThan(.001);
+        expect(last.controlsInput.climb).toBeGreaterThanOrEqual(.35);
+        expect(last.controlsInput.climb).toBeLessThanOrEqual(.45);
+      }
       if (!['playing', 'respawning'].includes(last.phase)) throw new Error(`Critical acquisition interrupted: ${kind}, phase=${last.phase}`);
       if (last.phase === 'respawning' && !['respawning', 'protection'].includes(kind)) throw new Error(`Critical acquisition lost aircraft before ${kind}`);
       if (kind === 'bomb-announcement') await d.stepOne(); else await d.step();
@@ -88,6 +110,7 @@ export async function acquireCritical(d: CriticalAcquisitionDriver, kind: Critic
     }
     throw new Error(`Critical state not naturally reached within 1800 frames: ${kind}`);
   } finally {
+    if (pointerDown) await d.page.mouse.up();
     if (down) await d.page.keyboard.up(key!);
     d.evidence.push({ label: 'critical-acquisition-final-state', kind, ...(reached ? {} : { state: criticalRuntimeEvidence(last) }), steps: d.budget.steps });
   }
