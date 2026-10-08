@@ -77,13 +77,34 @@ async function record(name: string, setupMs: number, started: number, captureMs:
 
 async function enlargeText(page: Page) {
   return page.evaluate(() => {
+    type SavedFont = { value: string; priority: string };
+    const targetWindow = window as Window & { __fantasiaUiOnlyFontOverrides?: Map<HTMLElement, SavedFont> };
+    const overrides = targetWindow.__fantasiaUiOnlyFontOverrides ?? new Map<HTMLElement, SavedFont>();
+    if (!targetWindow.__fantasiaUiOnlyFontOverrides) Object.defineProperty(targetWindow, '__fantasiaUiOnlyFontOverrides', { value: overrides, configurable: true });
+    for (const [node, saved] of overrides) {
+      if (saved.value) node.style.setProperty('font-size', saved.value, saved.priority);
+      else node.style.removeProperty('font-size');
+    }
+    overrides.clear();
+
     const nodes = [...document.querySelectorAll<HTMLElement>('#app *')].filter(node => !['CANVAS', 'SCRIPT', 'STYLE'].includes(node.tagName));
-    const measurements = nodes.map(node => {
-      if (!node.dataset.uiOnlyFontBase) node.dataset.uiOnlyFontBase = String(parseFloat(getComputedStyle(node).fontSize) || 16);
-      return { node, base: Number(node.dataset.uiOnlyFontBase) };
+    const measurements = nodes.map(node => ({
+      node,
+      base: parseFloat(getComputedStyle(node).fontSize) || 16,
+      saved: { value: node.style.getPropertyValue('font-size'), priority: node.style.getPropertyPriority('font-size') },
+    }));
+    for (const { node, base, saved } of measurements) {
+      overrides.set(node, saved);
+      node.style.setProperty('font-size', `${base * 2}px`, 'important');
+    }
+    const sampleSelectors = ['#app', '#announcement', '.health-label', '#health', '.instrument', '#speed', '.campaign-site-heading'];
+    const fontBaselines = sampleSelectors.flatMap(selector => {
+      const node = document.querySelector<HTMLElement>(selector);
+      if (!node) return [];
+      const basePx = measurements.find(item => item.node === node)?.base ?? (parseFloat(getComputedStyle(node).fontSize) / 2);
+      return [{ selector, basePx, appliedPx: parseFloat(getComputedStyle(node).fontSize) }];
     });
-    for (const { node, base } of measurements) node.style.setProperty('font-size', `${base * 2}px`, 'important');
-    return nodes.length;
+    return { nodeCount: nodes.length, fontBaselines, viewport: { width: innerWidth, height: innerHeight } };
   });
 }
 
@@ -234,12 +255,13 @@ async function checkHudGeometry(page: Page) {
   }
 }
 
-async function paintedFixture(page: Page, mode: 'easy' | 'normal', alert: string) {
+async function paintedFixture(page: Page, mode: 'easy' | 'normal', alert: string, announcementPriority = 0) {
   const before = await act(page, 'canvas');
-  const fixture = await act(page, 'hud', mode, alert);
+  const fixture = await act(page, 'hud', mode, alert, announcementPriority);
   expect(fixture.canvas.drawCalls, `${mode}/${alert} invokes the product painter exactly once`).toBe(before.drawCalls + 1);
   expect(fixture.canvas.hudLayout.measurements).toBeGreaterThan(0);
   expect(fixture.canvas.radius).toBeGreaterThan(0);
+  expect(fixture.announcementPriority).toBe(announcementPriority);
   return fixture;
 }
 
@@ -304,8 +326,66 @@ async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: an
   if (mode === 'normal') for (const [index, count] of pixels.crosshair.entries()) expect(count, `normal crosshair arm ${index}`).toBeGreaterThan(0);
 }
 
-async function inspectAndCaptureHudCase(page: Page, info: TestInfo, name: string, mode: 'easy' | 'normal', canvas: any, failures: string[]) {
-  if (canvas.hudLayout?.status !== 'placed') failures.push(`${name}: Canvas HUD placement status=${canvas.hudLayout?.status ?? 'missing'}`);
+async function inspectAndCaptureHudCase(page: Page, info: TestInfo, name: string, mode: 'easy' | 'normal', canvas: any, fixture: any, fontScale: any, failures: string[]) {
+  const screenshotMs = await capture(page, info, name);
+  const layoutEvidence = await act(page, 'evidence');
+  const domEvidence = await page.evaluate(() => {
+    const selectors = [
+      '.hud-top', '.hud-top .time-block', '#campaign-sites .campaign-site[data-site]', '.flight-data > *',
+      '#campaign-threat', '#payload-status', '#reload-status', '#warning', '#announcement', '#respawn-status',
+      '#flight-tip', '#throttle-layout-note', '#campaign-hud-details', '#normal-controls', '#fire', '#throttle',
+    ];
+    const nodes = selectors.flatMap(selector => [...document.querySelectorAll<HTMLElement>(selector)]).map(node => {
+      const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+      return {
+        selector: node.id ? `#${node.id}` : node.dataset.site ? `${node.className}[data-site=${node.dataset.site}]` : node.className || node.tagName,
+        visible: !node.hidden && style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0 && !node.closest('[hidden]'),
+        text: node.textContent?.trim().replace(/\s+/g, ' ').slice(0, 160),
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+        scroll: { width: node.scrollWidth, height: node.scrollHeight, clientWidth: node.clientWidth, clientHeight: node.clientHeight },
+        style: { position: style.position, fontSize: style.fontSize, overflowX: style.overflowX, overflowY: style.overflowY, visibility: style.visibility, display: style.display },
+      };
+    });
+    const announcement = document.querySelector<HTMLElement>('#announcement');
+    const app = document.querySelector<HTMLElement>('#app');
+    return { viewport: { width: innerWidth, height: innerHeight }, mode: app?.dataset.mode, screen: app?.dataset.screen,
+      campaignHud: app?.dataset.campaignHud, announcement: { visible: Boolean(announcement && !announcement.hidden && getComputedStyle(announcement).display !== 'none' && getComputedStyle(announcement).visibility !== 'hidden'),
+        text: announcement?.textContent, critical: announcement?.dataset.campaignCritical }, nodes };
+  });
+  const layout = layoutEvidence?.layout;
+  const blockedReasons = layout?.status === 'blocked'
+    ? [
+      ...(layout.fixedConflicts?.length ? [{ kind: 'fixed-conflicts', pairs: layout.fixedConflicts }] : []),
+      ...(layout.searchChecks >= 120000 ? [{ kind: 'bounded-search-exhausted', checks: layout.searchChecks, limit: 120000 }] : []),
+      ...(!layout.fixedConflicts?.length && layout.searchChecks < 120000 ? [{ kind: 'no-complete-full-size-packing', searchChecks: layout.searchChecks }] : []),
+    ]
+    : layout?.status === 'invalid' ? [{ kind: 'invalid-search-geometry', searchInput: layoutEvidence.searchInput, sight: layoutEvidence.sight }]
+      : [];
+  if (layout?.status !== 'placed') failures.push(`${name}: Canvas HUD placement status=${layout?.status ?? 'missing'}; blockedReasons=${JSON.stringify(blockedReasons)}; searchChecks=${layout?.searchChecks ?? 'missing'}; fixedConflicts=${JSON.stringify(layout?.fixedConflicts ?? [])}`);
+  const evidence = {
+    case: name,
+    viewport: domEvidence.viewport,
+    mode,
+    announcementPriority: fixture.announcementPriority,
+    announcement: domEvidence.announcement,
+    dom: domEvidence,
+    fontBaselines: fontScale.fontBaselines,
+    searchInput: layoutEvidence.searchInput,
+    sight: layoutEvidence.sight,
+    layout,
+    blockedReasons,
+  };
+  await info.attach(`${name}.json`, { body: Buffer.from(JSON.stringify(evidence, null, 2)), contentType: 'application/json' });
+  console.log(`[ui-only-layout-evidence] ${JSON.stringify({ case: name, viewport: evidence.viewport, mode, announcementPriority: fixture.announcementPriority,
+    layoutStatus: layout?.status ?? 'missing', searchChecks: layout?.searchChecks ?? null, fixedConflicts: layout?.fixedConflicts ?? [], blockedReasons })}`);
+  expect(domEvidence.announcement.visible, `${name} keeps its announcement visible for priority ${fixture.announcementPriority}`).toBe(true);
+  expect(domEvidence.announcement.text, `${name} preserves the announcement text`).toContain('砲台の予告');
+  expect(domEvidence.announcement.critical, `${name} records the actual priority-derived critical flag` ).toBe(String(fixture.announcementPriority >= 1));
+  for (const font of fontScale.fontBaselines ?? []) expect(Math.abs(font.appliedPx - font.basePx * 2), `${name} applies 200% of fresh ${font.selector} baseline at ${evidence.viewport.width}×${evidence.viewport.height}`).toBeLessThan(0.1);
+  for (const [selector, expectedBasePx] of [['#app', 16], ['.instrument', 10], ['#health', 15]] as const) {
+    const sample = fontScale.fontBaselines?.find((font: any) => font.selector === selector);
+    expect(sample?.basePx, `${name} reads the product ${selector} baseline fresh at ${evidence.viewport.width}×${evidence.viewport.height}`).toBe(expectedBasePx);
+  }
   const runCheck = async (label: string, check: () => Promise<unknown>) => {
     try { await check(); } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -315,7 +395,7 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, name: string
   await runCheck('Canvas pixels', () => checkCanvasPixels(page, mode, canvas));
   await runCheck('DOM and Canvas HUD geometry', () => checkHudGeometry(page));
   await runCheck('44px HUD controls', () => checkGeometry(page, '#hud'));
-  return capture(page, info, name);
+  return screenshotMs;
 }
 
 test.afterAll(() => {
@@ -326,12 +406,13 @@ test.afterAll(() => {
 test('Home, Rules, touch and keyboard settings save through product dialogs', async ({ page }, info) => {
   const setupMs = await setup(page); let captureMs = 0; const started = performance.now();
   await setViewportAndWait(page, 320, 568);
-  expect(await enlargeText(page)).toBeGreaterThan(20);
+  expect((await enlargeText(page)).nodeCount).toBeGreaterThan(20);
   await expect(page.locator('#home')).toBeVisible();
   await checkGeometry(page, '#home');
   await checkBodyPanels(page, '#home');
   captureMs += await capture(page, info, 'home-portrait-text-200.png');
   await setViewportAndWait(page, 568, 320);
+  await enlargeText(page);
   await checkGeometry(page, '#home'); await checkBodyPanels(page, '#home'); captureMs += await capture(page, info, 'home-landscape-text-200.png');
   await page.reload();
   await setViewportAndWait(page, 568, 320);
@@ -409,9 +490,14 @@ test('Storage failure offers session-only settings and expires after reload', as
 test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page }, info) => {
   const setupMs = await setup(page); let captureMs = 0; const started = performance.now();
   const hudFailures: string[] = [];
+  const inspectFixedHud = async (name: string, mode: 'easy' | 'normal', fixture: any) => {
+    const fontScale = await enlargeText(page);
+    const painted = await repaintFixedFixture(page);
+    captureMs += await inspectAndCaptureHudCase(page, info, name, mode, painted, fixture, fontScale, hudFailures);
+  };
   const originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
   await setViewportAndWait(page, 320, 568);
-  let fixture = await paintedFixture(page, 'easy', 'outside');
+  let fixture = await paintedFixture(page, 'easy', 'outside', 0);
   expect(fixture.screen).toBe('playing');
   const hudState = await page.evaluate(() => {
     const hud = document.querySelector<HTMLElement>('#hud'), app = document.querySelector<HTMLElement>('#app');
@@ -425,9 +511,9 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   await expect(page.locator('#warning')).toContainText('作戦圏へ戻って');
   await expect(page.locator('#campaign-threat')).toContainText('砲台の魔法');
   await expect(page.locator('#reload-status')).toContainText('再装填中');
-  await enlargeText(page);
-  let painted = await repaintFixedFixture(page);
-  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-easy-outside-small-portrait-text-200.png', 'easy', painted, hudFailures);
+  await inspectFixedHud('hud-easy-outside-small-portrait-text-200-priority-0.png', 'easy', fixture);
+  fixture = await paintedFixture(page, 'easy', 'outside', 4);
+  await inspectFixedHud('hud-easy-outside-small-portrait-text-200-priority-4.png', 'easy', fixture);
   const easyAim = await page.evaluate(async () => {
     const { aimRadius } = await import('/src/aim-indicator.ts');
     const flight = document.querySelector('#flight')!.getBoundingClientRect(), markers = document.querySelector('#markers')!.getBoundingClientRect();
@@ -436,7 +522,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   expect(easyAim.radius).toBeCloseTo(320 * .135); expect(easyAim.sameCanvas).toBe(true); expect(easyAim.pointerEvents).toBe('none');
 
   await act(page, 'reset'); await setViewportAndWait(page, 568, 320);
-  fixture = await paintedFixture(page, 'normal', 'protected');
+  fixture = await paintedFixture(page, 'normal', 'protected', 0);
   const normalModeState = await page.evaluate(() => {
     const controls = document.querySelector<HTMLElement>('#normal-controls');
     const app = document.querySelector<HTMLElement>('#app');
@@ -453,7 +539,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   await expect(page.locator('#warning')).toContainText('復活保護');
   await expect(page.locator('#reload-status')).toContainText('再装填中');
   await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
-  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-normal-protected-small-landscape-text-200.png', 'normal', fixture.canvas, hudFailures);
+  await inspectFixedHud('hud-normal-protected-small-landscape-text-200-priority-0.png', 'normal', fixture);
   const normalAim = await page.evaluate(async () => {
     const { aimRadius } = await import('/src/aim-indicator.ts');
     const flight = document.querySelector('#flight')!.getBoundingClientRect(), markers = document.querySelector('#markers')!.getBoundingClientRect();
@@ -461,22 +547,28 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   });
   expect(normalAim.radius).toBeGreaterThanOrEqual(26); expect(normalAim.sameCanvas).toBe(true); expect(normalAim.pointerEvents).toBe('none');
 
-  fixture = await paintedFixture(page, 'normal', 'low'); await expect(page.locator('#warning')).toContainText('低空注意');
-  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-normal-low-warning-small-landscape-text-200.png', 'normal', fixture.canvas, hudFailures);
+  fixture = await paintedFixture(page, 'normal', 'protected', 4);
+  await inspectFixedHud('hud-normal-protected-small-landscape-text-200-priority-4.png', 'normal', fixture);
+  fixture = await paintedFixture(page, 'normal', 'low', 4); await expect(page.locator('#warning')).toContainText('低空注意');
+  await inspectFixedHud('hud-normal-low-warning-small-landscape-text-200-priority-4.png', 'normal', fixture);
 
   // Keep the existing Easy landscape clear case, then add the missing Easy landscape warning.
-  fixture = await paintedFixture(page, 'easy', 'clear');
-  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-easy-clear-small-landscape-text-200.png', 'easy', fixture.canvas, hudFailures);
+  fixture = await paintedFixture(page, 'easy', 'clear', 0);
+  await inspectFixedHud('hud-easy-clear-small-landscape-text-200-priority-0.png', 'easy', fixture);
+  fixture = await paintedFixture(page, 'easy', 'clear', 4);
+  await inspectFixedHud('hud-easy-clear-small-landscape-text-200-priority-4.png', 'easy', fixture);
   await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
-  fixture = await paintedFixture(page, 'easy', 'low'); await expect(page.locator('#warning')).toContainText('低空注意');
-  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-easy-warning-small-landscape-text-200.png', 'easy', fixture.canvas, hudFailures);
+  fixture = await paintedFixture(page, 'easy', 'low', 4); await expect(page.locator('#warning')).toContainText('低空注意');
+  await inspectFixedHud('hud-easy-warning-small-landscape-text-200-priority-4.png', 'easy', fixture);
 
   await act(page, 'reset'); await setViewportAndWait(page, 320, 568);
-  fixture = await paintedFixture(page, 'normal', 'respawn');
+  fixture = await paintedFixture(page, 'normal', 'respawn', 0);
   expect(fixture.status).toBe('respawning'); await expect(page.locator('#respawn-status')).toBeVisible();
   await expect(page.locator('#respawn-status')).toContainText('復活まで 3秒');
   await expect(page.locator('#warning')).toBeHidden(); await expect(page.locator('#reload-status')).toContainText('再装填中');
-  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-normal-respawn-small-portrait-text-200.png', 'normal', fixture.canvas, hudFailures);
+  await inspectFixedHud('hud-normal-respawn-small-portrait-text-200-priority-0.png', 'normal', fixture);
+  fixture = await paintedFixture(page, 'normal', 'respawn', 4);
+  await inspectFixedHud('hud-normal-respawn-small-portrait-text-200-priority-4.png', 'normal', fixture);
 
   expect(await page.evaluate((readState) => window.__fantasiaReadState === readState, originalReadState)).toBe(true);
   await record('hud-modes-sites-aim-alerts', setupMs, started, captureMs);
