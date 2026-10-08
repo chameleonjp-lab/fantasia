@@ -436,6 +436,18 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   expect(easyAim.radius).toBeCloseTo(320 * .135); expect(easyAim.sameCanvas).toBe(true); expect(easyAim.pointerEvents).toBe('none');
 
   await act(page, 'reset'); await setViewportAndWait(page, 568, 320);
+  await page.evaluate(() => {
+    const controls = document.querySelector<HTMLElement>('#normal-controls');
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden');
+    if (!controls || !descriptor?.get || !descriptor.set) throw new Error('Cannot instrument Normal controls visibility');
+    const trace: unknown[] = [];
+    Object.defineProperty(window, '__uiOnlyNormalVisibilityTrace', { value: trace, configurable: true });
+    Object.defineProperty(controls, 'hidden', {
+      configurable: true,
+      get() { return descriptor.get!.call(this); },
+      set(value: boolean) { trace.push({ hidden: Boolean(value), stack: new Error().stack }); descriptor.set!.call(this, value); },
+    });
+  });
   fixture = await paintedFixture(page, 'normal', 'protected');
   const normalModeState = await page.evaluate(() => {
     const controls = document.querySelector<HTMLElement>('#normal-controls');
@@ -446,7 +458,17 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   });
   console.log(`[ui-only-normal-mode] ${JSON.stringify({ fixtureMode: fixture.mode, state: normalModeState })}`);
   expect(fixture.mode, `fixed Normal fixture ${JSON.stringify(normalModeState)}`).toBe('normal');
-  await expect(page.locator('#normal-controls')).toBeVisible(); await expect(page.locator('#warning')).toContainText('復活保護');
+  try { await expect(page.locator('#normal-controls')).toBeVisible(); }
+  catch (error) {
+    const after = await page.evaluate(() => {
+      const controls = document.querySelector<HTMLElement>('#normal-controls'), app = document.querySelector<HTMLElement>('#app');
+      const read = (window as any).__fantasiaReadState?.(false);
+      return { appMode: app?.dataset.mode, stateMode: read?.mode, screen: app?.dataset.screen,
+        controlsHidden: controls?.hidden, controlsHasHiddenAttribute: controls?.hasAttribute('hidden'), trace: (window as any).__uiOnlyNormalVisibilityTrace };
+    });
+    throw new Error(`${error instanceof Error ? error.message : String(error)}; visibility trace=${JSON.stringify(after)}`);
+  }
+  await expect(page.locator('#warning')).toContainText('復活保護');
   await expect(page.locator('#reload-status')).toContainText('再装填中');
   await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
   captureMs += await inspectAndCaptureHudCase(page, info, 'hud-normal-protected-small-landscape-text-200.png', 'normal', fixture.canvas, hudFailures);
