@@ -97,11 +97,11 @@ async function enlargeText(page: Page) {
       overrides.set(node, saved);
       node.style.setProperty('font-size', `${base * 2}px`, 'important');
     }
-    const sampleSelectors = ['#app', '#announcement', '.health-label', '#health', '.instrument', '#speed', '.campaign-site-heading'];
+    const sampleSelectors = ['#hud', '#announcement', '.health-label', '#health', '.instrument', '#speed', '.campaign-site-heading'];
     const fontBaselines = sampleSelectors.flatMap(selector => {
       const node = document.querySelector<HTMLElement>(selector);
       if (!node) return [];
-      const basePx = measurements.find(item => item.node === node)?.base ?? (parseFloat(getComputedStyle(node).fontSize) / 2);
+      const basePx = measurements.find(item => item.node === node)?.base ?? parseFloat(getComputedStyle(node).fontSize);
       return [{ selector, basePx, appliedPx: parseFloat(getComputedStyle(node).fontSize) }];
     });
     return { nodeCount: nodes.length, fontBaselines, viewport: { width: innerWidth, height: innerHeight } };
@@ -382,7 +382,7 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, name: string
   expect(domEvidence.announcement.text, `${name} preserves the announcement text`).toContain('砲台の予告');
   expect(domEvidence.announcement.critical, `${name} records the actual priority-derived critical flag` ).toBe(String(fixture.announcementPriority >= 1));
   for (const font of fontScale.fontBaselines ?? []) expect(Math.abs(font.appliedPx - font.basePx * 2), `${name} applies 200% of fresh ${font.selector} baseline at ${evidence.viewport.width}×${evidence.viewport.height}`).toBeLessThan(0.1);
-  for (const [selector, expectedBasePx] of [['#app', 16], ['.instrument', 10], ['#health', 15]] as const) {
+  for (const [selector, expectedBasePx] of [['#hud', 16], ['.instrument', 10], ['#health', 15]] as const) {
     const sample = fontScale.fontBaselines?.find((font: any) => font.selector === selector);
     expect(sample?.basePx, `${name} reads the product ${selector} baseline fresh at ${evidence.viewport.width}×${evidence.viewport.height}`).toBe(expectedBasePx);
   }
