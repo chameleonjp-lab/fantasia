@@ -437,6 +437,15 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
 
   await act(page, 'reset'); await setViewportAndWait(page, 568, 320);
   fixture = await paintedFixture(page, 'normal', 'protected');
+  const normalModeState = await page.evaluate(() => {
+    const controls = document.querySelector<HTMLElement>('#normal-controls');
+    const app = document.querySelector<HTMLElement>('#app');
+    const read = (window as any).__fantasiaReadState?.(false);
+    return { appMode: app?.dataset.mode, stateMode: read?.mode, controlsHidden: controls?.hidden,
+      controlsDisplay: controls ? getComputedStyle(controls).display : null, screen: app?.dataset.screen };
+  });
+  console.log(`[ui-only-normal-mode] ${JSON.stringify({ fixtureMode: fixture.mode, state: normalModeState })}`);
+  expect(fixture.mode, `fixed Normal fixture ${JSON.stringify(normalModeState)}`).toBe('normal');
   await expect(page.locator('#normal-controls')).toBeVisible(); await expect(page.locator('#warning')).toContainText('復活保護');
   await expect(page.locator('#reload-status')).toContainText('再装填中');
   await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
