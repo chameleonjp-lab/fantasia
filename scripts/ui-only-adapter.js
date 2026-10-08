@@ -9,6 +9,16 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     return uiOnlyCanvas().hudLayout;
   }
 
+  function uiOnlyLayoutEvidence() {
+    const canvas = uiOnlyCanvas();
+    const owner = scene?.hudLayout;
+    return {
+      searchInput: owner?.measurement ?? null,
+      sight: canvas.sight,
+      layout: owner?.diagnostics?.() ?? canvas.hudLayout,
+    };
+  }
+
   function uiOnlyPaint() {
     if (screen !== 'playing' || !['running', 'respawning'].includes(state.status)) {
       throw new Error(`UI-only paint requires a fixed HUD state: screen=${screen}; status=${state.status}; pauseReasons=${[...pauseReasons].join(',')}`);
@@ -23,7 +33,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     return { screen, mode: state.mode };
   }
 
-  function uiOnlyHud(mode, alert) {
+  function uiOnlyHud(mode, alert, announcementPriority = 0) {
     if (mode !== 'easy' && mode !== 'normal') throw new Error(`Unknown UI-only mode: ${mode}`);
     selectedMode = mode;
     resetCampaign();
@@ -61,12 +71,12 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     if (alert === 'respawn') { state.status = 'respawning'; respawnRemaining = 2.4; }
     else state.status = 'running';
     setScreen('playing');
-    announce('砲台の予告 · 陣地4 · 1.5秒', 5, 4);
+    announce('砲台の予告 · 陣地4 · 1.5秒', 5, announcementPriority);
     updateHUD();
     scene.setOverlayVisible(true);
     if (!scene.render(state, player, state.mode)) throw new Error('UI-only Canvas2D painter did not render');
     const rendered = uiOnlyCanvas();
-    return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status };
+    return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status, announcementPriority };
   }
 
   function uiOnlyPause() {
@@ -119,7 +129,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
   }
 
   Object.defineProperty(window, '__fantasiaUiOnlyTest', {
-    value: Object.freeze({ reset: uiOnlyReset, hud: uiOnlyHud, paint: uiOnlyPaint, canvas: uiOnlyCanvas,
+    value: Object.freeze({ reset: uiOnlyReset, hud: uiOnlyHud, paint: uiOnlyPaint, canvas: uiOnlyCanvas, evidence: uiOnlyLayoutEvidence,
       pause: uiOnlyPause, result: uiOnlyResult, startupError: uiOnlyStartupError, layout: uiOnlyLayout }),
     configurable: false, enumerable: false, writable: false,
   });
