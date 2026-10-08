@@ -33,7 +33,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     return { screen, mode: state.mode };
   }
 
-  function uiOnlyHud(mode, alert, announcementPriority = 0) {
+  function uiOnlyHud(mode, alert, fixturePriority = 0) {
     if (mode !== 'easy' && mode !== 'normal') throw new Error(`Unknown UI-only mode: ${mode}`);
     selectedMode = mode;
     resetCampaign();
@@ -71,12 +71,13 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     if (alert === 'respawn') { state.status = 'respawning'; respawnRemaining = 2.4; }
     else state.status = 'running';
     setScreen('playing');
-    announce('砲台の予告 · 陣地4 · 1.5秒', 5, announcementPriority);
+    announcementUntil = 0; announcementPriority = 0; el('announcement').textContent = '';
+    announce('砲台の予告 · 陣地4 · 1.5秒', 5, fixturePriority);
     updateHUD();
     scene.setOverlayVisible(true);
     if (!scene.render(state, player, state.mode)) throw new Error('UI-only Canvas2D painter did not render');
     const rendered = uiOnlyCanvas();
-    return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status, announcementPriority };
+    return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status, announcementPriority: fixturePriority };
   }
 
   function uiOnlyPause() {
