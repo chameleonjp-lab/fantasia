@@ -165,7 +165,17 @@ async function checkHudGeometry(page: Page) {
     ];
     const nodes = selectors.flatMap(selector => [...document.querySelectorAll<HTMLElement>(selector)])
       .filter(node => visible(node) && !node.closest('#campaign-hud-details'));
-    const clipped: string[] = [], outside: string[] = [], overlaps: string[] = [];
+    const clipped: string[] = [], outside: string[] = [], overlaps: string[] = [], overlapDetails: unknown[] = [];
+    const app = document.querySelector<HTMLElement>('#app');
+    const describe = (node: HTMLElement) => {
+      const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+      return {
+        name: `${node.id || node.className}${node.dataset.site ? `[data-site=${node.dataset.site}]` : ''}`,
+        text: node.textContent?.trim().replace(/\s+/g, ' ').slice(0, 48),
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
+        position: style.position, translate: style.translate, transform: style.transform, fontSize: style.fontSize,
+      };
+    };
     const details = document.querySelector<HTMLElement>('#campaign-hud-details');
     const detailsRect = details?.getBoundingClientRect();
     const detailViewport = details && visible(details) && detailsRect ? {
@@ -186,13 +196,15 @@ async function checkHudGeometry(page: Page) {
       const a = aNode.getBoundingClientRect(), b = bNode.getBoundingClientRect();
       if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) {
         overlaps.push(`${aNode.id || aNode.className} × ${bNode.id || bNode.className}`);
+        if (overlapDetails.length < 12) overlapDetails.push({ a: describe(aNode), b: describe(bNode) });
       }
     }
-    return { clipped, outside, overlaps, detailViewport, documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth };
+    return { clipped, outside, overlaps, overlapDetails, detailViewport, documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth,
+      mode: app?.dataset.mode, campaignHud: app?.dataset.campaignHud, screen: app?.dataset.screen };
   });
   expect(result.clipped, 'visible warning, site, instrument and HUD panel content must not clip').toEqual([]);
   expect(result.outside, 'visible warning, site, instrument and HUD panels must stay on screen').toEqual([]);
-  expect(result.overlaps, 'visible HUD panels must not overlap').toEqual([]);
+  expect(result.overlaps, `visible HUD panels must not overlap (${result.mode}/${result.campaignHud}/${result.screen}, ${result.viewportWidth}px): ${JSON.stringify(result.overlapDetails)}`).toEqual([]);
   expect(result.documentWidth, 'HUD must not create horizontal page overflow').toBeLessThanOrEqual(result.viewportWidth + 1);
   if (result.detailViewport) {
     expect(result.detailViewport.outside, 'bounded campaign detail viewport stays on screen').toBe(false);
@@ -323,9 +335,12 @@ test('Home, Rules, touch and keyboard settings save through product dialogs', as
   captureMs += await capture(page, info, 'settings-touch.png');
   const sizeInput = page.locator('#control-size');
   const oldSize = await sizeInput.inputValue();
-  const sizeRange = await sizeInput.evaluate(element => ({ min: Number((element as HTMLInputElement).min), max: Number((element as HTMLInputElement).max) }));
-  await sizeInput.press(Number(oldSize) >= sizeRange.max ? 'ArrowLeft' : 'ArrowRight');
-  expect(await page.locator('#control-size').inputValue()).not.toBe(oldSize);
+  const sliderBox = await sizeInput.boundingBox();
+  const sliderState = await sizeInput.evaluate(element => ({ min: Number((element as HTMLInputElement).min), max: Number((element as HTMLInputElement).max), step: Number((element as HTMLInputElement).step), disabled: (element as HTMLInputElement).disabled }));
+  expect(sliderBox, 'touch settings slider has a visible hit target').not.toBeNull();
+  await page.touchscreen.tap(sliderBox!.x + sliderBox!.width * 0.8, sliderBox!.y + sliderBox!.height / 2);
+  const newSize = await sizeInput.inputValue();
+  expect(newSize, `touch settings slider changed (${JSON.stringify({ oldSize, newSize, sliderState, sliderBox })})`).not.toBe(oldSize);
   await page.click('#control-editor-keyboard'); await page.click('[data-key-action="bomb"]'); await page.keyboard.press('x');
   await expect(page.locator('[data-key-action="bomb"]')).toHaveText('X');
   captureMs += await capture(page, info, 'settings-keyboard.png');
