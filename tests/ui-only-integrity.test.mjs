@@ -115,6 +115,8 @@ test('the Vite test transform suppresses frames, uses the UI adapter, and preser
   assert.equal(typeof transformed, 'string');
   assert.match(transformed, /__fantasiaUiOnlyTest/);
   assert.doesNotMatch(transformed, /requestAnimationFrame\(frame\)/);
+  assert.match(transformed, /graphicsReady = true;\s*frameId = 0; \/\* UI-only test server: no natural frames or simulation\. \*\/\s*el<HTMLButtonElement>\('start'\)\.disabled = false;/,
+    'suppressing the frame must preserve the following start-enable statement');
   assert.ok(transformed.includes(readOnlyHook), 'the original read-only observation hook remains byte-identical');
   assert.equal(plugin.transformIndexHtml.order, 'pre');
   assert.equal(plugin.transformIndexHtml.handler(await readFile(resolve(repo, 'index.html'), 'utf8')), null);

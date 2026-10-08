@@ -32,7 +32,12 @@ async function setup(page: Page): Promise<number> {
         start: start ? { disabled: start.disabled, text: start.textContent } : null,
         startupError: document.getElementById('startup-error')?.textContent,
         body: document.body.innerText.slice(0, 1200),
-        snapshot,
+        snapshot: snapshot && typeof snapshot === 'object' ? {
+          phase: snapshot.phase, screen: snapshot.screen, graphicsReady: snapshot.graphicsReady,
+          renderStatus: snapshot.renderStatus, status: snapshot.status, mode: snapshot.mode,
+          render: snapshot.render ? { queue: snapshot.render.queue, drawCalls: snapshot.render.drawCalls,
+            width: snapshot.render.width, height: snapshot.render.height } : null,
+        } : snapshot,
       };
     });
     throw new Error(`UI-only setup timed out: ${JSON.stringify({ state, browserErrors, cause: String(error) })}`);

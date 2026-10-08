@@ -108,7 +108,7 @@ export function uiOnlyTestPlugin() {
       if (source.split(marker).length - 1 !== 1) throw new Error('UI-only main insertion anchor mismatch');
       const frameCall = 'frameId = requestAnimationFrame(frame);';
       if (source.split(frameCall).length - 1 !== 2) throw new Error('UI-only frame suppression anchor mismatch');
-      const transformed = source.replaceAll(frameCall, 'frameId = 0; // UI-only test server: no natural frames or simulation.');
+      const transformed = source.replaceAll(frameCall, 'frameId = 0; /* UI-only test server: no natural frames or simulation. */');
       return transformed.replace(marker, `${adapter}\n${marker}`);
     },
     transformIndexHtml: {
