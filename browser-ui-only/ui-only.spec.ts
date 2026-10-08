@@ -202,9 +202,10 @@ async function checkHudGeometry(page: Page) {
     return { clipped, outside, overlaps, overlapDetails, detailViewport, documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth,
       mode: app?.dataset.mode, campaignHud: app?.dataset.campaignHud, screen: app?.dataset.screen };
   });
+  const canvasLayout = await act(page, 'layout');
   expect(result.clipped, 'visible warning, site, instrument and HUD panel content must not clip').toEqual([]);
   expect(result.outside, 'visible warning, site, instrument and HUD panels must stay on screen').toEqual([]);
-  expect(result.overlaps, `visible HUD panels must not overlap (${result.mode}/${result.campaignHud}/${result.screen}, ${result.viewportWidth}px): ${JSON.stringify(result.overlapDetails)}`).toEqual([]);
+  expect(result.overlaps, `visible HUD panels must not overlap (${result.mode}/${result.campaignHud}/${result.screen}, ${result.viewportWidth}px; Canvas layout=${canvasLayout.status}, conflicts=${JSON.stringify(canvasLayout.fixedConflicts ?? [])}): ${JSON.stringify(result.overlapDetails)}`).toEqual([]);
   expect(result.documentWidth, 'HUD must not create horizontal page overflow').toBeLessThanOrEqual(result.viewportWidth + 1);
   if (result.detailViewport) {
     expect(result.detailViewport.outside, 'bounded campaign detail viewport stays on screen').toBe(false);
@@ -220,7 +221,6 @@ async function checkHudGeometry(page: Page) {
     expect(bottom, 'bounded campaign detail viewport can reach its final content').toBe(true);
   }
 
-  const canvasLayout = await act(page, 'layout');
   expect(canvasLayout.status).toBe('placed');
   expect(canvasLayout.fixedConflicts ?? [], 'fixed sites, controls and flight lane').toEqual([]);
   const geometry = [canvasLayout.radar, ...(canvasLayout.panels ?? []), ...(canvasLayout.controls ?? []), ...(canvasLayout.canvasLabels ?? [])];
@@ -303,6 +303,18 @@ async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: an
   expect(pixels.radarPixels, 'product radar pixels exist in its measured region').toBeGreaterThan(200);
   expect(pixels.warningPixels, 'product telegraph pixels exist at its projected warning point').toBeGreaterThan(5);
   if (mode === 'normal') for (const [index, count] of pixels.crosshair.entries()) expect(count, `normal crosshair arm ${index}`).toBeGreaterThan(0);
+}
+
+async function inspectAndCaptureHudCase(page: Page, info: TestInfo, name: string, mode: 'easy' | 'normal', canvas: any, failures: string[]) {
+  try {
+    await checkCanvasPixels(page, mode, canvas);
+    await checkHudGeometry(page);
+    await checkGeometry(page, '#hud');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    failures.push(`${name}: ${message.split('\n')[0]}`);
+  }
+  return capture(page, info, name);
 }
 
 test.afterAll(() => {
@@ -395,6 +407,7 @@ test('Storage failure offers session-only settings and expires after reload', as
 
 test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page }, info) => {
   const setupMs = await setup(page); let captureMs = 0; const started = performance.now();
+  const hudFailures: string[] = [];
   const originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
   await setViewportAndWait(page, 320, 568);
   let fixture = await paintedFixture(page, 'easy', 'outside');
@@ -414,8 +427,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   expect(fixture.layout.status).toBe('placed');
   await enlargeText(page);
   let painted = await repaintFixedFixture(page);
-  await checkCanvasPixels(page, 'easy', painted); await checkHudGeometry(page); await checkGeometry(page, '#hud');
-  captureMs += await capture(page, info, 'hud-easy-outside-small-portrait-text-200.png');
+  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-easy-outside-small-portrait-text-200.png', 'easy', painted, hudFailures);
   const easyAim = await page.evaluate(async () => {
     const { aimRadius } = await import('/src/aim-indicator.ts');
     const flight = document.querySelector('#flight')!.getBoundingClientRect(), markers = document.querySelector('#markers')!.getBoundingClientRect();
@@ -428,8 +440,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   await expect(page.locator('#normal-controls')).toBeVisible(); await expect(page.locator('#warning')).toContainText('復活保護');
   await expect(page.locator('#reload-status')).toContainText('再装填中');
   await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7); expect(fixture.layout.status).toBe('placed');
-  await checkCanvasPixels(page, 'normal', fixture.canvas); await checkHudGeometry(page); await checkGeometry(page, '#hud');
-  captureMs += await capture(page, info, 'hud-normal-protected-small-landscape-text-200.png');
+  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-normal-protected-small-landscape-text-200.png', 'normal', fixture.canvas, hudFailures);
   const normalAim = await page.evaluate(async () => {
     const { aimRadius } = await import('/src/aim-indicator.ts');
     const flight = document.querySelector('#flight')!.getBoundingClientRect(), markers = document.querySelector('#markers')!.getBoundingClientRect();
@@ -438,27 +449,26 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   expect(normalAim.radius).toBeGreaterThanOrEqual(26); expect(normalAim.sameCanvas).toBe(true); expect(normalAim.pointerEvents).toBe('none');
 
   fixture = await paintedFixture(page, 'normal', 'low'); await expect(page.locator('#warning')).toContainText('低空注意');
-  await checkCanvasPixels(page, 'normal', fixture.canvas); await checkHudGeometry(page); await checkGeometry(page, '#hud');
-  captureMs += await capture(page, info, 'hud-normal-low-warning-small-landscape-text-200.png');
+  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-normal-low-warning-small-landscape-text-200.png', 'normal', fixture.canvas, hudFailures);
 
   // Keep the existing Easy landscape clear case, then add the missing Easy landscape warning.
   fixture = await paintedFixture(page, 'easy', 'clear');
-  expect(fixture.layout.status).toBe('placed'); await checkCanvasPixels(page, 'easy', fixture.canvas); await checkHudGeometry(page); await checkGeometry(page, '#hud');
+  expect(fixture.layout.status).toBe('placed');
+  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-easy-clear-small-landscape-text-200.png', 'easy', fixture.canvas, hudFailures);
   await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
   fixture = await paintedFixture(page, 'easy', 'low'); await expect(page.locator('#warning')).toContainText('低空注意');
-  await checkCanvasPixels(page, 'easy', fixture.canvas); await checkHudGeometry(page); await checkGeometry(page, '#hud');
-  captureMs += await capture(page, info, 'hud-easy-warning-small-landscape-text-200.png');
+  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-easy-warning-small-landscape-text-200.png', 'easy', fixture.canvas, hudFailures);
 
   await act(page, 'reset'); await setViewportAndWait(page, 320, 568);
   fixture = await paintedFixture(page, 'normal', 'respawn');
   expect(fixture.status).toBe('respawning'); await expect(page.locator('#respawn-status')).toBeVisible();
   await expect(page.locator('#respawn-status')).toContainText('復活まで 3秒');
   await expect(page.locator('#warning')).toBeHidden(); await expect(page.locator('#reload-status')).toContainText('再装填中');
-  await checkCanvasPixels(page, 'normal', fixture.canvas); await checkHudGeometry(page); await checkGeometry(page, '#hud');
-  captureMs += await capture(page, info, 'hud-normal-respawn-small-portrait-text-200.png');
+  captureMs += await inspectAndCaptureHudCase(page, info, 'hud-normal-respawn-small-portrait-text-200.png', 'normal', fixture.canvas, hudFailures);
 
   expect(await page.evaluate((readState) => window.__fantasiaReadState === readState, originalReadState)).toBe(true);
   await record('hud-modes-sites-aim-alerts', setupMs, started, captureMs);
+  expect(hudFailures, 'all Easy/Normal portrait/landscape HUD cases, Canvas pixels and 44px geometry').toEqual([]);
 });
 
 test('Pause screen details, Rules and settings remain usable without advancing a run', async ({ page }, info) => {
