@@ -436,55 +436,20 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   expect(easyAim.radius).toBeCloseTo(320 * .135); expect(easyAim.sameCanvas).toBe(true); expect(easyAim.pointerEvents).toBe('none');
 
   await act(page, 'reset'); await setViewportAndWait(page, 568, 320);
-  await page.evaluate(() => {
-    const descriptor = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'hidden');
-    if (!descriptor?.get || !descriptor.set) throw new Error('Cannot instrument HUD visibility');
-    const trace: unknown[] = [];
-    Object.defineProperty(window, '__uiOnlyNormalVisibilityTrace', { value: trace, configurable: true });
-    for (const id of ['normal-controls', 'hud', 'home', 'pause-screen', 'result']) {
-      const element = document.getElementById(id);
-      if (!element) continue;
-      Object.defineProperty(element, 'hidden', {
-        configurable: true,
-        get() { return descriptor.get!.call(this); },
-        set(value: boolean) { trace.push({ id, hidden: Boolean(value), stack: new Error().stack }); descriptor.set!.call(this, value); },
-      });
-    }
-    const app = document.querySelector<HTMLElement>('#app');
-    if (app) new MutationObserver(records => {
-      for (const record of records) trace.push({ id: 'app', attribute: record.attributeName,
-        value: (record.target as Element).getAttribute(record.attributeName!), screen: app.dataset.screen, mode: app.dataset.mode });
-    }).observe(app, { attributes: true, attributeFilter: ['data-screen', 'data-mode'] });
-  });
   fixture = await paintedFixture(page, 'normal', 'protected');
   const normalModeState = await page.evaluate(() => {
     const controls = document.querySelector<HTMLElement>('#normal-controls');
     const app = document.querySelector<HTMLElement>('#app');
     const read = (window as any).__fantasiaReadState?.(false);
-    return { appMode: app?.dataset.mode, stateMode: read?.mode, controlsHidden: controls?.hidden,
-      controlsDisplay: controls ? getComputedStyle(controls).display : null, screen: app?.dataset.screen };
+    return { appMode: app?.dataset.mode, stateMode: read?.mode, controlsHidden: controls?.hidden, screen: app?.dataset.screen };
   });
-  console.log(`[ui-only-normal-mode] ${JSON.stringify({ fixtureMode: fixture.mode, state: normalModeState })}`);
   expect(fixture.mode, `fixed Normal fixture ${JSON.stringify(normalModeState)}`).toBe('normal');
-  try { await expect(page.locator('#normal-controls')).toBeVisible(); }
-  catch (error) {
-    const after = await page.evaluate(() => {
-      const controls = document.querySelector<HTMLElement>('#normal-controls'), app = document.querySelector<HTMLElement>('#app');
-      const read = (window as any).__fantasiaReadState?.(false);
-      const ancestors = [];
-      for (let element = controls; element; element = element.parentElement) {
-        const style = getComputedStyle(element), rect = element.getBoundingClientRect();
-        ancestors.push({ name: element.id || element.tagName, hidden: (element as HTMLElement).hidden,
-          hiddenAttribute: element.hasAttribute('hidden'), display: style.display, visibility: style.visibility,
-          rect: [Math.round(rect.x), Math.round(rect.y), Math.round(rect.width), Math.round(rect.height)],
-          inert: (element as HTMLElement).inert, screen: element.dataset.screen });
-      }
-      return { appMode: app?.dataset.mode, stateMode: read?.mode, screen: app?.dataset.screen,
-        controlsHidden: controls?.hidden, controlsHasHiddenAttribute: controls?.hasAttribute('hidden'), ancestors,
-        trace: (window as any).__uiOnlyNormalVisibilityTrace };
-    });
-    throw new Error(`${error instanceof Error ? error.message : String(error)}; visibility trace=${JSON.stringify(after)}`);
-  }
+  expect(normalModeState.appMode).toBe('normal');
+  expect(normalModeState.stateMode).toBe('normal');
+  expect(normalModeState.controlsHidden).toBe(false);
+  // The wrapper has no height because its flight controls are absolutely positioned.
+  // Assert the actual controls that players see and operate instead.
+  await expect(page.locator('#fire')).toBeVisible(); await expect(page.locator('#throttle')).toBeVisible();
   await expect(page.locator('#warning')).toContainText('復活保護');
   await expect(page.locator('#reload-status')).toContainText('再装填中');
   await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
