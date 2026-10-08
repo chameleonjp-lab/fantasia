@@ -239,7 +239,6 @@ async function paintedFixture(page: Page, mode: 'easy' | 'normal', alert: string
   const fixture = await act(page, 'hud', mode, alert);
   expect(fixture.canvas.drawCalls, `${mode}/${alert} invokes the product painter exactly once`).toBe(before.drawCalls + 1);
   expect(fixture.canvas.hudLayout.measurements).toBeGreaterThan(0);
-  expect(fixture.canvas.hudLayout.status).toBe('placed');
   expect(fixture.canvas.radius).toBeGreaterThan(0);
   return fixture;
 }
@@ -306,14 +305,16 @@ async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: an
 }
 
 async function inspectAndCaptureHudCase(page: Page, info: TestInfo, name: string, mode: 'easy' | 'normal', canvas: any, failures: string[]) {
-  try {
-    await checkCanvasPixels(page, mode, canvas);
-    await checkHudGeometry(page);
-    await checkGeometry(page, '#hud');
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    failures.push(`${name}: ${message.split('\n')[0]}`);
-  }
+  if (canvas.hudLayout?.status !== 'placed') failures.push(`${name}: Canvas HUD placement status=${canvas.hudLayout?.status ?? 'missing'}`);
+  const runCheck = async (label: string, check: () => Promise<unknown>) => {
+    try { await check(); } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      failures.push(`${name} / ${label}: ${message.split('\n').slice(0, 3).join(' | ').slice(0, 700)}`);
+    }
+  };
+  await runCheck('Canvas pixels', () => checkCanvasPixels(page, mode, canvas));
+  await runCheck('DOM and Canvas HUD geometry', () => checkHudGeometry(page));
+  await runCheck('44px HUD controls', () => checkGeometry(page, '#hud'));
   return capture(page, info, name);
 }
 
@@ -424,7 +425,6 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   await expect(page.locator('#warning')).toContainText('作戦圏へ戻って');
   await expect(page.locator('#campaign-threat')).toContainText('砲台の魔法');
   await expect(page.locator('#reload-status')).toContainText('再装填中');
-  expect(fixture.layout.status).toBe('placed');
   await enlargeText(page);
   let painted = await repaintFixedFixture(page);
   captureMs += await inspectAndCaptureHudCase(page, info, 'hud-easy-outside-small-portrait-text-200.png', 'easy', painted, hudFailures);
@@ -439,7 +439,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   fixture = await paintedFixture(page, 'normal', 'protected');
   await expect(page.locator('#normal-controls')).toBeVisible(); await expect(page.locator('#warning')).toContainText('復活保護');
   await expect(page.locator('#reload-status')).toContainText('再装填中');
-  await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7); expect(fixture.layout.status).toBe('placed');
+  await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
   captureMs += await inspectAndCaptureHudCase(page, info, 'hud-normal-protected-small-landscape-text-200.png', 'normal', fixture.canvas, hudFailures);
   const normalAim = await page.evaluate(async () => {
     const { aimRadius } = await import('/src/aim-indicator.ts');
@@ -453,7 +453,6 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
 
   // Keep the existing Easy landscape clear case, then add the missing Easy landscape warning.
   fixture = await paintedFixture(page, 'easy', 'clear');
-  expect(fixture.layout.status).toBe('placed');
   captureMs += await inspectAndCaptureHudCase(page, info, 'hud-easy-clear-small-landscape-text-200.png', 'easy', fixture.canvas, hudFailures);
   await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
   fixture = await paintedFixture(page, 'easy', 'low'); await expect(page.locator('#warning')).toContainText('低空注意');
