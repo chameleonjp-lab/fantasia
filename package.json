@@ -5,9 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "dev:ui-only": "vite --config scripts/vite.ui-only.config.ts --host 127.0.0.1 --port 4177 --strictPort",
     "build": "tsc --noEmit && vite build",
     "test": "node scripts/test-fantasia.mjs",
-    "test:browser": "playwright test --config=playwright.acceptance.config.ts",
+    "test:ui-integrity": "node --test tests/ui-only-integrity.test.mjs",
+    "test:browser": "npm run test:ui-integrity && playwright test --config=playwright.ui-only.config.ts",
+    "test:browser:legacy-acceptance": "playwright test --config=playwright.acceptance.config.ts",
+    "test:browser:throttle": "playwright test --config=playwright.throttle.config.ts",
+    "test:browser:active-critical": "playwright test --config=playwright.active-critical.config.ts",
     "test:legacy": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {
