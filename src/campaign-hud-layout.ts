@@ -175,7 +175,7 @@ export function layoutCampaignHud(measurement: HudMeasurement, sight: HudRect): 
 
 /** Pack the full measured readouts, preserving controls and the actual sight.
  * The bounded search can report blocked; it never shrinks or drops a panel. */
-const isFixedControl = (id: string) => ['game-sound', 'pause', 'bomb', 'loop', 'fire', 'accelerate', 'brake'].includes(id);
+const isFixedControl = (id: string) => ['game-sound', 'pause', 'bomb', 'loop', 'fire', 'throttle'].includes(id);
 function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudLayout {
   const { canvas, bounds } = measurement, radius = canvas.width < 360 ? 42 : 49;
   const radar = { id: 'radar', x: canvas.width - radius * 2 - 19,
@@ -186,8 +186,11 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
     { ...sight, id: 'aim-and-reload-ring' }];
   // Short wide warnings otherwise come last by area and lose every full-width
   // slot to tall controls. Reserve their actual rectangle before area packing.
+  // The long throttle travel needs a continuous vertical slot. Place it before
+  // other readouts divide those slots, then keep the existing area order.
   const items = [...(measurement.canvasLabels ?? []), ...[radar, ...measurement.panels!, ...(measurement.movableControls ?? [])]
-    .sort((a, b) => b.width * b.height - a.width * a.height || a.id.localeCompare(b.id))];
+    .sort((a, b) => Number(b.id === 'throttle') - Number(a.id === 'throttle')
+      || b.width * b.height - a.width * a.height || a.id.localeCompare(b.id))];
   const work = { remaining: 120_000 };
   let invalid = !valid(canvas) || !valid(bounds) || !items.every(valid) || !obstacles.every(valid);
   const sites = obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-'));
@@ -326,7 +329,7 @@ export function campaignHudContextStyleChanged(before: string | null, after: str
   const context = (value: string | null) => (value ?? '').split(';').map(part => {
     const colon = part.indexOf(':');
     return [part.slice(0, colon).trim().toLowerCase(), part.slice(colon + 1).trim()];
-  }).filter(([name]) => /^(font($|-)|line-height$|letter-spacing$|--control-(x|y|size)$|--safe-)/.test(name))
+  }).filter(([name]) => /^(font($|-)|line-height$|letter-spacing$|--control-(x|y|size|height)$|--safe-)/.test(name))
     .sort(([a], [b]) => a.localeCompare(b));
   return JSON.stringify(context(before)) !== JSON.stringify(context(after));
 }
@@ -350,10 +353,10 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
   let compact = false;
   let reviewFull = true;
   let viewportKey = '';
-  const selectors = '.hud-top, #campaign-sites .campaign-site[data-site], #hud button';
-  const panelSelectors = '.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip';
+  const selectors = '.hud-top, #campaign-sites .campaign-site[data-site], #hud button, #hud [role="slider"]';
+  const panelSelectors = '.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip, #throttle-layout-note';
   const panelNodes = [...app.querySelectorAll<HTMLElement>(panelSelectors), details.viewport, details.mode,
-    ...(details.lives ? [details.lives] : []), ...app.querySelectorAll<HTMLElement>('#bomb-hint, #hud button')];
+    ...(details.lives ? [details.lives] : []), ...app.querySelectorAll<HTMLElement>('#bomb-hint, #hud button, #hud [role="slider"]')];
   const header = app.querySelector<HTMLElement>('.hud-top'), sites = app.querySelector<HTMLElement>('#campaign-sites');
   const time = app.querySelector<HTMLElement>('.hud-top .time-block');
   const panelId = (node: HTMLElement) => node.id || node.className;
@@ -474,7 +477,7 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       const headerRect = header && visibleRect(header);
       if (siteNodes.length && (compact || headerRect)) {
         const cards = siteNodes.map(node => toCanvasRect(node.getBoundingClientRect(), canvasRect));
-        const controls = [...app.querySelectorAll<HTMLElement>('#hud button')].map(visibleRect).filter((rect): rect is HudRect => Boolean(rect)).map(rect => toCanvasRect(rect, canvasRect));
+        const controls = [...app.querySelectorAll<HTMLElement>('#hud button, #hud [role="slider"]')].map(visibleRect).filter((rect): rect is HudRect => Boolean(rect)).map(rect => toCanvasRect(rect, canvasRect));
         const positions = compact ? layoutCompactCampaignSites(canvasRect, bounds, cards, sight)
           : layoutCampaignSites(canvasRect, bounds, toCanvasRect(headerRect!, canvasRect), cards, sight, controls);
         for (const [index, node] of siteNodes.entries()) {
@@ -485,19 +488,19 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       }
       const obstacles: HudObstacle[] = [];
       for (const node of app.querySelectorAll<HTMLElement>(selectors)) {
-        if (compact && (node.tagName === 'BUTTON' || details.contains(node))) continue;
+        if (compact && ((node.tagName === 'BUTTON' || node.getAttribute('role') === 'slider') || details.contains(node))) continue;
         const r = visibleRect(node); if (r) obstacles.push({ ...toCanvasRect(r, canvasRect), id: node.id || node.className });
       }
       const panels: HudObstacle[] = [], movableControls: HudObstacle[] = [];
       natural.clear();
       for (const node of panelNodes) {
         if (details.contains(node) && node !== details.viewport) continue;
-        if (!compact && (node.tagName === 'BUTTON' || node === details.lives || node.id === 'bomb-hint')) continue;
+        if (!compact && ((node.tagName === 'BUTTON' || node.getAttribute('role') === 'slider') || node === details.lives || node.id === 'bomb-hint')) continue;
         if (node === time && !compactTime && !compact) continue;
         const r = visibleRect(node); if (!r) continue;
         const local = toCanvasRect(r, canvasRect), id = panelId(node);
         natural.set(id, local);
-        if (compact && node.tagName === 'BUTTON') movableControls.push({ ...local, id });
+        if (compact && (node.tagName === 'BUTTON' || node.getAttribute('role') === 'slider')) movableControls.push({ ...local, id });
         else panels.push({ ...local, id });
       }
       // Narrow portrait reflows individual readouts without changing their text.

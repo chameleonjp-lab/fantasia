@@ -24,6 +24,27 @@ function assertPacked(source: HudMeasurement, sight: HudRect) {
   }
   return out;
 }
+test('captured 320px enlarged Normal retains full throttle travel and every readout within the unchanged search budget', () => {
+  const capture: { measurement: HudMeasurement; sight: HudRect; label: { id: string; rect: HudRect } } = JSON.parse(
+    readFileSync(new URL('./fixtures/campaign-throttle-ci-37695023486.json', import.meta.url), 'utf8'));
+  const before = JSON.stringify(capture);
+  const packed = assertPacked(capture.measurement, capture.sight);
+  assert(packed.searchChecks! < 120_000);
+  const lever = packed.controls!.find(control => control.id === 'throttle')!.rect;
+  assert.equal(lever.width, 64); assert.equal(lever.height, 128);
+  const adapter = new CampaignHudLayout({ measure: () => capture.measurement, observe: () => () => {}, applyThreat() {}, applyPanels() {} });
+  assert.equal(adapter.update(capture.sight)!.status, 'placed');
+  const label = adapter.placeCanvasLabel(capture.label.id, capture.label.rect);
+  assert.equal(label.status, 'placed');
+  assert.equal(label.rect.width, capture.label.rect.width); assert.equal(label.rect.height, capture.label.rect.height);
+  const final = adapter.diagnostics();
+  assert.equal(final.status, 'placed'); assert(final.searchChecks! < 120_000);
+  for (const box of [final.radar!.rect, ...final.panels!.map(panel => panel.rect), ...final.controls!.map(control => control.rect), ...capture.measurement.obstacles, capture.sight]) {
+    assert(!intersects(label.rect, box, 4));
+  }
+  assert.equal(JSON.stringify(capture), before);
+  adapter.dispose();
+});
 test('captured enlarged desktop packs without eagerly spending its collision budget on unused candidates', () => {
   const f = captures.find(item => item.name.includes('desktop'))!;
   const before = JSON.stringify(f);

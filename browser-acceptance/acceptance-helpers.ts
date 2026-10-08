@@ -36,7 +36,7 @@ export async function inputAt(driver: RealRendererDriver, tick: number) {
 export async function neutral(driver: RealRendererDriver) {
   const state = await driver.full();
   expect(state.controlsInput.keys).toEqual([]); expect(state.controlsInput.steerPointer).toBeNull();
-  expect(state.controlsInput.turn).toBe(0); expect(state.controlsInput.climb).toBe(0);
+  expect(state.controlsInput.turn).toBe(0); expect(state.controlsInput.climb).toBe(0); expect(state.controlsInput.throttle).toBe(0); expect(state.controlsInput.throttlePointer).toBeNull();
   for (const ids of Object.values(state.controlsInput.heldPointers)) expect(ids).toEqual([]);
 }
 export async function frozen(driver: RealRendererDriver, frames = 3) {
@@ -56,14 +56,14 @@ export async function liveGeometry(driver: RealRendererDriver) {
     const rect = (node: Element) => { const r = node.getBoundingClientRect(); return { x:r.x,y:r.y,width:r.width,height:r.height }; };
     const canvas = rect(document.querySelector('#flight')!);
     const compact=document.querySelector('#app')?.getAttribute('data-campaign-hud')==='compact';
-    const panels=[...document.querySelectorAll<HTMLElement>('.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip, #campaign-hud-details, #campaign-mode-status, #hud > .target-tally, #hud > #bomb-hint')]
+    const panels=[...document.querySelectorAll<HTMLElement>('.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip, #throttle-layout-note, #campaign-hud-details, #campaign-mode-status, #hud > .target-tally, #hud > #bomb-hint')]
       .filter(node=>visible(node)&&!node.parentElement?.closest('#campaign-hud-details')&&(!node.matches('.hud-top .time-block')||compact||(canvas.width<=360&&canvas.height>canvas.width)));
-    const obstacles=[...document.querySelectorAll<HTMLElement>('.hud-top, #campaign-sites .campaign-site[data-site], #hud button')].filter(visible);
+    const obstacles=[...document.querySelectorAll<HTMLElement>('.hud-top, #campaign-sites .campaign-site[data-site], #hud button, #hud [role="slider"]')].filter(visible);
     const nodes=[...new Set([...panels,...obstacles])];
     const local=(node:HTMLElement)=>({id:node.id||node.className,...rect(node),x:rect(node).x-canvas.x,y:rect(node).y-canvas.y});
     return { compact, canvas, viewport: {width:innerWidth,height:innerHeight}, sites:[...document.querySelectorAll('#campaign-sites .campaign-site[data-site]')].map(rect),
       panels:panels.map(local),obstacles:obstacles.map(local),
-      nodes:nodes.map(node => ({id:node.id || node.className, button:node.tagName==='BUTTON', panel:panels.includes(node), scrollWidth:node.scrollWidth,clientWidth:node.clientWidth,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,...rect(node)})),
+      nodes:nodes.map(node => ({id:node.id || node.className, button:node.tagName==='BUTTON'||node.getAttribute('role')==='slider', panel:panels.includes(node), scrollWidth:node.scrollWidth,clientWidth:node.clientWidth,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight,...rect(node)})),
       overlays: ['home','pause-screen','result'].map(id => ({id, hidden:document.getElementById(id)!.hidden})), dpr:devicePixelRatio };
   },visibility));
     textGeometry=await driver.call('collect current full-text and clipping geometry',()=>driver.page.evaluate(collectHudTextGeometry,visibility as any));
@@ -109,7 +109,7 @@ export async function liveGeometry(driver: RealRendererDriver) {
   for(let i=0;i<dom.panels.length;i++) for(let j=i+1;j<dom.panels.length;j++) expect(overlap(dom.panels[i],dom.panels[j])).toBe(false);
   for(const panel of dom.panels) for(const site of siteRects) expect(overlap(panel,site)).toBe(false);
   for(const panel of layout.panels ?? []) { expect(overlap(panel.rect,sight)).toBe(false); expect(overlap(panel.rect,layout.radar.rect)).toBe(false); }
-  for (const selector of ['#pause','#bomb','#loop', ...(state.mode==='normal'?['#fire','#accelerate','#brake']:[])]) await driver.point(selector);
+  for (const selector of ['#pause','#bomb','#loop', ...(state.mode==='normal'?['#fire','#throttle']:[])]) await driver.point(selector);
   if(dom.compact)await verifyDetailScroll(driver,reservations);
   driver.evidence.push({ label:'actual-live-dom-geometry', dom, layout }); return {dom,layout};
 }

@@ -16,6 +16,8 @@ npm run dev
 
 実装範囲と不足する F 条件は [検証記録](docs/FANTASIA_VERIFICATION.md)、由来は [移植記録](docs/FANTASIA_PROVENANCE.md) を参照してください。[公開ゲート](docs/RELEASE_GATE.json) は `ready: false` です。手動 Pages workflow があっても、受入条件が満たされるまで公開しません。
 
-## 速度調整レバー（統合待ち）
+## 速度調整レバー（共通UI候補）
 
-Normalの加速/減速タッチ2ボタンを上下1本の速度レバーへ統一する[共通契約](docs/THROTTLE_LEVER_CONTRACT.md)と[本作への適用・未実装項目](docs/THROTTLE_LEVER_ADAPTER.md)を追加しています。Easyの自動巡航とPCの加速/減速キーは維持します。現mainには飛行入力と操作設定がありますが、Normalのタッチ加速/減速は従来の2ボタンのままです。速度レバーUI・v2保存移行の統合と受入検査は未完了です。
+Normalのタッチ加速/減速2ボタンを上下1本の速度レバーへ統合し、実装済みの飛行入力・戦役へ接続しています。Easyの自動巡航、PCの加速/減速キー、作品固有の兵装と7陣地は維持します。作品専用v2設定は旧v1 rawを保持し、保存失敗時の復元控えを備えています。
+
+[共通契約](docs/THROTTLE_LEVER_CONTRACT.md)、[本作への適用](docs/THROTTLE_LEVER_ADAPTER.md)、[統合内容と検査の境界](docs/COMMON_UI_THROTTLE_INTEGRATION.md)を参照してください。上記PR #8の34ケース成功は基点の証拠です。この候補の34件・レバー4件・重要表示12件のCI結果は別に確認し、実機や公開受入の成功には読み替えません。

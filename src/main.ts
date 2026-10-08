@@ -48,7 +48,7 @@ const records = new CampaignRecords();
 const audio = new FlightAudio(); audio.enabled = false;
 const buttons = {
   fire: el<HTMLButtonElement>('fire'), loop: el<HTMLButtonElement>('loop'),
-  accelerate: el<HTMLButtonElement>('accelerate'), brake: el<HTMLButtonElement>('brake'),
+  throttle: el<HTMLElement>('throttle'),
   bomb: el<HTMLButtonElement>('bomb'),
 };
 for (const button of Object.values(buttons)) button.dataset.flightControl = 'true';
@@ -129,7 +129,7 @@ function syncInstructions() {
   el('flight-tip').textContent = touch ? 'ドラッグで操縦' : 'キーで操縦';
   el('input-guide').textContent = touch ? '画面をドラッグして操縦' : 'キーボードで操縦';
   el('mode-guide').textContent = state.mode === 'easy' ? '照準円内・1.2km以内へ自動射撃 · 7方面の地上軍を支援'
-    : touch ? '照準補助なし・手動射撃 · 射撃・加減速はボタンを長押し' : '照準補助なし・手動射撃 · 射撃・加減速はキーを長押し';
+    : touch ? '照準補助なし・手動射撃 · 射撃は長押し・速度はレバーで調整' : '照準補助なし・手動射撃 · 射撃・加減速はキーを長押し';
   el('keyboard-guide').hidden = touch; el('keyboard-guide').textContent = keyboardDescription();
 }
 function updateBestRecord() {
@@ -359,7 +359,7 @@ function frame() {
     } else if (state.status === 'respawning') {
       respawnRemaining -= dt;
       if (respawnRemaining <= 0) {
-        campaign.resumeRespawn(); flight.sync(state, true); bombPredictionTick = -1; clearInput(); audio.resetFlight(); syncAudio(); announce('復活 · 2秒の保護中は自機も攻撃できません', 2, 4);
+        campaign.resumeRespawn(); flight.sync(state, true); bombPredictionTick = -1; clearInput(); audio.resetFlight(); syncAudio(); announce('復活 · 2秒の保護中は自機も攻撃できません', 2, 5);
       }
     } else if (state.status === 'running') {
       if (accumulator + dt > .25) {
@@ -367,10 +367,10 @@ function frame() {
       } else {
         accumulator += dt;
         if (dt > 0) { frameIntervals.push(dt * 1000); if (frameIntervals.length > 7200) frameIntervals.shift(); }
-        const sampled = controls.sample(); pendingLoop ||= sampled.loop; pendingBomb ||= !!sampled.bomb; sampled.viewAspect = scene?.camera.aspect ?? 1;
+        const sampled = controls.sample(false); pendingLoop ||= sampled.loop; pendingBomb ||= !!sampled.bomb; sampled.viewAspect = scene?.camera.aspect ?? 1;
         let first = true;
         while (accumulator + 1e-9 >= CAMPAIGN_DT && screen === 'playing' && state.status === 'running') {
-          const consumed = { ...sampled, loop: first && pendingLoop, bomb: first && pendingBomb }, before = performance.now();
+          const consumed = { ...sampled, throttle: controls.sampleThrottle(), loop: first && pendingLoop, bomb: first && pendingBomb }, before = performance.now();
           try { consumeTick(consumed); }
           catch (error) {
             fatalLogicError = error instanceof Error ? error.message : 'Unknown simulation failure'; performanceInterrupted = true; console.error('Fantasia simulation stopped', error); pause('logic'); break;

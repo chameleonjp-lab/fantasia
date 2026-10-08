@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CampaignHudLayout, createCampaignHudLayout, campaignSiteStripTop, layoutCampaignSites, layoutCampaignCanvasLabel, intersects, layoutCampaignHud, placeRectangle, toCanvasRect, type HudMeasurement, type HudRect } from '../src/campaign-hud-layout';
-import { DEFAULT_LAYOUT, controlBounds, controlDisplaySize } from '../src/control-settings';
+import { DEFAULT_LAYOUT, controlBounds, controlDisplaySize, controlDimensions, rectangularBounds, safeThrottlePlacement } from '../src/control-settings';
 import { projectGunSight } from '../src/gun-sight';
 import { aimRadius } from '../src/aim-indicator';
 import { createGame } from '../src/simulation';
@@ -121,11 +121,13 @@ test('blocked notification after rotation keeps its full size inside the new bou
 // These fixtures are packing tests, not replacements for live DOM/CI evidence.
 function defaultControls(width: number, height: number) {
   return Object.entries(DEFAULT_LAYOUT).map(([id, entry]) => {
-    const size = controlDisplaySize(entry.size, width, height);
-    const bounds = controlBounds(size, width, height, { top: 0, right: 0, bottom: 0, left: 0 });
+    const insets = { top: 0, right: 0, bottom: 0, left: 0 };
+    if (id === 'throttle') entry = safeThrottlePlacement(DEFAULT_LAYOUT, width, height, insets);
+    const dimensions = controlDimensions(id as keyof typeof DEFAULT_LAYOUT, entry.size, width, height);
+    const bounds = rectangularBounds(dimensions, width, height, insets);
     const x = Math.max(bounds.minX, Math.min(bounds.maxX, entry.x)) * width;
     const y = Math.max(bounds.minY, Math.min(bounds.maxY, entry.y)) * height;
-    return { id, x: x - size / 2, y: y - size / 2, width: size, height: size };
+    return { id, x: x - dimensions.width / 2, y: y - dimensions.height / 2, ...dimensions };
   });
 }
 const narrowPanels = [
@@ -161,9 +163,9 @@ function assertCompletePacking(source: HudMeasurement, aim: HudRect, label = '')
   }
   return out;
 }
-test('320 Normal reflow packs all readouts with exact unchanged default-control geometry', () => {
+test('320 Normal reflow packs all readouts with approved four-control rectangular lever geometry', () => {
   const controls = defaultControls(320, 568);
-  assert.deepEqual(controls.map(item => item.width), [96, 72, 76, 76, 52]);
+  assert.deepEqual(controls.map(item => item.width), [96, 72, 64, 52]);
   assertCompletePacking(narrow, sight);
 });
 test('full-size readout packing keeps a blocked custom-control layout honest', () => {

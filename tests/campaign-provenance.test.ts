@@ -10,9 +10,17 @@ test('K hero, camera, flight, shared dialog and renderer lifecycle remain pinned
     'src/dialog-focus.ts', 'src/render-queue.ts', 'public/third-party-notices.txt']) {
     const original = manifest.files.find((file: { path: string }) => file.path === path);
     assert.ok(original, path);
-    assert.equal(createHash('sha256').update(readFileSync(path)).digest('hex'), original.sha256, path);
+    let bytes = readFileSync(path);
+    if (path === 'src/flight.ts') {
+      const current = bytes.toString('utf8');
+      assert.equal(current.split("import { resolveThrottleAxis } from './throttle-lever';\n").length, 2);
+      assert.equal(current.split("mode === 'easy' ? 0 : resolveThrottleAxis(input)").length, 2);
+      bytes = Buffer.from(current.replace("import { resolveThrottleAxis } from './throttle-lever';\n", '')
+        .replace("mode === 'easy' ? 0 : resolveThrottleAxis(input)", "mode === 'easy' ? 0 : Number(Boolean(input.accelerate)) - Number(Boolean(input.brake))"));
+    }
+    assert.equal(createHash('sha256').update(bytes).digest('hex'), original.sha256, path);
   }
   const readme = readFileSync('README.md', 'utf8');
   assert.ok(readme.startsWith('# fantasia\nファンタジア\n'));
-  assert.ok(readme.includes('速度調整レバー（統合待ち）'));
+  assert.ok(readme.includes('速度調整レバー（共通UI候補）'));
 });

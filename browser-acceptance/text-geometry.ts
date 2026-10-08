@@ -15,8 +15,8 @@ export function collectHudTextGeometry(visible:(node:HTMLElement)=>boolean):Text
   // Object methods keep serialized browser code independent of host transpiler helpers.
   const read={rect(r:DOMRect){return {x:r.x,y:r.y,width:r.width,height:r.height};},
     cssVisible(node:HTMLElement){let n:HTMLElement|null=node;while(n){const s=getComputedStyle(n);if(n.hidden||s.display==='none'||s.visibility==='hidden')return false;n=n.parentElement;}return true;}};
-  const selectors:Array<[string,string]>=[['panel','.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip'],
-    ['detail-viewport','#campaign-hud-details'],['detail-entry','#campaign-hud-details [data-campaign-detail]'],['persistent','#campaign-mode-status, #hud > .target-tally, #hud > #bomb-hint'],['header','.hud-top'],['site','#campaign-sites .campaign-site[data-site]'],['control','#hud button']];
+  const selectors:Array<[string,string]>=[['panel','.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip, #throttle-layout-note'],
+    ['detail-viewport','#campaign-hud-details'],['detail-entry','#campaign-hud-details [data-campaign-detail]'],['persistent','#campaign-mode-status, #hud > .target-tally, #hud > #bomb-hint'],['header','.hud-top'],['site','#campaign-sites .campaign-site[data-site]'],['control','#hud button, #hud [role="slider"]']];
   const regionNodes:Array<{key:string;kind:string;node:HTMLElement;rect:TextRect}>=[];
   for(const [kind,selector]of selectors)for(const node of document.querySelectorAll<HTMLElement>(selector))if((visible(node)||(!!node.textContent?.trim()&&read.cssVisible(node)))&&!regionNodes.some(r=>r.node===node))
     regionNodes.push({key:`${kind}:${node.id||node.className}:${regionNodes.length}`,kind,node,rect:read.rect(node.getBoundingClientRect())});

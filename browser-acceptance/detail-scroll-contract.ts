@@ -5,13 +5,14 @@ export interface DetailAccessSample {
   persistentIds:string[];fullyVisibleFragments:string[];
 }
 export interface DetailAccessEvidence {
-  active:boolean;viewportId:string;expectedEntryIds:string[];actualEntryIds:string[];
+  active:boolean;phase?:'playing'|'respawning';viewportId:string;expectedEntryIds:string[];actualEntryIds:string[];
   expectedFragments:string[];persistentIds:string[];samples:DetailAccessSample[];
 }
-export function detailAccessIssues(e:DetailAccessEvidence):string[] {
+export function detailAccessIssues(e:DetailAccessEvidence,phase:'playing'|'respawning'='playing'):string[] {
   if(!e.active)return ['Details access proof must describe an active authorized fallback'];
   const issues:string[]=[];
-  for(const id of ['campaign-mode-status','lives-count','pause','bomb','loop',...Array.from({length:7},(_,i)=>`site-${i+1}`),...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`)])if(!e.persistentIds.includes(id))issues.push(`Missing required persistent item ${id}`);
+  if(e.phase!==undefined&&e.phase!==phase)issues.push('Detail phase differs from caller contract');
+  for(const id of ['campaign-mode-status','lives-count',...(phase==='respawning'?[]:['pause','bomb','loop']),...Array.from({length:7},(_,i)=>`site-${i+1}`),...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`)])if(!e.persistentIds.includes(id))issues.push(`Missing required persistent item ${id}`);
   if(new Set(e.persistentIds).size!==e.persistentIds.length)issues.push('Duplicate persistent IDs');
   if(e.viewportId!=='campaign-hud-details')issues.push('Unrecognized scroll viewport');
   if(!e.expectedEntryIds.length||new Set(e.expectedEntryIds).size!==e.expectedEntryIds.length)issues.push('Missing/duplicate detail contract');
@@ -23,7 +24,7 @@ export function detailAccessIssues(e:DetailAccessEvidence):string[] {
     for(const id of e.expectedFragments)if(!seen.has(id))issues.push(`${method}: unread detail fragment ${id}`);
   }
   for(const sample of e.samples){
-    if(sample.phase!=='playing'||sample.neutralInput!==true)issues.push(`${sample.method}: scroll affected flight or lost live state`);
+    if(sample.phase!==phase||sample.neutralInput!==true)issues.push(`${sample.method}: scroll affected flight or lost live state`);
     if(Object.values(sample.fullHudScroll).some(v=>v!==0))issues.push(`${sample.method}: whole HUD/document scrolled`);
     if(e.persistentIds.some(id=>!sample.persistentIds.includes(id)))issues.push(`${sample.method}: persistent status/control disappeared`);
   }
@@ -40,6 +41,7 @@ export function consumedDetailInputIssues(records:unknown):string[] {
     const input=record?.input;
     if(!input||typeof input!=='object'||Array.isArray(input)){issues.push(`Consumed input ${index}: missing raw input`);continue;}
     for(const key of ['turn','climb'])if(input[key]!==0)issues.push(`Consumed input ${index}: ${key} is not neutral`);
+    if(input.throttle!==undefined&&input.throttle!==0)issues.push(`Consumed input ${index}: throttle is not neutral`);
     if(input.torpedo!==undefined&&input.torpedo!==false)issues.push(`Consumed input ${index}: torpedo is not neutral`);
     for(const key of ['accelerate','brake','fire','bomb','loop'])if(input[key]!==false)issues.push(`Consumed input ${index}: ${key} is not neutral`);
   }
