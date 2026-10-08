@@ -330,6 +330,7 @@ test('Home, Rules, touch and keyboard settings save through product dialogs', as
   await page.click('#rules-back');
   await setViewportAndWait(page, 393, 852);
   await page.click('#home-controls'); await expect(page.locator('#control-settings[open]')).toBeVisible();
+  await page.click('#control-editor-touch'); await expect(page.locator('#control-editor-touch')).toHaveAttribute('aria-pressed', 'true');
   await enlargeText(page);
   await checkGeometry(page, '#control-settings'); await checkBodyPanels(page, '#control-settings');
   captureMs += await capture(page, info, 'settings-touch.png');
