@@ -8,13 +8,15 @@ export class CampaignHudDetails {
   private readonly attributes = new Map<HTMLElement, Array<[string, string | null]>>();
   private readonly entries = new Map<HTMLElement, string>();
   private readonly siteGroups: HTMLElement[] = [];
-  private readonly typography = new Map<HTMLElement, Array<[string, string, string, string]>>();
+  private readonly typography = new Map<HTMLElement, Array<{ name: string; originalValue: string; originalPriority: string; appliedValue: string; priorAppliedValue?: string }>>();
   private compact = false;
   private reparentRevision = 0;
+  private typographyViewport = '';
   get layoutRevision() { return this.reparentRevision; }
   private readonly hud: HTMLElement;
   constructor(private readonly app: HTMLElement) {
     const doc = app.ownerDocument;
+    this.typographyViewport = this.viewportKey();
     this.hud = app.querySelector<HTMLElement>('#hud')!;
     this.viewport = doc.createElement('div');
     this.viewport.id = 'campaign-hud-details';
@@ -34,6 +36,8 @@ export class CampaignHudDetails {
     };
     add('.time-block', 'timer'); add('.targets .target-tally', 'tallies');
     add('.flight-data .wingmen', 'wingmen'); add('.score-readout', 'score');
+    add('.flight-data .campaign-limit', 'campaign-limit'); add('.flight-data .ammo', 'ammo');
+    add('#campaign-threat', 'campaign-threat'); add('#reload-status', 'reload-status');
     add('#announcement', 'announcement-secondary'); add('#flight-tip', 'flight-tip');
     add('#loop-status', 'loop-status'); add('#bomb-hint', 'bomb-hint-secondary');
     const mode = app.querySelector<HTMLElement>('#hud-mode'); if (mode) this.remember(mode);
@@ -63,11 +67,155 @@ export class CampaignHudDetails {
       const names = ['font-size', 'line-height', 'letter-spacing'];
       const style = element.ownerDocument.defaultView!.getComputedStyle(element);
       const values = names.map(name => style.getPropertyValue(name));
-      this.typography.set(element, names.map((name, i) => [name, element.style.getPropertyValue(name), element.style.getPropertyPriority(name), values[i]]));
+      this.typography.set(element, names.map((name, i) => ({ name, originalValue: element.style.getPropertyValue(name),
+        originalPriority: element.style.getPropertyPriority(name), appliedValue: values[i] })));
       names.forEach((name, i) => element.style.setProperty(name, values[i]));
     }
     parent.insertBefore(node, before);
     this.reparentRevision++;
+  }
+  private viewportKey() {
+    const win = this.app?.ownerDocument?.defaultView;
+    return win ? `${win.innerWidth}x${win.innerHeight}` : '';
+  }
+  /** Refresh only the CSS snapshots owned by reparenting. Active important
+   * text-size overrides stay in place; their prior inline baseline is repaired
+   * on the next sync after the override is removed. */
+  private refreshTypographyForViewport() {
+    const nextViewport = this.viewportKey();
+    const viewportChanged = nextViewport !== this.typographyViewport;
+    this.typographyViewport = nextViewport;
+    const pending: Array<{
+      element: HTMLElement;
+      declarations: Array<{ name: string; originalValue: string; originalPriority: string; appliedValue: string; priorAppliedValue?: string }>;
+      current: Array<{ value: string; priority: string }>;
+      eligible: boolean[];
+      baselines?: string[];
+    }> = [];
+    const roots = new Set<HTMLElement>();
+    for (const [element, declarations] of this.typography) {
+      if (!element.isConnected) continue;
+      const current = declarations.map(declaration => ({
+        value: element.style.getPropertyValue(declaration.name),
+        priority: element.style.getPropertyPriority(declaration.name),
+      }));
+      const eligible = declarations.map((declaration, index) => viewportChanged
+        && (current[index].value === declaration.appliedValue || current[index].value === declaration.priorAppliedValue
+          || current[index].value === declaration.originalValue && current[index].priority === declaration.originalPriority
+          || current[index].priority === 'important')
+        || !viewportChanged && (current[index].value === declaration.priorAppliedValue
+          || current[index].value === declaration.originalValue && current[index].priority === declaration.originalPriority));
+      if (!eligible.some(Boolean)) continue;
+      pending.push({ element, declarations, current, eligible });
+      let root: HTMLElement | null = element;
+      while (root && !this.anchors.has(root)) root = root.parentElement;
+      if (root) roots.add(root);
+    }
+    if (!pending.length) return;
+
+    // A moved node must be measured under its original ancestors so responsive
+    // selectors and inherited sizes still describe the source HUD at this
+    // viewport. Comment markers preserve the exact current positions while the
+    // live nodes are sampled; the nodes are returned before sync can yield.
+    const depthAmong = (node: HTMLElement | null, candidates: Set<HTMLElement>) => {
+      let depth = 0;
+      for (let parent = node; parent; parent = parent.parentElement) if (candidates.has(parent)) depth++;
+      return depth;
+    };
+    const orderedRoots = [...roots].map((root, order) => ({
+      root, order,
+      originalDepth: depthAmong(this.anchors.get(root)?.parentElement ?? null, roots),
+      currentDepth: depthAmong(root.parentElement, roots),
+    })).sort((a, b) => a.originalDepth - b.originalDepth || a.order - b.order);
+    const placements: Array<{
+      root: HTMLElement; marker: Comment; currentAttributes: Array<[string, string | null]>; currentDepth: number;
+    }> = [];
+    const scrollPositions = new Map<HTMLElement, { top: number; left: number }>();
+    const rememberScrollAncestors = (node: Node | null) => {
+      let parent = node instanceof HTMLElement ? node : node?.parentElement ?? null;
+      while (parent) {
+        if (!scrollPositions.has(parent)) scrollPositions.set(parent, { top: parent.scrollTop, left: parent.scrollLeft });
+        parent = parent.parentElement;
+      }
+    };
+    const active = this.app.ownerDocument.activeElement as HTMLElement | null;
+    rememberScrollAncestors(this.viewport);
+    for (const { root, currentDepth } of orderedRoots) {
+      const anchor = this.anchors.get(root);
+      const originalParent = anchor?.parentNode;
+      if (!anchor || !originalParent) continue;
+      rememberScrollAncestors(root.parentNode);
+      rememberScrollAncestors(originalParent);
+      const attributes = this.attributes.get(root) ?? [];
+      const currentAttributes = attributes.map(([name]) => [name, root.getAttribute(name)] as [string, string | null]);
+      const needsRestore = root.parentNode !== originalParent || anchor.nextSibling !== root
+        || attributes.some(([name, value]) => root.getAttribute(name) !== value);
+      if (!needsRestore) continue;
+      const marker = root.ownerDocument.createComment('campaign typography position');
+      root.parentNode?.insertBefore(marker, root);
+      for (const [name, value] of attributes) {
+        if (value === null) root.removeAttribute(name); else root.setAttribute(name, value);
+      }
+      anchor.after(root);
+      placements.push({ root, marker, currentAttributes, currentDepth });
+    }
+
+    // Clear every owned declaration before reading any computed value. This
+    // lets descendants inherit the new source-context baseline from parents.
+    for (const item of pending) item.eligible.forEach((canSample, index) => {
+      if (canSample) item.element.style.removeProperty(item.declarations[index].name);
+    });
+    for (const item of pending) {
+      const computed = item.element.ownerDocument.defaultView!.getComputedStyle(item.element);
+      item.baselines = item.declarations.map(declaration => computed.getPropertyValue(declaration.name));
+    }
+    for (const item of pending) item.eligible.forEach((canSample, index) => {
+      const declaration = item.declarations[index], previousApplied = declaration.appliedValue;
+      if (!canSample) return;
+      const current = item.current[index];
+      item.element.style.setProperty(declaration.name, current.value, current.priority);
+      if (current.priority === 'important' && current.value !== previousApplied) {
+        declaration.priorAppliedValue = previousApplied;
+        declaration.appliedValue = item.baselines![index];
+        return;
+      }
+      if (current.value === declaration.priorAppliedValue || current.value === previousApplied
+        || current.value === declaration.originalValue && current.priority === declaration.originalPriority) {
+        item.element.style.setProperty(declaration.name, item.baselines![index]);
+        declaration.appliedValue = item.baselines![index];
+        declaration.priorAppliedValue = undefined;
+      }
+    });
+
+    placements.sort((a, b) => a.currentDepth - b.currentDepth);
+    for (const placement of placements) {
+      placement.marker.replaceWith(placement.root);
+      for (const [name, value] of placement.currentAttributes) {
+        if (value === null) placement.root.removeAttribute(name); else placement.root.setAttribute(name, value);
+      }
+    }
+    for (const [element, position] of scrollPositions) {
+      if (element.scrollTop !== position.top) element.scrollTop = position.top;
+      if (element.scrollLeft !== position.left) element.scrollLeft = position.left;
+    }
+    if (active?.isConnected && this.app.ownerDocument.activeElement !== active) active.focus({ preventScroll: true });
+  }
+  private hasExternalTypographyOverride() {
+    for (const [element, declarations] of this.typography) for (const declaration of declarations) {
+      const value = element.style.getPropertyValue(declaration.name);
+      const priority = element.style.getPropertyPriority(declaration.name);
+      if (value !== declaration.appliedValue || priority === 'important') return true;
+    }
+    return false;
+  }
+  private restoreTypography() {
+    for (const [element, declarations] of this.typography) for (const declaration of declarations) {
+      if (element.style.getPropertyValue(declaration.name) !== declaration.appliedValue
+        || element.style.getPropertyPriority(declaration.name) === 'important') continue;
+      if (declaration.originalValue) element.style.setProperty(declaration.name, declaration.originalValue, declaration.originalPriority);
+      else element.style.removeProperty(declaration.name);
+    }
+    this.typography.clear();
   }
   private restore(node: HTMLElement) {
     const anchor = this.anchors.get(node);
@@ -111,14 +259,13 @@ export class CampaignHudDetails {
         if (compact) { if (node.parentElement !== group) this.move(node, group); } else this.restore(node);
       }
     }
-    if (!compact) {
-      for (const [element, styles] of this.typography) for (const [name, value, priority, applied] of styles) {
-        // A user text-size update while compact owns its newer inline value.
-        if (element.style.getPropertyValue(name) !== applied) continue;
-        if (value) element.style.setProperty(name, value, priority); else element.style.removeProperty(name);
-      }
-      this.typography.clear();
-    }
+    this.refreshTypographyForViewport();
+    // Viewport/mode review can probe full mode, then immediately return to
+    // compact. Keep the original snapshots while a caller-owned important
+    // text override is active; clearing them here would make that 200% size
+    // become the next viewport's CSS baseline. Stable unmodified full mode is
+    // still restored and released immediately.
+    if (!compact && !this.hasExternalTypographyOverride()) this.restoreTypography();
   }
   /** Assigning even the same scrollTop can cancel the browser's in-flight
    * native scroll. Repair reading state only after a real structural change. */
@@ -136,6 +283,7 @@ export class CampaignHudDetails {
   contains(node: Node) { return this.compact && this.viewport.contains(node); }
   dispose() {
     this.sync(false);
+    this.restoreTypography();
     for (const [node, anchor] of this.anchors) { this.restore(node); anchor.remove(); }
     this.viewport.remove(); this.mode.remove();
   }
