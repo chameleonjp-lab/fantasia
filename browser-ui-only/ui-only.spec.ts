@@ -487,17 +487,29 @@ async function checkGeometry(page: Page, selector: string) {
     };
     const targets = [...scope.querySelectorAll<HTMLElement>('button:not(.preview-control), input[type="range"], select, summary, [role="slider"], label:has(> input[type="radio"])')].filter(visible);
     const small = targets.filter(element => { const rect = element.getBoundingClientRect(); return rect.width < 44 || rect.height < 44; }).map(element => element.id || element.getAttribute('aria-label') || element.textContent?.trim().slice(0, 32));
-    const overlaps: string[] = [];
+    const overlaps: string[] = [], overlapDetails: unknown[] = [];
+    const describe = (element: HTMLElement) => {
+      const rect = element.getBoundingClientRect(), clipped = visibleRect(element), style = getComputedStyle(element);
+      return { id: element.id || null, className: typeof element.className === 'string' ? element.className : '',
+        text: element.getAttribute('aria-label') || element.textContent?.trim().replace(/\s+/g, ' ').slice(0, 48),
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
+        visibleRect: clipped, position: style.position, left: style.left, top: style.top, right: style.right, bottom: style.bottom,
+        transform: style.transform, translate: style.translate, fontSize: style.fontSize,
+        parent: element.parentElement?.id || element.parentElement?.className || element.parentElement?.tagName };
+    };
     for (let i = 0; i < targets.length; i++) for (let j = i + 1; j < targets.length; j++) {
       const a = visibleRect(targets[i]), b = visibleRect(targets[j]);
       if (!a || !b) continue;
       const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
-      if (w > 1 && h > 1) overlaps.push(`${targets[i].id || targets[i].textContent?.trim()} × ${targets[j].id || targets[j].textContent?.trim()}`);
+      if (w > 1 && h > 1) {
+        overlaps.push(`${targets[i].id || targets[i].textContent?.trim()} × ${targets[j].id || targets[j].textContent?.trim()}`);
+        if (overlapDetails.length < 20) overlapDetails.push({ overlap: { width: w, height: h }, a: describe(targets[i]), b: describe(targets[j]) });
+      }
     }
-    return { small, overlaps, viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth };
+    return { small, overlaps, overlapDetails, viewportWidth: innerWidth, documentWidth: document.documentElement.scrollWidth };
   }, selector);
   expect(result.small, `${selector} controls below 44px`).toEqual([]);
-  expect(result.overlaps, `${selector} interactive overlap`).toEqual([]);
+  expect(result.overlaps, `${selector} interactive overlap: ${JSON.stringify(result.overlapDetails)}`).toEqual([]);
   expect(result.documentWidth, `${selector} horizontal overflow`).toBeLessThanOrEqual(result.viewportWidth + 1);
 }
 
@@ -538,10 +550,12 @@ async function checkHudGeometry(page: Page) {
     const selectors = [
       '.hud-top', '#campaign-sites .campaign-site[data-site]', '.flight-data > *', '#campaign-threat',
       '#payload-status', '#reload-status', '#warning', '#announcement', '#respawn-status', '#flight-tip', '#throttle-layout-note',
+      '#campaign-hud-details', '#hud button:not(.preview-control)', '#hud [role="slider"]',
     ];
     const nodes = selectors.flatMap(selector => [...document.querySelectorAll<HTMLElement>(selector)])
-      .filter(node => visible(node) && !node.closest('#campaign-hud-details'));
+      .filter(visible);
     const clipped: string[] = [], outside: string[] = [], overlaps: string[] = [], overlapDetails: unknown[] = [];
+    const clippedDetails: unknown[] = [], outsideDetails: unknown[] = [];
     const app = document.querySelector<HTMLElement>('#app');
     const describe = (node: HTMLElement) => {
       const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
@@ -561,10 +575,15 @@ async function checkHudGeometry(page: Page) {
     } : null;
     for (const node of nodes) {
       const rect = node.getBoundingClientRect(), style = getComputedStyle(node), name = node.id || node.className || node.tagName;
-      if (rect.left < -1 || rect.top < -1 || rect.right > innerWidth + 1 || rect.bottom > innerHeight + 1) outside.push(name);
+      if (rect.left < -1 || rect.top < -1 || rect.right > innerWidth + 1 || rect.bottom > innerHeight + 1) {
+        outside.push(name); if (outsideDetails.length < 20) outsideDetails.push(describe(node));
+      }
       const intentionalEllipsis = node.matches('.campaign-site-force, .campaign-site-wave');
       const scrollable = ['auto', 'scroll'].includes(style.overflowY);
-      if (!intentionalEllipsis && !scrollable && (node.scrollWidth > node.clientWidth + 2 || node.scrollHeight > node.clientHeight + 2)) clipped.push(name);
+      if (!intentionalEllipsis && !scrollable && (node.scrollWidth > node.clientWidth + 2 || node.scrollHeight > node.clientHeight + 2)) {
+        clipped.push(name); if (clippedDetails.length < 20) clippedDetails.push({ ...describe(node), scrollWidth: node.scrollWidth,
+          clientWidth: node.clientWidth, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight });
+      }
     }
     for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
       const aNode = nodes[i], bNode = nodes[j];
@@ -575,12 +594,13 @@ async function checkHudGeometry(page: Page) {
         if (overlapDetails.length < 12) overlapDetails.push({ a: describe(aNode), b: describe(bNode) });
       }
     }
-    return { clipped, outside, overlaps, overlapDetails, detailViewport, documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth,
+    return { clipped, clippedDetails, outside, outsideDetails, overlaps, overlapDetails, detailViewport,
+      documentWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth,
       mode: app?.dataset.mode, campaignHud: app?.dataset.campaignHud, screen: app?.dataset.screen };
   });
   const canvasLayout = await act(page, 'layout');
-  expect(result.clipped, 'visible warning, site, instrument and HUD panel content must not clip').toEqual([]);
-  expect(result.outside, 'visible warning, site, instrument and HUD panels must stay on screen').toEqual([]);
+  expect(result.clipped, `visible warning, site, instrument, control and HUD panel content must not clip: ${JSON.stringify(result.clippedDetails)}`).toEqual([]);
+  expect(result.outside, `visible warning, site, instrument, control and HUD panels must stay on screen: ${JSON.stringify(result.outsideDetails)}`).toEqual([]);
   expect(result.overlaps, `visible HUD panels must not overlap (${result.mode}/${result.campaignHud}/${result.screen}, ${result.viewportWidth}px; Canvas layout=${canvasLayout.status}, conflicts=${JSON.stringify(canvasLayout.fixedConflicts ?? [])}): ${JSON.stringify(result.overlapDetails)}`).toEqual([]);
   expect(result.documentWidth, 'HUD must not create horizontal page overflow').toBeLessThanOrEqual(result.viewportWidth + 1);
   if (result.detailViewport) {

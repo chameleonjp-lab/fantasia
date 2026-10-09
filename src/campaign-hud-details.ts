@@ -116,6 +116,23 @@ export class CampaignHudDetails {
       });
     }
   }
+  private hasExternalTypographyOverride() {
+    for (const [element, declarations] of this.typography) for (const declaration of declarations) {
+      const value = element.style.getPropertyValue(declaration.name);
+      const priority = element.style.getPropertyPriority(declaration.name);
+      if (value !== declaration.appliedValue || priority === 'important') return true;
+    }
+    return false;
+  }
+  private restoreTypography() {
+    for (const [element, declarations] of this.typography) for (const declaration of declarations) {
+      if (element.style.getPropertyValue(declaration.name) !== declaration.appliedValue
+        || element.style.getPropertyPriority(declaration.name) === 'important') continue;
+      if (declaration.originalValue) element.style.setProperty(declaration.name, declaration.originalValue, declaration.originalPriority);
+      else element.style.removeProperty(declaration.name);
+    }
+    this.typography.clear();
+  }
   private restore(node: HTMLElement) {
     const anchor = this.anchors.get(node);
     if (anchor?.parentNode && anchor.nextSibling !== node) { anchor.after(node); this.reparentRevision++; }
@@ -159,14 +176,12 @@ export class CampaignHudDetails {
       }
     }
     this.refreshTypographyForViewport();
-    if (!compact) {
-      for (const [element, styles] of this.typography) for (const { name, originalValue: value, originalPriority: priority, appliedValue: applied } of styles) {
-        // A user text-size update while compact owns its newer inline value.
-        if (element.style.getPropertyValue(name) !== applied) continue;
-        if (value) element.style.setProperty(name, value, priority); else element.style.removeProperty(name);
-      }
-      this.typography.clear();
-    }
+    // Viewport/mode review can probe full mode, then immediately return to
+    // compact. Keep the original snapshots while a caller-owned important
+    // text override is active; clearing them here would make that 200% size
+    // become the next viewport's CSS baseline. Stable unmodified full mode is
+    // still restored and released immediately.
+    if (!compact && !this.hasExternalTypographyOverride()) this.restoreTypography();
   }
   /** Assigning even the same scrollTop can cancel the browser's in-flight
    * native scroll. Repair reading state only after a real structural change. */
@@ -184,6 +199,7 @@ export class CampaignHudDetails {
   contains(node: Node) { return this.compact && this.viewport.contains(node); }
   dispose() {
     this.sync(false);
+    this.restoreTypography();
     for (const [node, anchor] of this.anchors) { this.restore(node); anchor.remove(); }
     this.viewport.remove(); this.mode.remove();
   }

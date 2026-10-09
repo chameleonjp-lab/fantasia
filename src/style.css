@@ -1228,7 +1228,7 @@ p {
 #app[data-campaign-hud="compact"] #hud > #bomb-hint {
   position: absolute; left: 8px; top: 140px; width: 110px; margin: 0;
 }
-/* Candidate only: give compact readouts distinct measured starting boxes. */
+/* Give compact readouts distinct starting boxes while preserving full text. */
 #app[data-campaign-hud="compact"] .flight-data > .health-label { top: 140px; }
 #app[data-campaign-hud="compact"] .flight-data > .health-track { top: 164px; }
 #app[data-campaign-hud="compact"] .flight-data > .instrument { top: 177px; }
@@ -1246,16 +1246,18 @@ p {
   #app[data-campaign-hud="compact"] .flight-data > .ammo { left: calc(50% - 63px); top: calc(50% + 13.5vmin + 48px); width: 114px; }
 }
 #app[data-campaign-hud="compact"] .health-label { flex-wrap: nowrap; white-space: nowrap; width: max-content; }
+#app[data-campaign-hud="compact"] .flight-data > .health-label { width: max-content; }
 #app[data-campaign-hud="compact"] .instrument { gap: 2px; }
 #app[data-campaign-hud="compact"] #campaign-mode-status { width: max-content; }
 #app[data-campaign-hud="compact"] #hud > .target-tally { display: flex; gap: 4px; align-items: baseline; width: max-content; }
 #app[data-campaign-hud="compact"] #hud > .target-tally > b { margin: 0; }
-#app[data-campaign-hud="compact"] #game-sound,
-#app[data-campaign-hud="compact"] #pause {
-  position: absolute !important; left: 8px; top: 112px; right: auto; bottom: auto;
-  width: max-content; min-width: 44px; min-height: 44px; height: auto; padding: 2px;
+#app[data-campaign-hud="compact"] #hud .hud-actions #game-sound,
+#app[data-campaign-hud="compact"] #hud .hud-actions #pause {
+  position: absolute !important; inset: auto !important; left: 130px !important; top: 214px !important;
+  right: auto !important; bottom: auto !important; width: max-content !important; height: auto !important;
+  min-width: 44px !important; min-height: 44px !important; padding: 2px !important;
 }
-#app[data-campaign-hud="compact"] #pause { left: 96px; }
+#app[data-campaign-hud="compact"] #hud .hud-actions #pause { left: 260px !important; }
 #app[data-campaign-hud="compact"] #hud button { white-space: nowrap; }
 #app.fantasia-shell #hud button[data-flight-control] {
   width: max-content; height: auto; min-width: max(44px, var(--control-size, 44px));
@@ -1322,12 +1324,17 @@ p {
   #app[data-campaign-hud="compact"] .flight-data > .wingmen { top: 215px; }
   #app[data-campaign-hud="compact"] #warning { top: 162px; bottom: auto; }
   #app[data-campaign-hud="compact"] #announcement { top: 84px !important; bottom: auto; }
-  #app[data-campaign-hud="compact"] #game-sound { left: 8px; top: 112px; }
-  #app[data-campaign-hud="compact"] #pause { left: 96px; top: 112px; }
-  #app[data-campaign-hud="compact"] #hud #fire { left: 340px; top: 250px; }
+  #app[data-campaign-hud="compact"] #hud .hud-actions #game-sound { left: 130px !important; top: 214px !important; }
+  #app[data-campaign-hud="compact"] #hud .hud-actions #pause { left: 260px !important; top: 214px !important; }
+  #app[data-campaign-hud="compact"] #hud #fire { left: 340px !important; top: 250px !important; right: auto !important; bottom: auto !important; }
 }
 @media (max-width: 360px) and (orientation: portrait) {
-  #app[data-campaign-hud="compact"] #hud #fire { left: 216px; top: 440px; }
+  #app[data-campaign-hud="compact"] #hud .hud-actions #game-sound { left: 87px !important; top: 440px !important; }
+  #app[data-campaign-hud="compact"] #hud .hud-actions #pause { left: 270px !important; top: 440px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud .hud-actions #game-sound { top: 430px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud .hud-actions #pause { top: 430px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #loop { left: 265px !important; top: 250px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #fire { left: 220px !important; top: 500px !important; right: auto !important; bottom: auto !important; }
 }
 
 /* Spring-centred rate lever: rectangular bounds match the settings preview. */
