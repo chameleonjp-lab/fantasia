@@ -396,8 +396,8 @@ async function record(name: string, setupMs: number, started: number, captureMs:
   test.info().annotations.push({ type: 'ui-only-time', description: JSON.stringify(value) });
 }
 
-async function enlargeText(page: Page) {
-  return page.evaluate(selectors => {
+async function enlargeText(page: Page, refreshResponsiveHud = false) {
+  return page.evaluate(async ({ selectors, refreshResponsiveHud }) => {
     type SavedFont = { value: string; priority: string };
     const targetWindow = window as Window & { __fantasiaUiOnlyFontOverrides?: Map<HTMLElement, SavedFont> };
     const overrides = targetWindow.__fantasiaUiOnlyFontOverrides ?? new Map<HTMLElement, SavedFont>();
@@ -407,6 +407,10 @@ async function enlargeText(page: Page) {
       else node.style.removeProperty('font-size');
     }
     overrides.clear();
+    // On rotation, give the product layout one normal-size render after old
+    // test overrides are removed. Its responsive live-node font snapshots
+    // must settle before this case measures and reapplies 200% text.
+    if (refreshResponsiveHud) await (window as any).__fantasiaUiOnlyTest.paint();
 
     const nodes = [...document.querySelectorAll<HTMLElement>('#app *')].filter(node => !['CANVAS', 'SCRIPT', 'STYLE'].includes(node.tagName));
     const measurements = nodes.map(node => ({
@@ -456,7 +460,7 @@ async function enlargeText(page: Page) {
         text: node.textContent?.trim().replace(/\s+/g, ' ').slice(0, 120) ?? '' });
     }
     return { nodeCount: nodes.length, fontBaselines, viewport: { width: innerWidth, height: innerHeight } };
-  }, TYPOGRAPHY_SELECTORS);
+  }, { selectors: TYPOGRAPHY_SELECTORS, refreshResponsiveHud });
 }
 
 async function checkGeometry(page: Page, selector: string) {
@@ -1515,7 +1519,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
       const freshBaseline = freshBaselineByCase.get(name) ?? null;
       if (!freshBaseline) recordHudFailure(hudFailures, 'rotation-stress', name, 'matching-fresh-baseline', `${name}: matching fresh-page counterpart is missing before rotation capture`);
       recordHudAssertion(hudFailures, 'rotation-stress', name, 'rotation-mode-matches-hud-case', () => expect(hudCase.mode).toBe(mode));
-      const fontScale = await enlargeText(page);
+      const fontScale = await enlargeText(page, true);
       const painted = await repaintFixedFixture(page);
       const inspection = await inspectAndCaptureHudCase(page, info, hudCase, painted, fixture, fontScale,
         freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, secondaryOriginals.originalNodes, secondaryOriginals.originalText,

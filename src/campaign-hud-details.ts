@@ -8,13 +8,15 @@ export class CampaignHudDetails {
   private readonly attributes = new Map<HTMLElement, Array<[string, string | null]>>();
   private readonly entries = new Map<HTMLElement, string>();
   private readonly siteGroups: HTMLElement[] = [];
-  private readonly typography = new Map<HTMLElement, Array<[string, string, string, string]>>();
+  private readonly typography = new Map<HTMLElement, Array<{ name: string; originalValue: string; originalPriority: string; appliedValue: string; priorAppliedValue?: string }>>();
   private compact = false;
   private reparentRevision = 0;
+  private typographyViewport = '';
   get layoutRevision() { return this.reparentRevision; }
   private readonly hud: HTMLElement;
   constructor(private readonly app: HTMLElement) {
     const doc = app.ownerDocument;
+    this.typographyViewport = this.viewportKey();
     this.hud = app.querySelector<HTMLElement>('#hud')!;
     this.viewport = doc.createElement('div');
     this.viewport.id = 'campaign-hud-details';
@@ -65,11 +67,54 @@ export class CampaignHudDetails {
       const names = ['font-size', 'line-height', 'letter-spacing'];
       const style = element.ownerDocument.defaultView!.getComputedStyle(element);
       const values = names.map(name => style.getPropertyValue(name));
-      this.typography.set(element, names.map((name, i) => [name, element.style.getPropertyValue(name), element.style.getPropertyPriority(name), values[i]]));
+      this.typography.set(element, names.map((name, i) => ({ name, originalValue: element.style.getPropertyValue(name),
+        originalPriority: element.style.getPropertyPriority(name), appliedValue: values[i] })));
       names.forEach((name, i) => element.style.setProperty(name, values[i]));
     }
     parent.insertBefore(node, before);
     this.reparentRevision++;
+  }
+  private viewportKey() {
+    const win = this.app?.ownerDocument?.defaultView;
+    return win ? `${win.innerWidth}x${win.innerHeight}` : '';
+  }
+  /** Refresh only the CSS snapshots owned by reparenting. Active important
+   * text-size overrides stay in place; their prior inline baseline is repaired
+   * on the next sync after the override is removed. */
+  private refreshTypographyForViewport() {
+    const nextViewport = this.viewportKey();
+    const viewportChanged = nextViewport !== this.typographyViewport;
+    this.typographyViewport = nextViewport;
+    for (const [element, declarations] of this.typography) {
+      const names = declarations.map(declaration => declaration.name);
+      const current = declarations.map(declaration => ({
+        value: element.style.getPropertyValue(declaration.name),
+        priority: element.style.getPropertyPriority(declaration.name),
+      }));
+      const eligible = declarations.map((declaration, index) => viewportChanged
+        && (current[index].value === declaration.appliedValue || current[index].value === declaration.priorAppliedValue
+          || current[index].priority === 'important')
+        || !viewportChanged && current[index].value === declaration.priorAppliedValue);
+      if (!eligible.some(Boolean)) continue;
+      eligible.forEach((canSample, index) => { if (canSample) element.style.removeProperty(names[index]); });
+      const computed = element.ownerDocument.defaultView!.getComputedStyle(element);
+      const baselines = names.map(name => computed.getPropertyValue(name));
+      eligible.forEach((canSample, index) => {
+        const declaration = declarations[index], previousApplied = declaration.appliedValue;
+        if (!canSample) return;
+        element.style.setProperty(names[index], current[index].value, current[index].priority);
+        if (current[index].priority === 'important' && current[index].value !== previousApplied) {
+          declaration.priorAppliedValue = previousApplied;
+          declaration.appliedValue = baselines[index];
+          return;
+        }
+        if (current[index].value === declaration.priorAppliedValue || current[index].value === previousApplied) {
+          element.style.setProperty(names[index], baselines[index]);
+          declaration.appliedValue = baselines[index];
+          declaration.priorAppliedValue = undefined;
+        }
+      });
+    }
   }
   private restore(node: HTMLElement) {
     const anchor = this.anchors.get(node);
@@ -113,8 +158,9 @@ export class CampaignHudDetails {
         if (compact) { if (node.parentElement !== group) this.move(node, group); } else this.restore(node);
       }
     }
+    this.refreshTypographyForViewport();
     if (!compact) {
-      for (const [element, styles] of this.typography) for (const [name, value, priority, applied] of styles) {
+      for (const [element, styles] of this.typography) for (const { name, originalValue: value, originalPriority: priority, appliedValue: applied } of styles) {
         // A user text-size update while compact owns its newer inline value.
         if (element.style.getPropertyValue(name) !== applied) continue;
         if (value) element.style.setProperty(name, value, priority); else element.style.removeProperty(name);

@@ -1255,6 +1255,7 @@ p {
   position: absolute !important; left: 8px; top: 112px; right: auto; bottom: auto;
   width: max-content; min-width: 44px; min-height: 44px; height: auto; padding: 2px;
 }
+#app[data-campaign-hud="compact"] #pause { left: 96px; }
 #app[data-campaign-hud="compact"] #hud button { white-space: nowrap; }
 #app.fantasia-shell #hud button[data-flight-control] {
   width: max-content; height: auto; min-width: max(44px, var(--control-size, 44px));
@@ -1319,11 +1320,14 @@ p {
   #app[data-campaign-hud="compact"] .flight-data > .health-track { top: 180px; }
   #app[data-campaign-hud="compact"] .flight-data > .instrument { top: 190px; }
   #app[data-campaign-hud="compact"] .flight-data > .wingmen { top: 215px; }
-  #app[data-campaign-hud="compact"] #campaign-hud-details { left: 8px; top: 242px; width: 114px; height: 72px; }
   #app[data-campaign-hud="compact"] #warning { top: 162px; bottom: auto; }
   #app[data-campaign-hud="compact"] #announcement { top: 84px !important; bottom: auto; }
   #app[data-campaign-hud="compact"] #game-sound { left: 8px; top: 112px; }
-  #app[data-campaign-hud="compact"] #pause { left: 64px; top: 112px; }
+  #app[data-campaign-hud="compact"] #pause { left: 96px; top: 112px; }
+  #app[data-campaign-hud="compact"] #hud #fire { left: 340px; top: 250px; }
+}
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"] #hud #fire { left: 216px; top: 440px; }
 }
 
 /* Spring-centred rate lever: rectangular bounds match the settings preview. */
