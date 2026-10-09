@@ -1469,3 +1469,28 @@ p {
 #throttle-layout-note { position: absolute; left: 12px; bottom: 12px; max-width: 180px; padding: 8px; background: #142a37; color: #fff4c9; font-size: 12px; }
 .preview-throttle.layout-blocked { border-color: #ffab98; }
 
+
+
+/* Keep portrait respawn packing within the original typography and scroll contract. */
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"] #campaign-hud-details .target-tally,
+  #app[data-campaign-hud="compact"] #hud > .target-tally { font-size: 8px; }
+
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #respawn-status {
+    top: 160px !important; padding: 2px 0 !important; line-height: 1 !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #announcement {
+    top: 340px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #campaign-hud-details {
+    height: 76px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) .flight-data > .instrument {
+    left: 98.5px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud .hud-actions #game-sound {
+    flex: 0 0 44px; width: 44px !important; min-width: 44px !important; max-width: 44px !important;
+    height: auto !important; min-height: 44px !important; white-space: normal !important; overflow-wrap: anywhere;
+  }
+}
+#campaign-hud-details #reload-status { white-space: pre-wrap !important; overflow-wrap: anywhere; }
