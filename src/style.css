@@ -1483,14 +1483,9 @@ p {
     top: 340px !important;
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #campaign-hud-details {
-    height: 76px !important;
+    height: 76px !important; padding-bottom: 10px !important;
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) .flight-data > .instrument {
     left: 98.5px !important;
   }
-  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud .hud-actions #game-sound {
-    flex: 0 0 44px; width: 44px !important; min-width: 44px !important; max-width: 44px !important;
-    height: auto !important; min-height: 44px !important; white-space: normal !important; overflow-wrap: anywhere;
-  }
 }
-#campaign-hud-details #reload-status { white-space: pre-wrap !important; overflow-wrap: anywhere; }
