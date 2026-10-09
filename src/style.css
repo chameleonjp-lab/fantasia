@@ -1312,6 +1312,20 @@ p {
   #campaign-hud-details { height: 80px; }
 }
 
+/* Keep the measured compact HUD from colliding at 200% text in short-wide
+   screens. Safety alerts remain directly visible; only their reserved slots
+   move. The detail viewport stays scrollable and its original nodes remain. */
+@media (orientation: landscape) and (max-height: 600px) {
+  #app[data-campaign-hud="compact"] .flight-data > .health-track { top: 180px; }
+  #app[data-campaign-hud="compact"] .flight-data > .instrument { top: 190px; }
+  #app[data-campaign-hud="compact"] .flight-data > .wingmen { top: 215px; }
+  #app[data-campaign-hud="compact"] #campaign-hud-details { left: 8px; top: 242px; width: 114px; height: 72px; }
+  #app[data-campaign-hud="compact"] #warning { top: 162px; bottom: auto; }
+  #app[data-campaign-hud="compact"] #announcement { top: 84px !important; bottom: auto; }
+  #app[data-campaign-hud="compact"] #game-sound { left: 8px; top: 112px; }
+  #app[data-campaign-hud="compact"] #pause { left: 64px; top: 112px; }
+}
+
 /* Spring-centred rate lever: rectangular bounds match the settings preview. */
 #app #hud #throttle {
   height: var(--control-height, 128px);

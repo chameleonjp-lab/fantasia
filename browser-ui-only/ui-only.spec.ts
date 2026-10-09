@@ -90,13 +90,15 @@ async function setup(page: Page): Promise<number> {
 async function setViewportAndWait(page: Page, width: number, height: number) {
   const current = page.viewportSize();
   if (current?.width !== width || current.height !== height) {
-    const resized = page.evaluate(() => new Promise<void>(resolve => {
-      window.addEventListener('resize', () => resolve(), { once: true });
-    }));
     await page.setViewportSize({ width, height });
-    await resized;
   }
-  await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+  await page.evaluate(({ expectedWidth, expectedHeight }) => new Promise<void>((resolve, reject) => {
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (innerWidth !== expectedWidth || innerHeight !== expectedHeight)
+        reject(new Error(`viewport resize did not settle: expected ${expectedWidth}x${expectedHeight}, got ${innerWidth}x${innerHeight}`));
+      else resolve();
+    }));
+  }), { expectedWidth: width, expectedHeight: height });
 }
 
 async function act(page: Page, method: string, ...args: unknown[]) {
