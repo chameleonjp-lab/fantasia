@@ -1477,7 +1477,7 @@ p {
   #app[data-campaign-hud="compact"] #hud > .target-tally { font-size: 8px; }
 
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #respawn-status {
-    top: 160px !important; padding: 2px 0 !important; line-height: 1 !important;
+    top: 160px !important; height: 120px !important; min-height: 120px !important; max-height: 120px !important; box-sizing: border-box !important; padding: 2px 0 !important; line-height: 1 !important; overflow-x: hidden !important; overflow-y: auto !important; pointer-events: auto !important; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin;
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #announcement {
     top: 340px !important;
@@ -1487,5 +1487,12 @@ p {
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) .flight-data > .instrument {
     left: 98.5px !important;
+  }
+}
+
+
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud #throttle {
+    height: min(var(--control-height, 128px), 100px) !important; max-height: 100px !important;
   }
 }
