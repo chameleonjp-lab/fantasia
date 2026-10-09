@@ -1228,6 +1228,23 @@ p {
 #app[data-campaign-hud="compact"] #hud > #bomb-hint {
   position: absolute; left: 8px; top: 140px; width: 110px; margin: 0;
 }
+/* Candidate only: give compact readouts distinct measured starting boxes. */
+#app[data-campaign-hud="compact"] .flight-data > .health-label { top: 140px; }
+#app[data-campaign-hud="compact"] .flight-data > .health-track { top: 164px; }
+#app[data-campaign-hud="compact"] .flight-data > .instrument { top: 177px; }
+#app[data-campaign-hud="compact"] .flight-data > .wingmen { top: 215px; }
+#app[data-campaign-hud="compact"] .flight-data > .campaign-limit { left: 130px; top: 140px; }
+#app[data-campaign-hud="compact"] .flight-data > .score-readout { left: 130px; top: 164px; }
+#app[data-campaign-hud="compact"] .flight-data > .ammo { left: 252px; top: 188px; }
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"] .flight-data > .health-label { left: max(8px, env(safe-area-inset-left)); top: calc(238px + var(--safe-top)); width: 94px; }
+  #app[data-campaign-hud="compact"] .flight-data > .health-track { left: max(8px, env(safe-area-inset-left)); top: calc(263px + var(--safe-top)); width: 118px; }
+  #app[data-campaign-hud="compact"] .flight-data > .instrument { left: max(8px, env(safe-area-inset-left)); top: calc(276px + var(--safe-top)); width: 94px; }
+  #app[data-campaign-hud="compact"] .flight-data > .wingmen { left: calc(75% - 3px); top: calc(177px + var(--safe-top)); width: calc(25% - 9px); }
+  #app[data-campaign-hud="compact"] .flight-data > .campaign-limit { left: calc(50% - 63px); top: calc(50% + 13.5vmin + 14px); width: 114px; }
+  #app[data-campaign-hud="compact"] .flight-data > .score-readout { left: calc(50% - 63px); top: calc(50% + 13.5vmin + 30px); width: 114px; }
+  #app[data-campaign-hud="compact"] .flight-data > .ammo { left: calc(50% - 63px); top: calc(50% + 13.5vmin + 48px); width: 114px; }
+}
 #app[data-campaign-hud="compact"] .health-label { flex-wrap: nowrap; white-space: nowrap; width: max-content; }
 #app[data-campaign-hud="compact"] .instrument { gap: 2px; }
 #app[data-campaign-hud="compact"] #campaign-mode-status { width: max-content; }
