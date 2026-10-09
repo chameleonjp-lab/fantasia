@@ -1312,7 +1312,10 @@ p {
    Recover padding, never type size or status text. */
 @media (max-width: 360px) and (orientation: portrait) {
   #app[data-campaign-hud="compact"] .campaign-site { padding: 0; }
-  #campaign-hud-details { height: 80px; }
+  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(-n+4) { min-height: 56px; }
+  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(n+5) { min-height: 84px; }
+  #campaign-hud-details { height: 72px; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] .respawn-status { padding: 4px 8px; line-height: 1.15; }
 }
 
 /* Keep the measured compact HUD from colliding at 200% text in short-wide
@@ -1336,6 +1339,90 @@ p {
   #app[data-campaign-hud="compact"][data-mode="normal"] #hud .hud-actions #pause { top: 430px !important; }
   #app[data-campaign-hud="compact"][data-mode="normal"] #hud #loop { left: 265px !important; top: 250px !important; }
   #app[data-campaign-hud="compact"][data-mode="normal"] #hud #fire { left: 220px !important; top: 500px !important; right: auto !important; bottom: auto !important; }
+}
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #respawn-status {
+    position: absolute !important; inset: auto !important; left: 8px !important; top: 156px !important;
+    right: auto !important; bottom: auto !important; transform: none !important;
+    padding: 4px 8px; line-height: 1.15;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #announcement {
+    position: absolute !important; inset: auto !important; left: 98px !important; top: 341.2px !important;
+    right: auto !important; bottom: auto !important; width: 114px !important; max-width: 114px !important;
+    transform: none !important; text-align: left; padding: 4px 6px; line-height: 1.15;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #campaign-hud-details {
+    left: 198px !important; top: 441.2px !important; right: auto !important; bottom: auto !important;
+    width: 114px !important; height: 72px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) .flight-data > .health-label {
+    left: 189.6px !important; top: 518px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) .flight-data > .health-track {
+    left: 189.6px !important; top: 557px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) .flight-data > .instrument {
+    left: 98px !important; top: 441px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud > #campaign-mode-status {
+    left: 239.5px !important; top: 68px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud > .target-tally {
+    left: 9.9px !important; top: 362px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud .hud-actions #game-sound {
+    left: 8px !important; top: 390px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud .hud-actions #pause {
+    left: 268px !important; top: 102px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud #throttle {
+    position: absolute !important; inset: auto !important; left: 30px !important; top: 230px !important;
+    right: auto !important; bottom: auto !important; transform: none !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud #loop {
+    position: absolute !important; inset: auto !important; left: 8px !important; top: 441.2px !important;
+    right: auto !important; bottom: auto !important; transform: none !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud #fire {
+    position: absolute !important; inset: auto !important; left: 216px !important; top: 341.2px !important;
+    right: auto !important; bottom: auto !important; transform: none !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud #bomb {
+    position: absolute !important; inset: auto !important; left: 98.5px !important; top: 497.3px !important;
+    right: auto !important; bottom: auto !important; transform: none !important;
+  }
+}
+
+@media (orientation: landscape) and (max-height: 600px) {
+  #app[data-campaign-hud="compact"][data-mode="normal"] #campaign-hud-details {
+    left: 112px !important; top: 60px !important; right: auto !important; bottom: auto !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"] .flight-data > .health-label { left: 112px !important; top: 160px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] .flight-data > .health-track { left: 8px !important; top: 199px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] .flight-data > .instrument { left: 420px !important; top: 118px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #warning {
+    left: 8px !important; top: 206px !important; right: auto !important; bottom: auto !important; transform: none !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #announcement {
+    left: 325px !important; top: 60px !important; right: auto !important; bottom: auto !important;
+    width: 180px; transform: none !important; text-align: left;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud > #campaign-mode-status { left: 296px !important; top: 270px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud > .target-tally { left: 372px !important; top: 278px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud > #bomb-hint { left: 8px !important; top: 292px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud .hud-actions #game-sound { left: 296px !important; top: 222px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud .hud-actions #pause { left: 509px !important; top: 60px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #loop,
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #bomb,
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #fire,
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #throttle {
+    transform: none !important; bottom: auto !important; right: auto !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #loop { left: 330px !important; top: 118px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #bomb { left: 475px !important; top: 172px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #fire { left: 475px !important; top: 239px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud #throttle { left: 420px !important; top: 172px !important; }
 }
 
 /* Spring-centred rate lever: rectangular bounds match the settings preview. */

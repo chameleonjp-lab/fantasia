@@ -101,6 +101,7 @@ export class CampaignHudDetails {
       }));
       const eligible = declarations.map((declaration, index) => viewportChanged
         && (current[index].value === declaration.appliedValue || current[index].value === declaration.priorAppliedValue
+          || current[index].value === declaration.originalValue && current[index].priority === declaration.originalPriority
           || current[index].priority === 'important')
         || !viewportChanged && current[index].value === declaration.priorAppliedValue);
       if (!eligible.some(Boolean)) continue;
@@ -177,7 +178,8 @@ export class CampaignHudDetails {
         declaration.appliedValue = item.baselines![index];
         return;
       }
-      if (current.value === declaration.priorAppliedValue || current.value === previousApplied) {
+      if (current.value === declaration.priorAppliedValue || current.value === previousApplied
+        || current.value === declaration.originalValue && current.priority === declaration.originalPriority) {
         item.element.style.setProperty(declaration.name, item.baselines![index]);
         declaration.appliedValue = item.baselines![index];
         declaration.priorAppliedValue = undefined;
