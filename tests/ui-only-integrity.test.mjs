@@ -67,9 +67,9 @@ test('UI-only source paths, hashes, anchors, and regular-file checks fail closed
   assert.ok(mainEntry);
 });
 
-test('virtual-scene dependencies reject both source-hash and anchor drift', async t => {
+test('virtual-scene and live-HUD dependencies reject both source-hash and anchor drift', async t => {
   const root = await fixture(t);
-  const dependencyPaths = ['src/aim-indicator.ts', 'src/flight-view.ts', 'src/gun-sight.ts'];
+  const dependencyPaths = ['src/aim-indicator.ts', 'src/flight-view.ts', 'src/gun-sight.ts', 'src/campaign-hud-details.ts'];
   for (const sourcePath of dependencyPaths) {
     const entry = UI_ONLY_SOURCE_BASELINE.find(candidate => candidate.path === sourcePath);
     assert.ok(entry, `${sourcePath} must be pinned`);

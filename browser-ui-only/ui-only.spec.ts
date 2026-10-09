@@ -30,6 +30,21 @@ const TYPOGRAPHY_SELECTORS = [
   '#warning', '#reload-status', '#respawn-status', '#flight-tip', '#loop-status', '#bomb-hint', '#fire', '#throttle',
 ];
 
+const SECONDARY_HUD_READOUTS = [
+  { key: 'campaign-threat', selector: '#campaign-threat', detailKey: 'campaign-threat' },
+  { key: 'reload-status', selector: '#reload-status', detailKey: 'reload-status' },
+  { key: 'campaign-limit', selector: '.campaign-limit', detailKey: 'campaign-limit' },
+  { key: 'ammo', selector: '.ammo', detailKey: 'ammo' },
+] as const;
+
+async function captureSecondaryHudOriginals(page: Page) {
+  const originalNodes = await page.evaluateHandle(readouts => Object.fromEntries(
+    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)])), SECONDARY_HUD_READOUTS);
+  const originalText = await page.evaluate(readouts => Object.fromEntries(
+    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)?.textContent ?? null])), SECONDARY_HUD_READOUTS);
+  return { originalNodes, originalText };
+}
+
 async function setup(page: Page): Promise<number> {
   const start = performance.now();
   const browserErrors: string[] = [];
@@ -742,6 +757,232 @@ async function inspectAnnouncementReachability(page: Page, priority: number, ori
   }, { priorityValue: priority, originalAnnouncement: originalAnnouncementHandle });
 }
 
+async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: any, originalText: Record<string, string | null>) {
+  return originalNodesHandle.evaluate((originalNodes, input) => {
+    const { readouts, expectedText } = input;
+    const details = document.querySelector<HTMLElement>('#campaign-hud-details');
+    const issues: string[] = [];
+    if (!details) return { ok: false, issues: ['missing #campaign-hud-details'], viewport: null, readouts: [] };
+    const innerBox = (element: HTMLElement) => {
+      const rect = element.getBoundingClientRect(), left = rect.left + element.clientLeft, top = rect.top + element.clientTop;
+      return { left, top, right: left + element.clientWidth, bottom: top + element.clientHeight };
+    };
+    const viewportStyle = getComputedStyle(details), viewportRect = details.getBoundingClientRect();
+    const viewport = { hidden: details.hidden, display: viewportStyle.display, visibility: viewportStyle.visibility,
+      rect: { left: viewportRect.left, top: viewportRect.top, right: viewportRect.right, bottom: viewportRect.bottom,
+        width: viewportRect.width, height: viewportRect.height }, scrollTop: details.scrollTop,
+      scrollHeight: details.scrollHeight, clientHeight: details.clientHeight, scrollWidth: details.scrollWidth,
+      clientWidth: details.clientWidth, overflowX: viewportStyle.overflowX, overflowY: viewportStyle.overflowY };
+    if (details.hidden || viewportStyle.display === 'none' || viewportStyle.visibility === 'hidden'
+      || viewportRect.width <= 0 || viewportRect.height <= 0 || !['auto', 'scroll'].includes(viewportStyle.overflowY))
+      issues.push('secondary detail viewport is not visibly scrollable');
+    if (viewport.scrollWidth > viewport.clientWidth + 2) issues.push(`secondary detail viewport has horizontal overflow ${viewport.scrollWidth}/${viewport.clientWidth}`);
+    const oldScrollTop = details.scrollTop;
+    const readoutEvidence: any[] = [];
+    for (const readout of readouts) {
+      const matches = [...document.querySelectorAll<HTMLElement>(readout.selector)];
+      const node = matches[0] ?? null;
+      const original = originalNodes?.[readout.key] instanceof HTMLElement ? originalNodes[readout.key] as HTMLElement : null;
+      const expected = expectedText[readout.key];
+      const nodeIssues: string[] = [];
+      const text = node?.textContent ?? null;
+      const nodeStyle = node ? getComputedStyle(node) : null;
+      const nodeRect = node?.getBoundingClientRect();
+      const inDetails = Boolean(node && details.contains(node));
+      const sameOriginalNode = Boolean(node && original && node === original && original.isConnected);
+      if (matches.length !== 1) nodeIssues.push(`expected one ${readout.selector}, found ${matches.length}`);
+      if (!node || !sameOriginalNode) nodeIssues.push('original live node was removed or replaced');
+      if (!node || !inDetails || node.dataset.campaignDetail !== readout.detailKey)
+        nodeIssues.push(`original live node is outside detail slot ${readout.detailKey}`);
+      if (!node || node.hidden || !nodeStyle || nodeStyle.display === 'none' || nodeStyle.visibility === 'hidden'
+        || nodeStyle.opacity === '0' || !nodeRect || nodeRect.width <= 0 || nodeRect.height <= 0 || node.closest('[hidden], [aria-hidden="true"], [inert]'))
+        nodeIssues.push('original live node is hidden or has no rendered box');
+      if (typeof expected !== 'string' || !expected.trim() || text !== expected)
+        nodeIssues.push(`original live text changed or was empty: expected ${JSON.stringify(expected)}, received ${JSON.stringify(text)}`);
+      if (node && readout.key === 'reload-status' && !text?.includes('再装填中')) nodeIssues.push('reload status text does not identify active reloading');
+      if (node && readout.key === 'campaign-threat' && (!text?.trim() || node.getAttribute('role') !== 'status'
+        || node.getAttribute('aria-live') !== 'polite')) nodeIssues.push('threat readout text or live status semantics are missing');
+      if (node && readout.key === 'campaign-limit') {
+        const timer = node.querySelector<HTMLElement>('#remaining-time');
+        if (!text?.includes('期限まで') || !timer?.textContent?.trim() || !/^\d+:\d{2}$/u.test(timer.textContent.trim()))
+          nodeIssues.push('remaining mission time label or live value is missing');
+      }
+      if (node && readout.key === 'ammo') {
+        const machineGun = node.querySelector<HTMLElement>('#mg-ammo'), cannon = node.querySelector<HTMLElement>('#cannon-ammo');
+        if (node.getAttribute('aria-label') !== '残弾数' || !text?.includes('機銃') || !text.includes('機関砲')
+          || !machineGun?.textContent?.trim() || !cannon?.textContent?.trim()) nodeIssues.push('live machine-gun or cannon ammunition readout is missing');
+      }
+      const glyphs: any[] = [];
+      if (node) {
+        details.scrollTop = 0;
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        let textNode: Node | null, index = 0;
+        const records: Array<{ index: number; character: string; whitespace: boolean; range: Range }> = [];
+        while ((textNode = walker.nextNode())) {
+          const value = textNode.textContent ?? '';
+          let offset = 0;
+          for (const character of Array.from(value)) {
+            const range = document.createRange(); range.setStart(textNode, offset); range.setEnd(textNode, offset + character.length);
+            records.push({ index: index++, character, whitespace: /^\s+$/u.test(character), range });
+            offset += character.length;
+          }
+        }
+        if (!records.length) nodeIssues.push('detail readout contains no measurable text characters');
+        const visibleRectFor = (range: Range, allowCaret: boolean) => {
+          let rect = range.getBoundingClientRect(), geometry = 'glyph';
+          if (allowCaret && rect.width === 0 && rect.height > 0) geometry = 'zero-width whitespace line position';
+          if ((rect.width <= 0 || rect.height <= 0) && allowCaret) {
+            const candidates = [range.cloneRange(), range.cloneRange()];
+            candidates[0].collapse(true); candidates[1].collapse(false);
+            const caret = candidates.map(candidate => candidate.getBoundingClientRect()).find(candidate => candidate.height > 0);
+            if (caret) { rect = caret; geometry = caret.width === 0 ? 'zero-width whitespace caret' : 'whitespace caret'; }
+          }
+          if ((rect.width <= 0 || rect.height <= 0) && allowCaret) {
+            const container = range.startContainer, value = container.textContent ?? '';
+            const context = document.createRange();
+            context.setStart(container, Math.max(0, range.startOffset - 1));
+            context.setEnd(container, Math.min(value.length, range.endOffset + 1));
+            const contextRect = context.getBoundingClientRect();
+            if (contextRect.width > 0 && contextRect.height > 0) { rect = contextRect; geometry = 'whitespace line context'; }
+          }
+          const zeroWidthWhitespace = allowCaret && geometry.startsWith('zero-width whitespace') && rect.width === 0 && rect.height > 0;
+          if ((!zeroWidthWhitespace && rect.width <= 0) || rect.height <= 0)
+            return { rect: null, clips: ['no glyph or whitespace-caret line-position rectangle'], visible: false, geometry };
+          let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom;
+          const clips: string[] = [];
+          for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
+            const style = getComputedStyle(ancestor), box = innerBox(ancestor);
+            const label = ancestor.id || (typeof ancestor.className === 'string' ? ancestor.className : '') || ancestor.tagName.toLowerCase();
+            if (ancestor.hidden || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse'
+              || style.opacity === '0' || style.contentVisibility === 'hidden') clips.push(`${label}:not-visible`);
+            if (style.clipPath !== 'none' || style.clip !== 'auto' || style.contain.split(/\s+/u).includes('paint')) clips.push(`${label}:unsupported-clip`);
+            if (style.overflowX !== 'visible') {
+              if (left < box.left - 0.5 || right > box.right + 0.5) clips.push(`${label}:x`);
+              left = Math.max(left, box.left); right = Math.min(right, box.right);
+            }
+            if (style.overflowY !== 'visible') {
+              if (top < box.top - 0.5 || bottom > box.bottom + 0.5) clips.push(`${label}:y`);
+              top = Math.max(top, box.top); bottom = Math.min(bottom, box.bottom);
+            }
+          }
+          if (left < -0.5 || right > innerWidth + 0.5) clips.push('browser-viewport:x');
+          if (top < -0.5 || bottom > innerHeight + 0.5) clips.push('browser-viewport:y');
+          const fullyVisible = clips.length === 0 && left <= rect.left + 0.5 && top <= rect.top + 0.5
+            && right >= rect.right - 0.5 && bottom >= rect.bottom - 0.5;
+          return { rect: { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom,
+            width: rect.width, height: rect.height }, clips, visible: fullyVisible, geometry };
+        };
+        for (const record of records) {
+          let initial = visibleRectFor(record.range, record.whitespace);
+          if (!initial.rect && record.whitespace) {
+            const container = record.range.startContainer, value = container.textContent ?? '', context = document.createRange();
+            context.setStart(container, Math.max(0, record.range.startOffset - 1));
+            context.setEnd(container, Math.min(value.length, record.range.endOffset + 1));
+            const measured = visibleRectFor(context, false);
+            if (measured.rect) initial = { ...measured, geometry: 'whitespace line context' };
+          }
+          let testedScrollTop: number | null = null;
+          if (initial.rect) {
+            const box = innerBox(details), rect = initial.rect;
+            if (rect.top < box.top - 0.5 || rect.bottom > box.bottom + 0.5) {
+              const maxScroll = Math.max(0, details.scrollHeight - details.clientHeight);
+              const delta = rect.top - box.top - (details.clientHeight - rect.height) / 2;
+              details.scrollTop = Math.max(0, Math.min(maxScroll, details.scrollTop + delta));
+              testedScrollTop = details.scrollTop;
+            } else testedScrollTop = details.scrollTop;
+          }
+          let result = visibleRectFor(record.range, record.whitespace);
+          if (!result.rect && record.whitespace) {
+            const container = record.range.startContainer, value = container.textContent ?? '', context = document.createRange();
+            context.setStart(container, Math.max(0, record.range.startOffset - 1));
+            context.setEnd(container, Math.min(value.length, record.range.endOffset + 1));
+            const measured = visibleRectFor(context, false);
+            if (measured.rect) result = { ...measured, geometry: 'whitespace line context' };
+          }
+          const visible = result.visible;
+          if (!visible) nodeIssues.push(`character ${record.index} ${JSON.stringify(record.character)} is not scroll-reachable${result.clips.length ? ` (${result.clips.join(',')})` : ''}`);
+          glyphs.push({ index: record.index, character: record.character, whitespace: record.whitespace,
+            initialRect: initial.rect, initialGeometry: initial.geometry, testedScrollTop, visibleRect: result.rect,
+            visibleGeometry: result.geometry, visible, clips: result.clips });
+        }
+      }
+      const evidence = { key: readout.key, selector: readout.selector, expectedDetailKey: readout.detailKey,
+        count: matches.length, connected: Boolean(node?.isConnected), sameOriginalNode, inDetails,
+        campaignDetail: node?.dataset.campaignDetail ?? null, tabindex: node?.getAttribute('tabindex') ?? null,
+        text, expectedText: expected, rect: nodeRect ? { x: nodeRect.x, y: nodeRect.y, width: nodeRect.width, height: nodeRect.height } : null,
+        scroll: details ? { scrollTop: details.scrollTop, scrollHeight: details.scrollHeight, clientHeight: details.clientHeight,
+          scrollWidth: details.scrollWidth, clientWidth: details.clientWidth } : null,
+        characters: glyphs, characterCount: glyphs.length, reachableCharacterCount: glyphs.filter(glyph => glyph.visible).length,
+        issues: nodeIssues };
+      if (nodeIssues.length) issues.push(`${readout.key}: ${nodeIssues.join('; ')}`);
+      readoutEvidence.push(evidence);
+    }
+    details.scrollTop = oldScrollTop;
+    return { ok: issues.length === 0 && readoutEvidence.length === readouts.length
+        && readoutEvidence.every(item => item.characterCount > 0 && item.characterCount === item.reachableCharacterCount && item.issues.length === 0),
+      issues, viewport, readouts: readoutEvidence };
+  }, { readouts: SECONDARY_HUD_READOUTS, expectedText: originalText });
+}
+
+async function inspectDirectSafetyHud(page: Page, alert: HudCase['alert']) {
+  return page.evaluate(alertValue => {
+    const details = document.querySelector<HTMLElement>('#campaign-hud-details');
+    const warning = document.querySelector<HTMLElement>('#warning');
+    const canvas = document.querySelector<HTMLCanvasElement>('#markers');
+    const fullyVisibleThroughAncestors = (element: HTMLElement, rect: DOMRect) => {
+      let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom;
+      const clips: string[] = [];
+      for (let ancestor: HTMLElement | null = element; ancestor; ancestor = ancestor.parentElement) {
+        const style = getComputedStyle(ancestor), bounds = ancestor.getBoundingClientRect();
+        const box = { left: bounds.left + ancestor.clientLeft, top: bounds.top + ancestor.clientTop,
+          right: bounds.left + ancestor.clientLeft + ancestor.clientWidth,
+          bottom: bounds.top + ancestor.clientTop + ancestor.clientHeight };
+        const name = ancestor.id || (typeof ancestor.className === 'string' ? ancestor.className : '') || ancestor.tagName.toLowerCase();
+        if (ancestor.hidden || style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0' || style.contentVisibility === 'hidden') clips.push(`${name}:not-visible`);
+        if (style.clipPath !== 'none' || style.clip !== 'auto' || style.contain.split(/\s+/u).includes('paint')) clips.push(`${name}:unsupported-clip`);
+        if (style.overflowX !== 'visible') {
+          if (left < box.left - 0.5 || right > box.right + 0.5) clips.push(`${name}:x`);
+          left = Math.max(left, box.left); right = Math.min(right, box.right);
+        }
+        if (style.overflowY !== 'visible') {
+          if (top < box.top - 0.5 || bottom > box.bottom + 0.5) clips.push(`${name}:y`);
+          top = Math.max(top, box.top); bottom = Math.min(bottom, box.bottom);
+        }
+      }
+      if (left < -0.5 || right > innerWidth + 0.5) clips.push('browser-viewport:x');
+      if (top < -0.5 || bottom > innerHeight + 0.5) clips.push('browser-viewport:y');
+      return { visible: clips.length === 0 && left <= rect.left + 0.5 && top <= rect.top + 0.5
+        && right >= rect.right - 0.5 && bottom >= rect.bottom - 0.5, clips };
+    };
+    const activeWarning = ['outside', 'protected', 'low'].includes(alertValue);
+    const warningStyle = warning ? getComputedStyle(warning) : null, warningRect = warning?.getBoundingClientRect();
+    const warningClip = warning && warningRect ? fullyVisibleThroughAncestors(warning, warningRect) : { visible: false, clips: ['missing warning rect'] };
+    const warningVisible = Boolean(warning && warningStyle && warningRect && !warning.hidden && !warning.closest('[hidden]')
+      && warningStyle.display !== 'none' && warningStyle.visibility !== 'hidden' && warningStyle.opacity !== '0'
+      && warningRect.width > 0 && warningRect.height > 0 && !details?.contains(warning) && warningClip.visible);
+    const canvasStyle = canvas ? getComputedStyle(canvas) : null, canvasRect = canvas?.getBoundingClientRect();
+    const canvasClip = canvas && canvasRect ? fullyVisibleThroughAncestors(canvas, canvasRect) : { visible: false, clips: ['missing canvas rect'] };
+    const canvasVisible = Boolean(canvas && canvasStyle && canvasRect && !canvas.hidden && !canvas.closest('[hidden]')
+      && canvasStyle.display !== 'none' && canvasStyle.visibility !== 'hidden' && canvasStyle.opacity !== '0'
+      && canvasRect.width >= innerWidth - 1 && canvasRect.height >= innerHeight - 1 && !details?.contains(canvas)
+      && canvasClip.visible);
+    const expectedWarningText = alertValue === 'outside' ? '作戦圏へ戻って'
+      : alertValue === 'protected' ? '復活保護' : alertValue === 'low' ? '低空注意' : null;
+    const warningIssue = activeWarning
+      ? !warning ? 'missing #warning' : !warningVisible ? '#warning is not directly visible on-screen outside secondary details'
+        : expectedWarningText && !warning.textContent?.includes(expectedWarningText) ? `#warning text is missing ${expectedWarningText}` : null
+      : !warning ? 'missing #warning' : !warning.hidden && warningStyle?.display !== 'none' ? 'unexpected DOM warning is visible in clear/respawn state' : null;
+    const canvasIssue = canvasVisible ? null : '#markers Canvas overlay is hidden, clipped or outside the viewport';
+    return { ok: !warningIssue && !canvasIssue,
+      warning: { expectedDirectVisibility: activeWarning, visible: warningVisible, hidden: warning?.hidden ?? null,
+        text: warning?.textContent ?? null, rect: warningRect ? { x: warningRect.x, y: warningRect.y, width: warningRect.width, height: warningRect.height } : null,
+        clipChain: warningClip.clips, inSecondaryDetails: Boolean(warning && details?.contains(warning)), issue: warningIssue },
+      canvasOverlay: { visible: canvasVisible, width: canvasRect?.width ?? null, height: canvasRect?.height ?? null,
+        clipChain: canvasClip.clips, viewport: { width: innerWidth, height: innerHeight },
+        inSecondaryDetails: Boolean(canvas && details?.contains(canvas)), issue: canvasIssue } };
+  }, alert);
+}
+
 async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: any) {
   const pixels = await page.evaluate(({ mode, canvas }) => {
     const element = document.querySelector<HTMLCanvasElement>('#markers');
@@ -864,12 +1105,25 @@ async function captureHudFailureEvidence(page: Page | undefined, info: TestInfo,
   return screenshotMs;
 }
 
-async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: HudCase, canvas: any, fixture: any, fontScale: any, freshBaseline: any, originalLivesNoteHandle: any, originalAnnouncementHandle: any, provenance: HudProvenance, failures: HudFailureRecord[], coverage: HudCaseCoverage) {
+async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: HudCase, canvas: any, fixture: any, fontScale: any, freshBaseline: any, originalLivesNoteHandle: any, originalAnnouncementHandle: any, originalSecondaryNodesHandle: any, originalSecondaryText: Record<string, string | null>, provenance: HudProvenance, failures: HudFailureRecord[], coverage: HudCaseCoverage) {
   const { name, mode } = hudCase;
   const evidenceName = provenance === 'fresh-page' ? `fresh-page-${name}` : name;
   const screenshotMs = await capture(page, info, evidenceName, coverage);
   const layoutEvidence = await act(page, 'evidence');
   const announcementReachability = await inspectAnnouncementReachability(page, hudCase.priority, originalAnnouncementHandle);
+  let secondaryHudReachability: any;
+  try { secondaryHudReachability = await inspectSecondaryHudReachability(page, originalSecondaryNodesHandle, originalSecondaryText); }
+  catch (error) {
+    secondaryHudReachability = { ok: false, issues: [error instanceof Error ? error.message : String(error)], readouts: [],
+      inspectionErrorStack: error instanceof Error ? error.stack : undefined };
+  }
+  let directSafetyHud: any;
+  try { directSafetyHud = await inspectDirectSafetyHud(page, hudCase.alert); }
+  catch (error) {
+    directSafetyHud = { ok: false, warning: { expectedDirectVisibility: ['outside', 'protected', 'low'].includes(hudCase.alert), issue: null },
+      canvasOverlay: { issue: null }, inspectionError: error instanceof Error ? error.message : String(error),
+      inspectionErrorStack: error instanceof Error ? error.stack : undefined };
+  }
   const domEvidence = await page.evaluate(() => {
     const selectors = [
       '.hud-top', '.hud-top .time-block', '#campaign-sites .campaign-site[data-site]', '.flight-data > *',
@@ -934,6 +1188,13 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
     if (areaBound.shortageGap4) recordHudFailure(failures, provenance, name, 'necessary-area-shortage-product-gap-4', `${name}: necessary area exceeds free-space upper bound at product gap 4: required=${areaBound.requiredArea}; available=${areaBound.availableUpperBoundGap4}; deficit=${areaBound.deficitGap4}`);
   }
   if (!announcementReachability.ok) recordHudFailure(failures, provenance, name, 'announcement-character-reachability', `${name}: announcement characters are not fully reachable through actual ancestor clipping: ${JSON.stringify(announcementReachability.issues)}`);
+  if (!secondaryHudReachability.ok) recordHudFailure(failures, provenance, name,
+    'secondary-live-readout-reachability', `${name}: one or more original live HUD details are not scroll-reachable: ${JSON.stringify(secondaryHudReachability.issues)}`,
+    secondaryHudReachability.inspectionErrorStack);
+  if (directSafetyHud.inspectionError) recordHudFailure(failures, provenance, name, 'direct-warning-canvas-inspection', `${name}: ${directSafetyHud.inspectionError}`, directSafetyHud.inspectionErrorStack);
+  else if (directSafetyHud.warning.issue)
+    recordHudFailure(failures, provenance, name, 'direct-warning-visibility', `${name}: ${directSafetyHud.warning.issue}`);
+  if (directSafetyHud.canvasOverlay.issue) recordHudFailure(failures, provenance, name, 'direct-canvas-overlay-visibility', `${name}: ${directSafetyHud.canvasOverlay.issue}`);
   const semanticLiveNote = await semanticTypographyIdentity(page, originalLivesNoteHandle);
   const expectedLiveNote = freshBaseline?.baseline?.semanticNodes?.targetLivesNote;
   const semanticLiveNoteIssues: string[] = [];
@@ -982,6 +1243,9 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
     announcementPriority: fixture.announcementPriority,
     announcement: domEvidence.announcement,
     announcementReachability,
+    secondaryHudReachability,
+    secondaryHudOriginalText: originalSecondaryText,
+    directSafetyHud,
     semanticLiveNote,
     semanticLiveNoteIssues,
     dom: domEvidence,
@@ -1023,7 +1287,10 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
     safeArea: areaBound.safeArea ?? null, requiredArea: areaBound.requiredArea ?? null,
     availableUpperBoundGap0: areaBound.availableUpperBoundGap0 ?? null, availableUpperBoundGap4: areaBound.availableUpperBoundGap4 ?? null,
     shortageGap0: areaBound.shortageGap0 ?? null, shortageGap4: areaBound.shortageGap4 ?? null,
-    announcementReachable: announcementReachability.ok, announcementTypography, typographyMismatchCount: staleFontSamples.length, blockedReasons })}`);
+    announcementReachable: announcementReachability.ok, secondaryReadoutsReachable: secondaryHudReachability.ok,
+    secondaryReadoutCharacterCounts: secondaryHudReachability.readouts.map((readout: any) => ({ key: readout.key,
+      total: readout.characterCount, reachable: readout.reachableCharacterCount, sameOriginalNode: readout.sameOriginalNode,
+      detailKey: readout.campaignDetail })), directSafetyHud, announcementTypography, typographyMismatchCount: staleFontSamples.length, blockedReasons })}`);
   recordHudAssertion(failures, provenance, name, 'announcement-visible',
     () => expect(domEvidence.announcement.visible).toBe(true));
   recordHudAssertion(failures, provenance, name, 'announcement-text',
@@ -1172,6 +1439,8 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
     const coverage = freshCoverageByCase.get(hudCase.name)!;
     coverage.attempted = true;
     let freshPage: Page | undefined;
+    let originalSecondaryNodesHandle: any = null;
+    let originalSecondaryText: Record<string, string | null> = {};
     let measuredArea: any = null;
     try {
       freshPage = await browser.newPage({ viewport: { width: hudCase.width, height: hudCase.height } });
@@ -1184,6 +1453,9 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
         .find(node => node.textContent?.trim() === '現在機を含む') ?? null);
       const originalAnnouncementHandle = await freshPage.evaluateHandle(() => document.querySelector<HTMLElement>('#announcement'));
       const fixture = await paintedFixture(freshPage, hudCase.mode, hudCase.alert, hudCase.priority);
+      const secondaryOriginals = await captureSecondaryHudOriginals(freshPage);
+      originalSecondaryNodesHandle = secondaryOriginals.originalNodes;
+      originalSecondaryText = secondaryOriginals.originalText;
       const baseline = await typographySnapshot(freshPage);
       const layoutEvidence = await act(freshPage, 'evidence');
       const beforeMap = new Map(cssBeforeFixture.samples.map((sample: TypographySample) => [sample.key, sample]));
@@ -1211,7 +1483,8 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
       const fontScale = await enlargeText(freshPage);
       const painted = await repaintFixedFixture(freshPage);
       const inspection = await inspectAndCaptureHudCase(freshPage, info, hudCase, painted, fixture, fontScale,
-        freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, 'fresh-page', hudFailures, coverage);
+        freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, originalSecondaryNodesHandle, originalSecondaryText,
+        'fresh-page', hudFailures, coverage);
       captureMs += inspection.screenshotMs;
       measuredArea = { status: inspection.areaBound.status, areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
         layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons };
@@ -1220,6 +1493,10 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
       captureMs += await captureHudFailureEvidence(freshPage, info, coverage, hudFailures, 'fresh-page', hudCase.name, 'case-exception', error,
         { viewport: { width: hudCase.width, height: hudCase.height }, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority, measuredArea });
     } finally {
+      if (originalSecondaryNodesHandle) {
+        try { await originalSecondaryNodesHandle.dispose(); }
+        catch (error) { recordHudError(hudFailures, 'fresh-page', hudCase.name, 'original-secondary-handle-dispose', error); }
+      }
       if (freshPage) {
         try { await freshPage.close(); }
         catch (error) { recordHudError(hudFailures, 'fresh-page', hudCase.name, 'page-close', error); }
@@ -1231,18 +1508,24 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
 
   const inspectFixedHud = async (hudCase: HudCase, mode: 'easy' | 'normal', fixture: any, coverage: HudCaseCoverage) => {
     const name = hudCase.name;
-    const freshBaseline = freshBaselineByCase.get(name) ?? null;
-    if (!freshBaseline) recordHudFailure(hudFailures, 'rotation-stress', name, 'matching-fresh-baseline', `${name}: matching fresh-page counterpart is missing before rotation capture`);
-    recordHudAssertion(hudFailures, 'rotation-stress', name, 'rotation-mode-matches-hud-case', () => expect(hudCase.mode).toBe(mode));
-    const fontScale = await enlargeText(page);
-    const painted = await repaintFixedFixture(page);
-    const inspection = await inspectAndCaptureHudCase(page, info, hudCase, painted, fixture, fontScale,
-      freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, 'rotation-stress', hudFailures, coverage);
-    captureMs += inspection.screenshotMs;
-    coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
-    rotationAreaEvidence.push({ case: hudCase.name, status: inspection.areaBound.status,
-      areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
-      layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons });
+    const secondaryOriginals = await captureSecondaryHudOriginals(page);
+    try {
+      const freshBaseline = freshBaselineByCase.get(name) ?? null;
+      if (!freshBaseline) recordHudFailure(hudFailures, 'rotation-stress', name, 'matching-fresh-baseline', `${name}: matching fresh-page counterpart is missing before rotation capture`);
+      recordHudAssertion(hudFailures, 'rotation-stress', name, 'rotation-mode-matches-hud-case', () => expect(hudCase.mode).toBe(mode));
+      const fontScale = await enlargeText(page);
+      const painted = await repaintFixedFixture(page);
+      const inspection = await inspectAndCaptureHudCase(page, info, hudCase, painted, fixture, fontScale,
+        freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, secondaryOriginals.originalNodes, secondaryOriginals.originalText,
+        'rotation-stress', hudFailures, coverage);
+      captureMs += inspection.screenshotMs;
+      coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
+      rotationAreaEvidence.push({ case: hudCase.name, status: inspection.areaBound.status,
+        areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
+        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons });
+    } finally {
+      await secondaryOriginals.originalNodes.dispose();
+    }
   };
 
   const runRotationCase = async (name: string, operation: (coverage: HudCaseCoverage) => Promise<void>) => {

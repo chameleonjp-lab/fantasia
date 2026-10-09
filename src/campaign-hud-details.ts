@@ -34,6 +34,8 @@ export class CampaignHudDetails {
     };
     add('.time-block', 'timer'); add('.targets .target-tally', 'tallies');
     add('.flight-data .wingmen', 'wingmen'); add('.score-readout', 'score');
+    add('.flight-data .campaign-limit', 'campaign-limit'); add('.flight-data .ammo', 'ammo');
+    add('#campaign-threat', 'campaign-threat'); add('#reload-status', 'reload-status');
     add('#announcement', 'announcement-secondary'); add('#flight-tip', 'flight-tip');
     add('#loop-status', 'loop-status'); add('#bomb-hint', 'bomb-hint-secondary');
     const mode = app.querySelector<HTMLElement>('#hud-mode'); if (mode) this.remember(mode);

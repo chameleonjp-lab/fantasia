@@ -16,6 +16,7 @@ export const UI_ONLY_SOURCE_BASELINE = Object.freeze([
   { path: 'src/aim-indicator.ts', sha256: '2f2e129e0ffbe41462577f1dc10a137b037f5cb1b280ab1ee50c182b8c155140', anchors: [['export function aimRadius(', 1], ["return mode === 'normal' ? Math.max(26, Math.min(38, Math.min(width, height) * .085)) : Math.min(width, height) * .135;", 1]] },
   { path: 'src/flight-view.ts', sha256: '1f9b7e040c2270de5838f24bad93c7ac1c75c7827ba3c1b58591ef6271a20363', anchors: [['export const FLIGHT_FOV = 64;', 1], ['export function getFlightCameraPose(', 1], ['const TAN_HALF_FOV = Math.tan(FLIGHT_FOV * Math.PI / 360);', 1]] },
   { path: 'src/gun-sight.ts', sha256: '436c9e7c6a6864513489de6d8172d85d97bd1bf685b60678890f848a9acd2b71', anchors: [['export function projectGunSight(', 1], ['const depth = 500;', 1], ["projectFlightTarget(player, aim, width / height, 'normal')", 1]] },
+  { path: 'src/campaign-hud-details.ts', sha256: '654ea7fe6435cf7fad523dd90f44868722d9e40072ed60bcdec78862acbf4d84', anchors: [['export class CampaignHudDetails {', 1], ["add('.flight-data .campaign-limit', 'campaign-limit'); add('.flight-data .ammo', 'ammo');", 1], ["add('#campaign-threat', 'campaign-threat'); add('#reload-status', 'reload-status');", 1], ['if (critical) {', 1], ['parent.insertBefore(node, before);', 1]] },
   { path: 'src/rules-guide.ts', sha256: 'f46c1b5ee0ec82418c9df1fd6807e10d040e6c7577bfcb06ce715a0ed0841012', anchors: [['export class RulesGuide', 1], ['this.dialog.showModal();', 1]] },
 ]);
 
