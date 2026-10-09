@@ -1319,13 +1319,14 @@ p {
    screens. Safety alerts remain directly visible; only their reserved slots
    move. The detail viewport stays scrollable and its original nodes remain. */
 @media (orientation: landscape) and (max-height: 600px) {
+  #app[data-campaign-hud="compact"] .campaign-site { min-height: 48px; }
   #app[data-campaign-hud="compact"] .flight-data > .health-track { top: 180px; }
   #app[data-campaign-hud="compact"] .flight-data > .instrument { top: 190px; }
   #app[data-campaign-hud="compact"] .flight-data > .wingmen { top: 215px; }
   #app[data-campaign-hud="compact"] #warning { top: 162px; bottom: auto; }
   #app[data-campaign-hud="compact"] #announcement { top: 84px !important; bottom: auto; }
-  #app[data-campaign-hud="compact"] #hud .hud-actions #game-sound { left: 130px !important; top: 214px !important; }
-  #app[data-campaign-hud="compact"] #hud .hud-actions #pause { left: 260px !important; top: 214px !important; }
+  #app[data-campaign-hud="compact"] #hud .hud-actions #game-sound { left: calc(50% + 72px) !important; top: calc(100dvh - 54px - var(--safe-bottom)) !important; }
+  #app[data-campaign-hud="compact"] #hud .hud-actions #pause { left: calc(50% + 26px) !important; top: calc(100dvh - 54px - var(--safe-bottom)) !important; }
   #app[data-campaign-hud="compact"] #hud #fire { left: 340px !important; top: 250px !important; right: auto !important; bottom: auto !important; }
 }
 @media (max-width: 360px) and (orientation: portrait) {

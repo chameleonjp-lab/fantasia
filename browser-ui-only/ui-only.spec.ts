@@ -547,6 +547,18 @@ async function checkHudGeometry(page: Page) {
       const rect = element.getBoundingClientRect(), style = getComputedStyle(element);
       return !element.hidden && style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0 && !element.closest('[hidden]');
     };
+    const visibleRect = (element: HTMLElement) => {
+      const box = element.getBoundingClientRect();
+      const rect = { left: box.left, top: box.top, right: box.right, bottom: box.bottom };
+      for (let parent = element.parentElement; parent; parent = parent.parentElement) {
+        const style = getComputedStyle(parent), bounds = parent.getBoundingClientRect();
+        const left = bounds.left + parent.clientLeft, top = bounds.top + parent.clientTop;
+        const right = left + parent.clientWidth, bottom = top + parent.clientHeight;
+        if (style.overflowX !== 'visible') { rect.left = Math.max(rect.left, left); rect.right = Math.min(rect.right, right); }
+        if (style.overflowY !== 'visible') { rect.top = Math.max(rect.top, top); rect.bottom = Math.min(rect.bottom, bottom); }
+      }
+      return rect.right > rect.left && rect.bottom > rect.top ? rect : null;
+    };
     const selectors = [
       '.hud-top', '#campaign-sites .campaign-site[data-site]', '.flight-data > *', '#campaign-threat',
       '#payload-status', '#reload-status', '#warning', '#announcement', '#respawn-status', '#flight-tip', '#throttle-layout-note',
@@ -574,13 +586,16 @@ async function checkHudGeometry(page: Page) {
       scrollable: getComputedStyle(details).overflowY === 'auto' || getComputedStyle(details).overflowY === 'scroll',
     } : null;
     for (const node of nodes) {
-      const rect = node.getBoundingClientRect(), style = getComputedStyle(node), name = node.id || node.className || node.tagName;
-      if (rect.left < -1 || rect.top < -1 || rect.right > innerWidth + 1 || rect.bottom > innerHeight + 1) {
+      const screenRect = visibleRect(node);
+      const style = getComputedStyle(node), name = node.id || node.className || node.tagName;
+      if (!screenRect) continue;
+      if (screenRect.left < -1 || screenRect.top < -1 || screenRect.right > innerWidth + 1 || screenRect.bottom > innerHeight + 1) {
         outside.push(name); if (outsideDetails.length < 20) outsideDetails.push(describe(node));
       }
       const intentionalEllipsis = node.matches('.campaign-site-force, .campaign-site-wave');
+      const insideDetails = node !== details && Boolean(details?.contains(node));
       const scrollable = ['auto', 'scroll'].includes(style.overflowY);
-      if (!intentionalEllipsis && !scrollable && (node.scrollWidth > node.clientWidth + 2 || node.scrollHeight > node.clientHeight + 2)) {
+      if (!insideDetails && !intentionalEllipsis && !scrollable && (node.scrollWidth > node.clientWidth + 2 || node.scrollHeight > node.clientHeight + 2)) {
         clipped.push(name); if (clippedDetails.length < 20) clippedDetails.push({ ...describe(node), scrollWidth: node.scrollWidth,
           clientWidth: node.clientWidth, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight });
       }
@@ -588,7 +603,8 @@ async function checkHudGeometry(page: Page) {
     for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
       const aNode = nodes[i], bNode = nodes[j];
       if (aNode.contains(bNode) || bNode.contains(aNode)) continue;
-      const a = aNode.getBoundingClientRect(), b = bNode.getBoundingClientRect();
+      const a = visibleRect(aNode), b = visibleRect(bNode);
+      if (!a || !b) continue;
       if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 1 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 1) {
         overlaps.push(`${aNode.id || aNode.className} × ${bNode.id || bNode.className}`);
         if (overlapDetails.length < 12) overlapDetails.push({ a: describe(aNode), b: describe(bNode) });
@@ -1174,6 +1190,9 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
         text: announcement?.textContent, critical: announcement?.dataset.campaignCritical }, nodes };
   });
   const layout = layoutEvidence?.layout;
+  console.log('[ui-only-search-input] ' + JSON.stringify({ case: name, provenance,
+    searchInput: layoutEvidence?.searchInput ?? null, sight: layoutEvidence?.sight ?? null,
+    layoutStatus: layout?.status ?? null, searchChecks: layout?.searchChecks ?? null }));
   const areaBound = campaignHudAreaEvidence(layoutEvidence?.searchInput, layoutEvidence?.sight, layout, mode);
   const productRing = layout?.obstacles?.find((rect: any) => rect.id === 'aim-and-reload-ring');
   const pointOnlyLayout = layout?.obstacles ? { ...layout, obstacles: layout.obstacles.map((rect: any) => rect.id === 'aim-and-reload-ring'
