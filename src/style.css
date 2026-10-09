@@ -1276,6 +1276,13 @@ p {
   border: 1px solid #c9e5e580; border-radius: 0; padding: 3px;
   background: #062433ef; color: #bed2d0; scroll-padding-block: 3px;
 }
+#app[data-campaign-hud="compact"] #campaign-hud-details > #announcement[data-campaign-detail] {
+  position: static !important; inset: auto !important; left: auto !important; top: auto !important;
+  right: auto !important; bottom: auto !important; width: 100% !important; min-width: 0 !important;
+  max-width: 100% !important; height: auto !important; box-sizing: border-box;
+  margin: 0 0 8px !important; transform: none !important; translate: none !important;
+  white-space: normal !important; overflow-wrap: anywhere; word-break: normal; text-align: left;
+}
 #campaign-hud-details [data-campaign-detail] {
   display: block; position: static !important; inset: auto !important;
   width: auto !important; min-width: 0 !important; max-width: none !important;
@@ -1347,9 +1354,13 @@ p {
     padding: 4px 8px; line-height: 1.15;
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #announcement {
-    position: absolute !important; inset: auto !important; left: 98px !important; top: 341.2px !important;
-    right: auto !important; bottom: auto !important; width: 114px !important; max-width: 114px !important;
+    position: absolute !important; inset: auto !important; left: 98px !important; top: 336px !important;
+    right: auto !important; bottom: auto !important; width: 114px !important; max-width: 114px !important; min-height: 54px !important;
     transform: none !important; text-align: left; padding: 4px 6px; line-height: 1.15;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #campaign-hud-details > #announcement[data-campaign-detail] {
+    position: static !important; inset: auto !important; left: auto !important; top: auto !important;
+    right: auto !important; bottom: auto !important; width: 100% !important; max-width: 100% !important;
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #campaign-hud-details {
     left: 198px !important; top: 441.2px !important; right: auto !important; bottom: auto !important;
@@ -1403,6 +1414,7 @@ p {
   #app[data-campaign-hud="compact"][data-mode="normal"] .flight-data > .instrument { left: 420px !important; top: 118px !important; }
   #app[data-campaign-hud="compact"][data-mode="normal"] #warning {
     left: 8px !important; top: 206px !important; right: auto !important; bottom: auto !important; transform: none !important;
+    max-width: 280px !important; white-space: normal !important; overflow-wrap: anywhere;
   }
   #app[data-campaign-hud="compact"][data-mode="normal"] #announcement {
     left: 325px !important; top: 60px !important; right: auto !important; bottom: auto !important;
@@ -1410,7 +1422,7 @@ p {
   }
   #app[data-campaign-hud="compact"][data-mode="normal"] #hud > #campaign-mode-status { left: 296px !important; top: 270px !important; }
   #app[data-campaign-hud="compact"][data-mode="normal"] #hud > .target-tally { left: 372px !important; top: 278px !important; }
-  #app[data-campaign-hud="compact"][data-mode="normal"] #hud > #bomb-hint { left: 8px !important; top: 292px !important; }
+  #app[data-campaign-hud="compact"][data-mode="normal"] #hud > #bomb-hint { left: 8px !important; top: 300px !important; }
   #app[data-campaign-hud="compact"][data-mode="normal"] #hud .hud-actions #game-sound { left: 296px !important; top: 222px !important; }
   #app[data-campaign-hud="compact"][data-mode="normal"] #hud .hud-actions #pause { left: 509px !important; top: 60px !important; }
   #app[data-campaign-hud="compact"][data-mode="normal"] #hud #loop,

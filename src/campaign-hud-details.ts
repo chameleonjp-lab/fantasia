@@ -103,7 +103,8 @@ export class CampaignHudDetails {
         && (current[index].value === declaration.appliedValue || current[index].value === declaration.priorAppliedValue
           || current[index].value === declaration.originalValue && current[index].priority === declaration.originalPriority
           || current[index].priority === 'important')
-        || !viewportChanged && current[index].value === declaration.priorAppliedValue);
+        || !viewportChanged && (current[index].value === declaration.priorAppliedValue
+          || current[index].value === declaration.originalValue && current[index].priority === declaration.originalPriority));
       if (!eligible.some(Boolean)) continue;
       pending.push({ element, declarations, current, eligible });
       let root: HTMLElement | null = element;
