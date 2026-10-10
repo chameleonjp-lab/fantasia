@@ -1753,17 +1753,36 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
 test('Pause screen details, Rules and settings remain usable without advancing a run', async ({ page }, info) => {
   const setupMs = await setup(page); let captureMs = 0; const started = performance.now();
   await act(page, 'hud', 'normal', 'clear');
+  const announcement = page.locator('#announcement');
+  await expect(announcement).toBeVisible();
+  await expect(announcement).toContainText('砲台の予告');
+  const announcementText = await announcement.textContent();
+  const fixtureTicks = await page.evaluate(() => {
+    const state = (window as any).__fantasiaReadState(false);
+    return { tick: state.tick, activeTicks: state.activeTicks };
+  });
   await page.click('#pause'); await expect(page.locator('#pause-screen')).toBeVisible();
+  await expect(announcement).toBeHidden();
   await page.locator('.campaign-detail summary').click();
   await expect(page.locator('#pause-site-details .campaign-site-detail')).toHaveCount(7);
   await page.click('#pause-rules'); await expect(page.locator('#rules-guide[open]')).toBeVisible();
   await enlargeText(page);
   await checkGeometry(page, '#rules-guide'); await checkBodyPanels(page, '#rules-guide'); captureMs += await capture(page, info, 'pause-rules.png');
   await page.click('#rules-back'); await checkGeometry(page, '#pause-screen'); await checkBodyPanels(page, '#pause-screen');
+  await expect(announcement).toBeHidden();
   captureMs += await capture(page, info, 'pause-details-text-200.png');
   await page.click('#pause-controls');
   await expect(page.locator('#control-settings[open]')).toBeVisible(); await checkGeometry(page, '#control-settings'); await checkBodyPanels(page, '#control-settings');
-  await page.click('#control-cancel'); await page.click('#pause-home'); await expect(page.locator('#home')).toBeVisible();
+  await page.click('#control-cancel'); await page.click('#resume');
+  await expect(page.locator('#pause-screen')).toBeHidden();
+  await expect(announcement).toBeVisible();
+  await expect(announcement).toHaveText(announcementText!);
+  expect(await page.evaluate(() => {
+    const state = (window as any).__fantasiaReadState(false);
+    return { tick: state.tick, activeTicks: state.activeTicks };
+  })).toEqual(fixtureTicks);
+  await page.click('#pause'); await expect(announcement).toBeHidden();
+  await page.click('#pause-home'); await expect(page.locator('#home')).toBeVisible();
   await record('pause-rules-settings-home', setupMs, started, captureMs);
 });
 

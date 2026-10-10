@@ -1208,6 +1208,10 @@ p {
   pointer-events: none;
 }
 
+#app.fantasia-shell[data-screen="paused"] #announcement {
+  visibility: hidden;
+}
+
 /* Approved responsive fallback: seven live statuses and safety/flight controls
    remain fixed; only explicitly secondary details use a bounded scroll region.
    No font, radar or control scale is reduced. Original live nodes are moved. */
