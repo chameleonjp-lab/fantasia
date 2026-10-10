@@ -17,7 +17,6 @@ jobs:
       pages: read
     env:
       SOURCE_COMMIT: 08f2c98582a627992e3c375ceb71f77cf0fbdc23
-      UI_ONLY_EVIDENCE_DIR: ${{ runner.temp }}/series-ui-evidence
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -37,6 +36,8 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - name: Current bounded UI-only checks; no gameplay
+        env:
+          UI_ONLY_EVIDENCE_DIR: ${{ runner.temp }}/series-ui-evidence
         run: |
           npm run test:browser
       - name: Validate public files and bind artifact to source
