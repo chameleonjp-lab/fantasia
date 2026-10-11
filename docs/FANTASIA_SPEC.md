@@ -394,3 +394,7 @@ tick末の同時damage解決後、生存地上兵の中心が占領円XZ55m以�
 [共通契約v1](THROTTLE_LEVER_CONTRACT.md)と[本作adapter追補](THROTTLE_LEVER_ADAPTER.md)を、本書の1.2〜1.3節・2.2節、F-03/F-04と共通画面の受入へ追加する。加速/減速タッチ2ボタン・対応設定・タッチ数・タッチ保存の書込み先に限り、この追補を旧記述より優先する。その他の既存本文・固定元・要件・受入条件は保持する。
 
 Normalは射撃・宙返り・爆弾の3ボタン＋速度レバー1本（合計4コントロール）、Easyは宙返り・爆弾の2ボタンのまま。PC10操作（Easy有効7操作）は不変。上で加速、下で減速、解放時は入力のみ中央へ戻り目標速度は保持する。Easyには追加しない。専用v1 rawを残してv2へ明示保存し、保存失敗と未来versionを保護する。ゲーム本体/レバー/保存移行の実装済み・受入合格という意味ではない。
+
+## 2026-10-11依頼：操作・標的・照準の共通追補
+
+今回の採用契約は [ZERO_SERIES_AIM_CONTRACT.md](ZERO_SERIES_AIM_CONTRACT.md)、実行結果と未確認項目は [ZERO_SERIES_AIM_VERIFICATION.md](ZERO_SERIES_AIM_VERIFICATION.md)。R1–R8の対象・意図的な作品差・基点を明示する。過去の「未実施」「文書のみ」は当時の工程の記録で、この追補の結果やSafari実機受入とは別。main宛てDraft PRまでとし、公開/mergeは今回実施しない。

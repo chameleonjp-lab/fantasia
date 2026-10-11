@@ -71,7 +71,7 @@ const startPreparation = new CampaignStartPreparation<{ mode: GameMode; runId: s
     // The staged HUD has real layout boxes, but remains transparent/inert.
     // Prepare its initial text, layout and Canvas2D drawing before live time.
     updateHUD(); scene.setOverlayVisible(true);
-    if (!scene.render(state, player, selection.mode)) return null;
+    if (!scene.render(state, player, selection.mode, 0, flight.selectedTargetId)) return null;
     const rendered = scene.diagnostics();
     if (!rendered.hudLayout.measurements || (rendered.hudLayout.canvas?.width ?? 0) <= 0 || (rendered.hudLayout.canvas?.height ?? 0) <= 0) {
       throw new Error('Initial HUD preparation unavailable');
@@ -395,7 +395,7 @@ function frame() {
   // may clear the canvas, but drawing waits for deliberate Resume/Home/Restart.
   if (scene && !contextLost && screen !== 'paused') {
     try {
-      scene.setOverlayVisible(screen === 'playing'); scene.render(state, player, state.mode, screen === 'playing' ? dt : 0);
+      scene.setOverlayVisible(screen === 'playing'); scene.render(state, player, state.mode, screen === 'playing' ? dt : 0, flight.selectedTargetId);
       if (scene.diagnostics().queue.status === 'failed') {
         renderStatus = 'failed'; if (screen === 'home') preparationFailed(new Error('GPU frame completion unavailable')); else if (screen === 'playing') { performanceInterrupted = true; pause('render-failed'); }
       }
@@ -439,7 +439,7 @@ function preparationFailed(error: unknown) {
 }
 for (const id of ['reload', 'pause-reload']) el(id).addEventListener('click', () => location.reload());
 try {
-  scene = new CampaignScene(canvas, overlay); updateHUD(); scene.setOverlayVisible(false); scene.render(state, player, state.mode);
+  scene = new CampaignScene(canvas, overlay); updateHUD(); scene.setOverlayVisible(false); scene.render(state, player, state.mode, 0, flight.selectedTargetId);
   const attempt = ++preparationGeneration; let timeout: ReturnType<typeof setTimeout>;
   void Promise.race([scene.prepare(), new Promise<never>((_, reject) => { timeout = setTimeout(() => reject(new Error('Renderer preparation timed out')), 15000); })])
     .then(() => {

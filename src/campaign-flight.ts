@@ -1,6 +1,7 @@
+import { clearFlightAssistance, smoothFlightAssistance } from './flight-target';
 import { Euler, Quaternion, Vector3 } from 'three';
 import { CAMPAIGN_DT } from './campaign-config';
-import { distanceSquared } from './campaign-terrain';
+import { distanceSquared, segmentTerrainBlocked } from './campaign-terrain';
 import type { CampaignActor, CampaignInput, CampaignPlayer, CampaignState, Vec } from './campaign-types';
 import { makeAircraft } from './mission';
 import { advanceThrottle, clamp, createFlightController, CRUISE_SPEED, forwardOf, MAX_SPEED, updatePlayerLoop, updateQuaternion } from './flight';
@@ -15,15 +16,19 @@ function plainQuaternion(q: Quaternion): CampaignPlayer['quaternion'] { return {
 export class CampaignFlightController {
   readonly player: Aircraft;
   private flight;
-  private readonly targets = new Map<number, Aircraft & { trackingStrength: number }>();
+  private readonly targets = new Map<number, Aircraft & { trackingStrength: number; identityGeneration: number }>();
   lastLoopCompleted = false;
+  get selectedTargetId(): number | null {
+    const key = this.flight.targetLock.key;
+    return [...this.targets.values()].find(target => key === `aircraft:${target.id}:${target.identityGeneration}`)?.id ?? null;
+  }
   constructor(state: CampaignState) {
     this.player = makeAircraft(state.player.id, 'friendly', new Vector3(0, 300, 0), -Math.PI / 2, 'player');
     this.player.health = 100; this.player.maxHealth = 100; this.player.torpedoes = 0;
     this.flight = createFlightController(this.player);
     this.sync(state, true);
   }
-  clearPending() { this.flight.loopHeld = false; }
+  clearPending() { this.flight.loopHeld = false; clearFlightAssistance(this.flight); }
   sync(state: CampaignState, resetPose = false) {
     const player = this.player, authoritative = state.player;
     player.health = authoritative.hp; player.maxHealth = authoritative.maxHp;
@@ -41,7 +46,7 @@ export class CampaignFlightController {
     }
   }
   private aimTargets(state: CampaignState) {
-    const targets: (Aircraft & { trackingStrength: number })[] = [], live = new Set<number>();
+    const targets: (Aircraft & { trackingStrength: number; identityGeneration: number })[] = [], live = new Set<number>();
     let distantFallback: CampaignActor | null = null;
     for (const actor of state.actors) {
       if (actor.hp <= 0 || actor.team !== 'enemy') continue;
@@ -54,12 +59,12 @@ export class CampaignFlightController {
       if (!target) {
         // Ground objectives keep the inherited gentle stationary-target pull;
         // dragons retain airborne tracking. No sea-target aim-point offset is used.
-        target = Object.assign(makeAircraft(actor.id, 'enemy', new Vector3()), { trackingStrength: actor.kind === 'dragon' ? 1 : .25 });
+        target = Object.assign(makeAircraft(actor.id, 'enemy', new Vector3()), { trackingStrength: actor.kind === 'dragon' ? 1 : .25, identityGeneration: actor.generation });
         this.targets.set(actor.id, target);
       }
       target.position.set(actor.position.x, actor.position.y, actor.position.z);
       target.trackingStrength = actor.kind === 'dragon' ? 1 : .25;
-      target.health = actor.hp; target.maxHealth = actor.maxHp;
+      target.identityGeneration = actor.generation; target.health = actor.hp; target.maxHealth = actor.maxHp;
       target.speed = Math.hypot(actor.velocity.x, actor.velocity.y, actor.velocity.z);
       target.yaw = target.speed > 0 ? Math.atan2(-actor.velocity.x, -actor.velocity.z) : 0;
       target.pitch = target.speed > 0 ? Math.atan2(actor.velocity.y, Math.hypot(actor.velocity.x, actor.velocity.z)) : 0;
@@ -70,11 +75,11 @@ export class CampaignFlightController {
     if (targets.length === 0 && distantFallback) {
       let target = this.targets.get(distantFallback.id);
       if (!target) {
-        target = Object.assign(makeAircraft(distantFallback.id, 'enemy', new Vector3()), { trackingStrength: 0 });
+        target = Object.assign(makeAircraft(distantFallback.id, 'enemy', new Vector3()), { trackingStrength: 0, identityGeneration: distantFallback.generation });
         this.targets.set(distantFallback.id, target);
       }
       target.position.set(distantFallback.position.x, distantFallback.position.y, distantFallback.position.z);
-      target.health = distantFallback.hp;
+      target.identityGeneration = distantFallback.generation; target.health = distantFallback.hp;
       targets.push(target);
     }
     for (const id of this.targets.keys()) if (!live.has(id)) this.targets.delete(id);
@@ -86,20 +91,14 @@ export class CampaignFlightController {
     const player = this.player, flight = this.flight, targets = this.aimTargets(state);
     const previousQuaternion = plainQuaternion(player.quaternion);
     player.previous.copy(player.position); player.age += CAMPAIGN_DT;
-    const assist = getFlightAssist(player, targets, input, state.mode);
-    const slew = (current: number, target: number, rate: number) => current + clamp(target - current, -rate * CAMPAIGN_DT, rate * CAMPAIGN_DT);
-    const manual = Math.max(Math.abs(input.turn), Math.abs(input.climb)) >= .35;
-    flight.assistTurn = manual ? 0 : slew(flight.assistTurn, assist.turn - input.turn, 2.5);
-    flight.assistClimb = manual ? 0 : slew(flight.assistClimb, assist.climb - input.climb, 1.5);
-    if (flight.assistTurn * input.turn < 0) flight.assistTurn = 0;
-    if (flight.assistClimb * input.climb < 0) flight.assistClimb = 0;
-    flight.responseMultiplier = slew(flight.responseMultiplier, assist.responseMultiplier, 2.5);
-    const adjusted = { ...input, turn: input.turn + flight.assistTurn, climb: input.climb + flight.assistClimb };
+    const unobstructed = (target: { position: Vector3 }) => !segmentTerrainBlocked(player.position, target.position);
+    const assist = getFlightAssist(player, targets, input, state.mode, flight.targetLock, unobstructed);
+    const adjusted = { ...input, ...smoothFlightAssistance(flight, input, assist, CAMPAIGN_DT) };
     const loopPressed = input.loop && !flight.loopHeld; flight.loopHeld = input.loop;
     this.lastLoopCompleted = updatePlayerLoop(player, flight, adjusted, input, loopPressed, CAMPAIGN_DT,
       advanceThrottle(flight, input, state.mode, CAMPAIGN_DT), MAX_SPEED, flight.responseMultiplier);
     const forward = forwardOf(player), velocity = forward.clone().multiplyScalar(player.speed);
-    const autoTarget = autoFireTarget(player, targets, state.mode, input.viewAspect);
+    const autoTarget = autoFireTarget(player, targets, state.mode, input.viewAspect, flight.targetLock, unobstructed);
     const gunMuzzles = {
       mg: [-1, 1].map(side => player.position.clone().add(new Vector3(side * .3, .52, -4.25).applyQuaternion(player.quaternion))),
       cannon: [-1, 1].map(side => player.position.clone().add(new Vector3(side * 2.5, 0, -2.4).applyQuaternion(player.quaternion))),

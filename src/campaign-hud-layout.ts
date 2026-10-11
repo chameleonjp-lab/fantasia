@@ -188,10 +188,21 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
   // slot to tall controls. Reserve their actual rectangle before area packing.
   // The long throttle travel needs a continuous vertical slot. Place it before
   // other readouts divide those slots, then keep the existing area order.
-  const items = [...(measurement.canvasLabels ?? []), ...[radar, ...measurement.panels!, ...(measurement.movableControls ?? [])]
-    .sort((a, b) => Number(b.id === 'throttle') - Number(a.id === 'throttle')
-      || b.width * b.height - a.width * a.height || a.id.localeCompare(b.id))];
+  // A landscape detail panel displaced by the fixed site cards has very few
+  // legal slots. Portrait retains the throttle's continuous vertical priority.
+  const displacedDetails = (item: HudObstacle) => canvas.width > canvas.height && item.id === 'campaign-hud-details'
+    && obstacles.some(obstacle => intersects(item, obstacle, 4));
+  // During portrait respawn try the constrained radar slot first for 15k
+  // checks, then the usual throttle order with the remaining shared budget.
+  const portraitRespawn = canvas.height > canvas.width && measurement.panels!.some(panel => panel.id === 'respawn-status');
+  const readouts = [radar, ...measurement.panels!, ...(measurement.movableControls ?? [])]
+    .sort((a, b) => Number(displacedDetails(b)) - Number(displacedDetails(a))
+      || Number(b.id === 'throttle') - Number(a.id === 'throttle')
+      || b.width * b.height - a.width * a.height || a.id.localeCompare(b.id));
+  const originalItems = [...(measurement.canvasLabels ?? []), ...readouts];
+  const items = portraitRespawn ? [...(measurement.canvasLabels ?? []), radar, ...readouts.filter(item => item.id !== 'radar')] : [...originalItems];
   const work = { remaining: 120_000 };
+  let searchFloor = portraitRespawn ? 105_000 : 0;
   let invalid = !valid(canvas) || !valid(bounds) || !items.every(valid) || !obstacles.every(valid);
   const sites = obstacles.filter(item => item.id.includes('campaign-site') || item.id.startsWith('site-'));
   const fixedConflicts = sites.flatMap(site => obstacles.filter(other => other !== site && intersects(site, other))
@@ -213,13 +224,13 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
   const search = (index: number): boolean => {
     if (invalid) return false;
     if (index === items.length) return true;
-    if (work.remaining <= 0) return false;
+    if (work.remaining <= searchFloor) return false;
     const item = items[index], occupied = [...obstacles, ...placed.values()];
     // Most wide-screen readouts already fit. Try that position before spending
     // the bounded budget building every possible edge-coordinate combination.
     const preferredFits = item.x >= bounds.x && item.y >= bounds.y
       && item.x + item.width <= bounds.x + bounds.width && item.y + item.height <= bounds.y + bounds.height
-      && occupied.every(obstacle => --work.remaining >= 0 && !intersects(item, obstacle, 4));
+      && occupied.every(obstacle => --work.remaining >= searchFloor && !intersects(item, obstacle, 4));
     if (preferredFits) {
       placed.set(item.id, item);
       if (search(index + 1)) return true;
@@ -229,16 +240,20 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
     if (!choices) { invalid = true; return false; }
     for (const rect of choices) {
       if (preferredFits && rect.x === item.x && rect.y === item.y) continue;
-      if (--work.remaining < 0) break;
-      if (occupied.some(obstacle => --work.remaining < 0 || intersects(rect, obstacle, 4))) continue;
+      if (--work.remaining < searchFloor) break;
+      if (occupied.some(obstacle => --work.remaining < searchFloor || intersects(rect, obstacle, 4))) continue;
       placed.set(item.id, rect);
       if (search(index + 1)) return true;
       placed.delete(item.id);
-      if (work.remaining <= 0 || invalid) break;
+      if (work.remaining <= searchFloor || invalid) break;
     }
     return false;
   };
-  const found = search(0);
+  let found = search(0);
+  if (!found && !invalid && portraitRespawn) {
+    searchFloor = 0; placed.clear(); items.splice(0, items.length, ...originalItems);
+    found = search(0);
+  }
   const status: Placement['status'] = invalid ? 'invalid' : found && !fixedConflicts.length ? 'placed' : 'blocked';
   const rectFor = (item: HudObstacle) => found ? placed.get(item.id)! : fullSizeFallback(item, bounds);
   const radarRect = rectFor(radar);

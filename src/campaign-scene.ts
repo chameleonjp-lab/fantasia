@@ -19,7 +19,7 @@ import { RenderQueue } from './render-queue';
 import { createCampaignHudLayout, layoutCampaignCanvasLabel, type CampaignHudLayout } from './campaign-hud-layout';
 import type { Aircraft, Bullet, Team } from './types';
 import type { CampaignActor, CampaignState, Vec } from './campaign-types';
-import { heightAt, radialPosition, route, sweepSphere, TERRAIN_OBSTACLES } from './campaign-terrain';
+import { heightAt, radialPosition, route, sweepSphere, segmentTerrainBlocked, TERRAIN_OBSTACLES } from './campaign-terrain';
 import { ACTOR_STATS } from './campaign-config';
 import { predictAim, predictBombImpact, resolveTarget } from './campaign-combat';
 
@@ -495,7 +495,7 @@ export class CampaignScene {
   setOverlayVisible(visible: boolean) { this.overlayVisible = visible; if (!visible) this.ctx?.clearRect(0, 0, this.width, this.height); }
   gunSight(player: Aircraft) { return projectGunSight(player, [], this.width, this.height); }
 
-  render(state: CampaignState, player: Aircraft, mode: 'normal' | 'easy', presentationDt = 0): boolean {
+  render(state: CampaignState, player: Aircraft, mode: 'normal' | 'easy', presentationDt = 0, selectedTargetId?: number | null): boolean {
     if (this.disposed) return false;
     // Bind event ownership before checking the previous frame's GPU fence.
     if (this.runId !== state.runId || state.simTick < this.lastTick) {
@@ -521,7 +521,7 @@ export class CampaignScene {
     this.updateTelegraphs(state);
     this.updateEffects(state);
     this.renderer.render(this.scene, this.camera);
-    this.drawOverlay(state, player, mode);
+    this.drawOverlay(state, player, mode, selectedTargetId);
     if (this.prepared) this.renderQueue.submit(performance.now());
     return true;
   }
@@ -679,7 +679,7 @@ export class CampaignScene {
     const depth = world.sub(this.camera.position).dot(new Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion));
     return { x: (p.x * .5 + .5) * this.width, y: (.5 - p.y * .5) * this.height, depth, nx: p.x, ny: p.y, z: p.z };
   }
-  private drawOverlay(state: CampaignState, player: Aircraft, mode: 'normal' | 'easy') {
+  private drawOverlay(state: CampaignState, player: Aircraft, mode: 'normal' | 'easy', selectedTargetId?: number | null) {
     this.bombGuideLabel = null;
     const c = this.ctx, w = this.width, h = this.height; if (!c) return;
     c.shadowBlur = 0; c.clearRect(0, 0, w, h); if (!this.overlayVisible) return;
@@ -691,9 +691,11 @@ export class CampaignScene {
     let indicator: keyof typeof AIM_COLORS = 'clear';
     for (const actor of state.actors) {
       if (actor.hp <= 0) continue;
+      if (mode === 'easy' && actor.team === 'enemy' && selectedTargetId !== undefined && actor.id !== selectedTargetId) continue;
       const world = new Vector3(actor.position.x, actor.position.y, actor.position.z);
       const p = projectFlightTarget(player, world, w / h, mode);
-      if (p.depth <= 0 || p.distance > 1500 || Math.hypot((p.x * .5 + .5) * w - sight.x, (.5 - p.y * .5) * h - sight.y) > radius) continue;
+      if (p.depth <= 0 || p.distance > (mode === 'easy' ? 1200 : 1500) || Math.hypot((p.x * .5 + .5) * w - sight.x, (.5 - p.y * .5) * h - sight.y) > radius) continue;
+      if (segmentTerrainBlocked(player.position, actor.position)) continue;
       if (actor.team === 'friendly') { indicator = 'friendly'; break; }
       indicator = 'enemy';
     }

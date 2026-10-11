@@ -1,0 +1,746 @@
+[
+  {
+    "case": "hud-normal-respawn-small-portrait-text-200-priority-4.png",
+    "provenance": "fresh-page",
+    "measurement": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 568
+      },
+      "bounds": {
+        "x": 8,
+        "y": 8,
+        "width": 304,
+        "height": 552
+      },
+      "obstacles": [
+        {
+          "x": 8,
+          "y": 8,
+          "width": 74.5,
+          "height": 56,
+          "id": "campaign-site"
+        },
+        {
+          "x": 84.5,
+          "y": 8,
+          "width": 74.5,
+          "height": 56,
+          "id": "campaign-site"
+        },
+        {
+          "x": 161,
+          "y": 8,
+          "width": 74.5,
+          "height": 56,
+          "id": "campaign-site"
+        },
+        {
+          "x": 237.5,
+          "y": 8,
+          "width": 74.5,
+          "height": 56,
+          "id": "campaign-site"
+        },
+        {
+          "x": 8,
+          "y": 66,
+          "width": 74.5,
+          "height": 84,
+          "id": "campaign-site"
+        },
+        {
+          "x": 84.5,
+          "y": 66,
+          "width": 74.5,
+          "height": 84,
+          "id": "campaign-site"
+        },
+        {
+          "x": 161,
+          "y": 66,
+          "width": 74.5,
+          "height": 84,
+          "id": "campaign-site"
+        }
+      ],
+      "panels": [
+        {
+          "x": 189.59375,
+          "y": 518,
+          "width": 122.375,
+          "height": 35,
+          "id": "health-label"
+        },
+        {
+          "x": 189.59375,
+          "y": 557,
+          "width": 118,
+          "height": 3,
+          "id": "health-track"
+        },
+        {
+          "x": 98.5,
+          "y": 441,
+          "width": 94,
+          "height": 50,
+          "id": "instrument"
+        },
+        {
+          "x": 206,
+          "y": 160,
+          "width": 106,
+          "height": 120,
+          "id": "respawn-status"
+        },
+        {
+          "x": 98,
+          "y": 340,
+          "width": 114,
+          "height": 54,
+          "id": "announcement"
+        },
+        {
+          "x": 198,
+          "y": 441.1875,
+          "width": 114,
+          "height": 76,
+          "id": "campaign-hud-details"
+        },
+        {
+          "x": 239.5,
+          "y": 68,
+          "width": 72,
+          "height": 26,
+          "id": "campaign-mode-status"
+        },
+        {
+          "x": 9.890625,
+          "y": 362,
+          "width": 70.625,
+          "height": 26,
+          "id": "target-tally"
+        }
+      ],
+      "movableControls": [
+        {
+          "x": 8,
+          "y": 390,
+          "width": 81.296875,
+          "height": 44,
+          "id": "game-sound"
+        },
+        {
+          "x": 268,
+          "y": 102,
+          "width": 44,
+          "height": 50,
+          "id": "pause"
+        },
+        {
+          "x": 98.5,
+          "y": 497.296875,
+          "width": 72.53125,
+          "height": 62.6875,
+          "id": "bomb"
+        },
+        {
+          "x": 8,
+          "y": 441.1875,
+          "width": 85.203125,
+          "height": 121.59375,
+          "id": "loop"
+        },
+        {
+          "x": 216,
+          "y": 341.1875,
+          "width": 96,
+          "height": 96,
+          "id": "fire"
+        },
+        {
+          "x": 30,
+          "y": 230,
+          "width": 64,
+          "height": 100,
+          "id": "throttle"
+        }
+      ],
+      "flightData": null,
+      "threat": {
+        "x": 202,
+        "y": 977.15625,
+        "width": 106,
+        "height": 54.46875
+      }
+    },
+    "sight": {
+      "x": 122.79999999999994,
+      "y": 169.07084915470614,
+      "width": 74.4,
+      "height": 74.4,
+      "id": "aim-and-reload-ring"
+    },
+    "variant": "NotoSansJP"
+  },
+  {
+    "case": "hud-normal-respawn-small-portrait-text-200-priority-4.png",
+    "provenance": "rotation-stress",
+    "measurement": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 568
+      },
+      "bounds": {
+        "x": 8,
+        "y": 8,
+        "width": 304,
+        "height": 552
+      },
+      "obstacles": [
+        {
+          "x": 8,
+          "y": 8,
+          "width": 74.5,
+          "height": 59.984375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 84.5,
+          "y": 8,
+          "width": 74.5,
+          "height": 59.984375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 161,
+          "y": 8,
+          "width": 74.5,
+          "height": 59.984375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 237.5,
+          "y": 8,
+          "width": 74.5,
+          "height": 59.984375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 8,
+          "y": 69.984375,
+          "width": 74.5,
+          "height": 85.375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 84.5,
+          "y": 69.984375,
+          "width": 74.5,
+          "height": 85.375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 161,
+          "y": 69.984375,
+          "width": 74.5,
+          "height": 85.375,
+          "id": "campaign-site"
+        }
+      ],
+      "panels": [
+        {
+          "x": 189.59375,
+          "y": 518,
+          "width": 122.375,
+          "height": 35,
+          "id": "health-label"
+        },
+        {
+          "x": 189.59375,
+          "y": 557,
+          "width": 118,
+          "height": 3,
+          "id": "health-track"
+        },
+        {
+          "x": 98.5,
+          "y": 441,
+          "width": 94,
+          "height": 50,
+          "id": "instrument"
+        },
+        {
+          "x": 206,
+          "y": 160,
+          "width": 106,
+          "height": 120,
+          "id": "respawn-status"
+        },
+        {
+          "x": 98,
+          "y": 340,
+          "width": 114,
+          "height": 77,
+          "id": "announcement"
+        },
+        {
+          "x": 198,
+          "y": 441.1875,
+          "width": 114,
+          "height": 76,
+          "id": "campaign-hud-details"
+        },
+        {
+          "x": 239.5,
+          "y": 68,
+          "width": 72,
+          "height": 26,
+          "id": "campaign-mode-status"
+        },
+        {
+          "x": 9.890625,
+          "y": 362,
+          "width": 70.625,
+          "height": 44,
+          "id": "target-tally"
+        }
+      ],
+      "movableControls": [
+        {
+          "x": 8,
+          "y": 390,
+          "width": 81.296875,
+          "height": 44,
+          "id": "game-sound"
+        },
+        {
+          "x": 268,
+          "y": 102,
+          "width": 44,
+          "height": 50,
+          "id": "pause"
+        },
+        {
+          "x": 98.5,
+          "y": 497.296875,
+          "width": 72.53125,
+          "height": 62.6875,
+          "id": "bomb"
+        },
+        {
+          "x": 8,
+          "y": 441.1875,
+          "width": 85.203125,
+          "height": 121.59375,
+          "id": "loop"
+        },
+        {
+          "x": 216,
+          "y": 341.1875,
+          "width": 96,
+          "height": 96,
+          "id": "fire"
+        },
+        {
+          "x": 30,
+          "y": 230,
+          "width": 64,
+          "height": 100,
+          "id": "throttle"
+        }
+      ],
+      "flightData": null,
+      "threat": {
+        "x": 202,
+        "y": 977.15625,
+        "width": 106,
+        "height": 99
+      }
+    },
+    "sight": {
+      "x": 122.79999999999994,
+      "y": 169.07084915470614,
+      "width": 74.4,
+      "height": 74.4,
+      "id": "aim-and-reload-ring"
+    },
+    "variant": "NotoSansJP"
+  },
+  {
+    "case": "hud-normal-respawn-small-portrait-text-200-priority-4.png",
+    "provenance": "fresh-page",
+    "variant": "historical glyph fallback",
+    "measurement": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 568
+      },
+      "bounds": {
+        "x": 8,
+        "y": 8,
+        "width": 304,
+        "height": 552
+      },
+      "obstacles": [
+        {
+          "x": 8,
+          "y": 8,
+          "width": 74.5,
+          "height": 56,
+          "id": "campaign-site"
+        },
+        {
+          "x": 84.5,
+          "y": 8,
+          "width": 74.5,
+          "height": 56,
+          "id": "campaign-site"
+        },
+        {
+          "x": 161,
+          "y": 8,
+          "width": 74.5,
+          "height": 56,
+          "id": "campaign-site"
+        },
+        {
+          "x": 237.5,
+          "y": 8,
+          "width": 74.5,
+          "height": 56,
+          "id": "campaign-site"
+        },
+        {
+          "x": 8,
+          "y": 66,
+          "width": 74.5,
+          "height": 84,
+          "id": "campaign-site"
+        },
+        {
+          "x": 84.5,
+          "y": 66,
+          "width": 74.5,
+          "height": 84,
+          "id": "campaign-site"
+        },
+        {
+          "x": 161,
+          "y": 66,
+          "width": 74.5,
+          "height": 84,
+          "id": "campaign-site"
+        }
+      ],
+      "panels": [
+        {
+          "x": 189.59375,
+          "y": 518,
+          "width": 107.984375,
+          "height": 35,
+          "id": "health-label"
+        },
+        {
+          "x": 189.59375,
+          "y": 557,
+          "width": 118,
+          "height": 3,
+          "id": "health-track"
+        },
+        {
+          "x": 98.5,
+          "y": 441,
+          "width": 94,
+          "height": 50,
+          "id": "instrument"
+        },
+        {
+          "x": 206,
+          "y": 160,
+          "width": 106,
+          "height": 120,
+          "id": "respawn-status"
+        },
+        {
+          "x": 98,
+          "y": 340,
+          "width": 114,
+          "height": 54,
+          "id": "announcement"
+        },
+        {
+          "x": 198,
+          "y": 441.1875,
+          "width": 114,
+          "height": 76,
+          "id": "campaign-hud-details"
+        },
+        {
+          "x": 239.5,
+          "y": 68,
+          "width": 43.21875,
+          "height": 21,
+          "id": "campaign-mode-status"
+        },
+        {
+          "x": 9.890625,
+          "y": 362,
+          "width": 56.234375,
+          "height": 22,
+          "id": "target-tally"
+        }
+      ],
+      "movableControls": [
+        {
+          "x": 8,
+          "y": 390,
+          "width": 73.296875,
+          "height": 44,
+          "id": "game-sound"
+        },
+        {
+          "x": 268,
+          "y": 102,
+          "width": 44,
+          "height": 50,
+          "id": "pause"
+        },
+        {
+          "x": 98.5,
+          "y": 497.296875,
+          "width": 52,
+          "height": 62.6875,
+          "id": "bomb"
+        },
+        {
+          "x": 8,
+          "y": 441.1875,
+          "width": 72,
+          "height": 114.59375,
+          "id": "loop"
+        },
+        {
+          "x": 216,
+          "y": 341.1875,
+          "width": 96,
+          "height": 96,
+          "id": "fire"
+        },
+        {
+          "x": 30,
+          "y": 230,
+          "width": 64,
+          "height": 100,
+          "id": "throttle"
+        }
+      ],
+      "flightData": null,
+      "threat": {
+        "x": 202,
+        "y": 919.15625,
+        "width": 106,
+        "height": 36.3125
+      }
+    },
+    "sight": {
+      "x": 122.79999999999994,
+      "y": 169.07084915470614,
+      "width": 74.4,
+      "height": 74.4,
+      "id": "aim-and-reload-ring"
+    }
+  },
+  {
+    "case": "hud-normal-respawn-small-portrait-text-200-priority-4.png",
+    "provenance": "rotation-stress",
+    "variant": "historical glyph fallback",
+    "measurement": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 320,
+        "height": 568
+      },
+      "bounds": {
+        "x": 8,
+        "y": 8,
+        "width": 304,
+        "height": 552
+      },
+      "obstacles": [
+        {
+          "x": 8,
+          "y": 8,
+          "width": 74.5,
+          "height": 59.984375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 84.5,
+          "y": 8,
+          "width": 74.5,
+          "height": 59.984375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 161,
+          "y": 8,
+          "width": 74.5,
+          "height": 59.984375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 237.5,
+          "y": 8,
+          "width": 74.5,
+          "height": 59.984375,
+          "id": "campaign-site"
+        },
+        {
+          "x": 8,
+          "y": 69.984375,
+          "width": 74.5,
+          "height": 84,
+          "id": "campaign-site"
+        },
+        {
+          "x": 84.5,
+          "y": 69.984375,
+          "width": 74.5,
+          "height": 84,
+          "id": "campaign-site"
+        },
+        {
+          "x": 161,
+          "y": 69.984375,
+          "width": 74.5,
+          "height": 84,
+          "id": "campaign-site"
+        }
+      ],
+      "panels": [
+        {
+          "x": 189.59375,
+          "y": 518,
+          "width": 107.984375,
+          "height": 35,
+          "id": "health-label"
+        },
+        {
+          "x": 189.59375,
+          "y": 557,
+          "width": 118,
+          "height": 3,
+          "id": "health-track"
+        },
+        {
+          "x": 98.5,
+          "y": 441,
+          "width": 94,
+          "height": 50,
+          "id": "instrument"
+        },
+        {
+          "x": 206,
+          "y": 160,
+          "width": 106,
+          "height": 120,
+          "id": "respawn-status"
+        },
+        {
+          "x": 98,
+          "y": 340,
+          "width": 114,
+          "height": 92,
+          "id": "announcement"
+        },
+        {
+          "x": 198,
+          "y": 441.1875,
+          "width": 114,
+          "height": 76,
+          "id": "campaign-hud-details"
+        },
+        {
+          "x": 239.5,
+          "y": 68,
+          "width": 43.21875,
+          "height": 21,
+          "id": "campaign-mode-status"
+        },
+        {
+          "x": 9.890625,
+          "y": 362,
+          "width": 56.234375,
+          "height": 22,
+          "id": "target-tally"
+        }
+      ],
+      "movableControls": [
+        {
+          "x": 8,
+          "y": 390,
+          "width": 73.296875,
+          "height": 44,
+          "id": "game-sound"
+        },
+        {
+          "x": 268,
+          "y": 102,
+          "width": 44,
+          "height": 50,
+          "id": "pause"
+        },
+        {
+          "x": 98.5,
+          "y": 497.296875,
+          "width": 52,
+          "height": 62.6875,
+          "id": "bomb"
+        },
+        {
+          "x": 8,
+          "y": 441.1875,
+          "width": 72,
+          "height": 114.59375,
+          "id": "loop"
+        },
+        {
+          "x": 216,
+          "y": 341.1875,
+          "width": 96,
+          "height": 96,
+          "id": "fire"
+        },
+        {
+          "x": 30,
+          "y": 230,
+          "width": 64,
+          "height": 100,
+          "id": "throttle"
+        }
+      ],
+      "flightData": null,
+      "threat": {
+        "x": 202,
+        "y": 919.15625,
+        "width": 106,
+        "height": 36.3125
+      }
+    },
+    "sight": {
+      "x": 122.79999999999994,
+      "y": 169.07084915470614,
+      "width": 74.4,
+      "height": 74.4,
+      "id": "aim-and-reload-ring"
+    }
+  }
+]

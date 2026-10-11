@@ -26,7 +26,8 @@
 | index.html | 題名、説明、戦役集計、魚雷操作除外、結果のタイム・有限得点 |
 | style.css | 7陣地 HUD と戦役詳細に限定した追加スタイル |
 | control-settings / keyboard-settings / input | 専用保存キーと魚雷操作除外、5/2タッチ・10/7キー |
-| aircraft.ts / flight-view.ts / flight.ts | 固定ソースを保持 |
+| aircraft.ts / flight-view.ts | 固定ソースを保持 |
+| flight.ts | 2026-10-11追補でtargetLockのimport/型/factory初期化を追加。既存飛行・宙返りの計算は固定ソースを保持 |
 | main.ts | 海戦を campaign adapter に置換、停止・入力寿命・設定導線を保持 |
 | campaign-scene.ts | K の renderer、hero 機体・追従視界を使用、地形・地上兵・竜を描画 |
 | campaign*.ts | 本作の純論理、描画と入力の adapter、専用保存を新設 |
