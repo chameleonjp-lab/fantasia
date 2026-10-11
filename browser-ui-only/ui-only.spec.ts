@@ -1478,9 +1478,11 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
     for (const coverage of rotationCoverage) coverage.notRunReason = `shared rotation page setup failed: ${setupCoverage.exceptionMessage ?? String(error)}`;
   }
 
-  for (const hudCase of HUD_CASES) {
+  const runFreshCase = async (hudCase: HudCase) => {
     // Every fixed state gets its own document with its viewport set before UI setup.
     // This prevents a previous mode/priority/rotation from becoming its baseline.
+    const caseFailures: HudFailureRecord[] = [];
+    let caseSetupMs = 0; let caseCaptureMs = 0; let freshBaseline: any = null;
     const coverage = freshCoverageByCase.get(hudCase.name)!;
     coverage.attempted = true;
     let freshPage: Page | undefined;
@@ -1491,8 +1493,8 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
       freshPage = await browser.newPage({ viewport: { width: hudCase.width, height: hudCase.height } });
       const viewportBeforeSetup = freshPage.viewportSize();
       if (viewportBeforeSetup?.width !== hudCase.width || viewportBeforeSetup.height !== hudCase.height)
-        recordHudFailure(hudFailures, 'fresh-page', hudCase.name, 'viewport-before-setup', `${hudCase.name}: fresh-page viewport before setup was ${JSON.stringify(viewportBeforeSetup)}`);
-      setupMs += await setup(freshPage);
+        recordHudFailure(caseFailures, 'fresh-page', hudCase.name, 'viewport-before-setup', `${hudCase.name}: fresh-page viewport before setup was ${JSON.stringify(viewportBeforeSetup)}`);
+      caseSetupMs += await setup(freshPage);
       const cssBeforeFixture = await typographySnapshot(freshPage);
       const originalLivesNoteHandle = await freshPage.evaluateHandle(() => [...document.querySelectorAll<HTMLElement>('#app small')]
         .find(node => node.textContent?.trim() === '現在機を含む') ?? null);
@@ -1520,36 +1522,61 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
             originalParent: original.parent, afterFixtureParent: sample.parent }]
           : [];
       });
-      const freshBaseline = { case: hudCase.name, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority,
+      freshBaseline = { case: hudCase.name, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority,
         viewportBeforeSetup, cssBeforeFixture, baseline, fixtureBaselineDrift, fixtureInlineStyleChanges,
         searchInput: layoutEvidence.searchInput, sight: layoutEvidence.sight, layout: layoutEvidence.layout };
-      freshBaselineByCase.set(hudCase.name, freshBaseline);
-      freshBaselineEvidence.push(freshBaseline);
       const fontScale = await enlargeText(freshPage);
       const painted = await repaintFixedFixture(freshPage);
       const inspection = await inspectAndCaptureHudCase(freshPage, info, hudCase, painted, fixture, fontScale,
         freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, originalSecondaryNodesHandle, originalSecondaryText,
-        'fresh-page', hudFailures, coverage);
-      captureMs += inspection.screenshotMs;
+        'fresh-page', caseFailures, coverage);
+      caseCaptureMs += inspection.screenshotMs;
       measuredArea = { status: inspection.areaBound.status, areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
         layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons };
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
     } catch (error) {
-      captureMs += await captureHudFailureEvidence(freshPage, info, coverage, hudFailures, 'fresh-page', hudCase.name, 'case-exception', error,
+      caseCaptureMs += await captureHudFailureEvidence(freshPage, info, coverage, caseFailures, 'fresh-page', hudCase.name, 'case-exception', error,
         { viewport: { width: hudCase.width, height: hudCase.height }, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority, measuredArea });
     } finally {
       if (originalSecondaryNodesHandle) {
         try { await originalSecondaryNodesHandle.dispose(); }
-        catch (error) { recordHudError(hudFailures, 'fresh-page', hudCase.name, 'original-secondary-handle-dispose', error); }
+        catch (error) { recordHudError(caseFailures, 'fresh-page', hudCase.name, 'original-secondary-handle-dispose', error); }
       }
       if (freshPage) {
         try { await freshPage.close(); }
-        catch (error) { recordHudError(hudFailures, 'fresh-page', hudCase.name, 'page-close', error); }
+        catch (error) { recordHudError(caseFailures, 'fresh-page', hudCase.name, 'page-close', error); }
       }
-      freshAreaEvidence.push({ case: hudCase.name, ...(measuredArea ?? { status: 'not-measured', areaBound: null,
-        areaClassification: 'not-run-or-interrupted-before-area-inspection', layoutStatus: 'not-measured', searchChecks: null, blockedReasons: [] }) });
+    }
+    return { setupWorkMs: caseSetupMs, captureWorkMs: caseCaptureMs, failures: caseFailures, baseline: freshBaseline,
+      area: { case: hudCase.name, ...(measuredArea ?? { status: 'not-measured', areaBound: null,
+        areaClassification: 'not-run-or-interrupted-before-area-inspection', layoutStatus: 'not-measured', searchChecks: null, blockedReasons: [] }) } };
+  };
+  // Two independent documents at a time reduce serial setup cost without sharing
+  // state. Join every case and collect evidence in HUD_CASES order before rotation.
+  const freshStarted = performance.now();
+  let freshSetupWorkMs = 0; let freshCaptureWorkMs = 0;
+  for (let index = 0; index < HUD_CASES.length; index += 2) {
+    const cases = HUD_CASES.slice(index, index + 2);
+    const results = await Promise.allSettled(cases.map(runFreshCase));
+    for (const [offset, result] of results.entries()) {
+      const hudCase = cases[offset];
+      if (result.status === 'rejected') {
+        recordHudError(hudFailures, 'fresh-page', hudCase.name, 'fresh-case-rejection', result.reason);
+        freshAreaEvidence.push({ case: hudCase.name, status: 'not-measured', areaBound: null,
+          areaClassification: 'case-rejected-before-evidence-return', layoutStatus: 'not-measured', searchChecks: null, blockedReasons: [] });
+        continue;
+      }
+      freshSetupWorkMs += result.value.setupWorkMs;
+      freshCaptureWorkMs += result.value.captureWorkMs;
+      hudFailures.push(...result.value.failures);
+      if (result.value.baseline) {
+        freshBaselineByCase.set(hudCase.name, result.value.baseline);
+        freshBaselineEvidence.push(result.value.baseline);
+      }
+      freshAreaEvidence.push(result.value.area);
     }
   }
+  const freshPhaseWallMs = performance.now() - freshStarted;
 
   const inspectFixedHud = async (hudCase: HudCase, mode: 'easy' | 'normal', fixture: any, coverage: HudCaseCoverage) => {
     const name = hudCase.name;
@@ -1694,6 +1721,14 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
   }
 
   await record('hud-modes-sites-aim-alerts', setupMs, started, captureMs);
+  // The legacy tourMs includes the parallel fresh phase; only sequential captures
+  // are subtracted from wall time. Overlapping work sums are recorded separately.
+  const executionTiming = { wallMs: Math.round(performance.now() - started), freshPhaseWallMs: Math.round(freshPhaseWallMs),
+    freshSetupWorkMs: Math.round(freshSetupWorkMs), freshCaptureWorkMs: Math.round(freshCaptureWorkMs),
+    setupWorkMs: Math.round(setupMs + freshSetupWorkMs), captureWorkMs: Math.round(captureMs + freshCaptureWorkMs),
+    legacyTimingBasis: 'setupMs/captureMs are sequential only; tourMs includes parallel fresh-page work' };
+  await info.attach('hud-execution-timing.json', { body: Buffer.from(JSON.stringify(executionTiming, null, 2)), contentType: 'application/json' });
+  console.log(`[ui-only-hud-execution-time] ${JSON.stringify(executionTiming)}`);
   const summarizeAreaEvidence = (provenance: 'fresh-page-200%' | 'rotation-stress-200%', cases: Array<Record<string, any>>) => ({
     provenance,
     statesCaptured: cases.length,

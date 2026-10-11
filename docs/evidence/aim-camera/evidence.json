@@ -204,7 +204,7 @@
     "browser-tests/start-failure-evidence.ts": "20a3b8107e60133b5715fdef169c63a0cc251cb93df68a6bd7a4f7942a70742a",
     "browser-tests/touch-command.ts": "c16f80d161eef73c6002fc72f389cfb39a55abe0882a8b5d15a0a11bb0b2a63a",
     "browser-tests/tracers.spec.ts": "b1eb536757a0486c0cab3edbe80b200e538ef249748bdcf4fe3edaf9e8da255f",
-    "browser-ui-only/ui-only.spec.ts": "7dcfafc09bdb18911fd0cfd9bd1af09dd4ccc6d2ce6a947aacc4a9a0e53fb0d9",
+    "browser-ui-only/ui-only.spec.ts": "78a02033258e3a02eec00458013ed0176398c1d539635d83921d0c0c4c8c3734",
     "docs/evidence/aim-camera/verify-normal-fire.mts": "11ad2a575cca46481ffb47a5743f05af6cadcbd935bb906d09029d52d6c238ca"
   },
   "checks": {
@@ -213,8 +213,8 @@
       "exit_code": 0,
       "passed": 469,
       "skipped": 0,
-      "log_sha256": "12cb84a7cd618e780a0ad3b98de55c7e9f6820680841f0ef072ca26ccdac83e3",
-      "log_utc_mtime": "2026-10-11T16:38:01.032397+00:00"
+      "log_sha256": "185f463f8cd83840aedd5096aa0b7ed18842a5d20ded14103e85ad8a389c3f97",
+      "log_utc_mtime": "2026-10-11T17:12:59.403540+00:00"
     },
     "build": {
       "command": "npm run build",
@@ -222,15 +222,44 @@
       "log_sha256": "343527ea6908ed643d4a54773e29078f3059ac8c7af062310d51b57c798b7429"
     },
     "related_browser": {
-      "command": "PLAYWRIGHT_BROWSERS_PATH=<browser-cache> npm run test:browser -- --timeout=60000 --global-timeout=180000",
-      "result": "8 pass（指定UI suite、日本語font）。timeoutは実行CLIだけで拡大、assertion/config/skipを変更しない。",
-      "log_sha256": "04413508486180d7cfb27f447d67de20ed5ec3308b971ffeb48984923ea68ade"
+      "command": "PLAYWRIGHT_BROWSERS_PATH=<browser-cache> npm run test:browser",
+      "exit_code": 0,
+      "result": "8 pass; unchanged test 12000ms / global 90000ms / expect 1500ms; fresh 10/10 and sequential rotation 10/10 complete, zero failures",
+      "log_sha256": "ff9132a21d54e00663cef6aaacda1358a3565b45a0a8d27bb67760e881598114",
+      "log_utc_mtime": "2026-10-11T17:10:49.463122+00:00",
+      "hud_execution": {
+        "wall_ms": 10008,
+        "fresh_phase_wall_ms": 5724,
+        "fresh_setup_work_ms": 4572,
+        "fresh_capture_work_ms": 634,
+        "setup_work_ms": 4958,
+        "capture_work_ms": 1024
+      },
+      "prior_ci": {
+        "head": "86d19a9f06585d6cb41b05c554af875f70c1614f",
+        "run_id": 38157438345,
+        "attempts": [
+          {
+            "attempt": 1,
+            "result": "failure at unchanged 12-second HUD test deadline; measured layout failures 0"
+          },
+          {
+            "attempt": 2,
+            "result": "failure at unchanged 12-second HUD test deadline; final rotation case interrupted"
+          }
+        ]
+      }
     },
     "normal_fire": {
       "command": "node --import tsx docs/evidence/aim-camera/verify-normal-fire.mts",
       "exit_code": 0,
       "result_sha256": "0275e6651c2c2e617c1c713e16476cc6b5d523d54f89765fcc019c22e6257e64",
       "script_sha256": "11ad2a575cca46481ffb47a5743f05af6cadcbd935bb906d09029d52d6c238ca"
+    },
+    "related_browser_before_ci_followup": {
+      "command": "PLAYWRIGHT_BROWSERS_PATH=<browser-cache> npm run test:browser -- --timeout=60000 --global-timeout=180000",
+      "result": "8 pass（指定UI suite、日本語font）。timeoutは実行CLIだけで拡大、assertion/config/skipを変更しない。",
+      "log_sha256": "04413508486180d7cfb27f447d67de20ed5ec3308b971ffeb48984923ea68ade"
     }
   },
   "product_browser": {

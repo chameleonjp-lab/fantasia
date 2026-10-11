@@ -16,7 +16,7 @@ provenanceは追加したlock import/type/factoryの3行だけを除外して旧
 | --- | --- | --- |
 | 単体 | `npm test` | **469 pass / 0 fail / 0 skip、終了0**。最新の製品sourceとtestを検査。 |
 | 型/製品build | `npm run build` | 終了0。TypeScript noEmitとVite製品bundle。既存chunk-size警告あり。 |
-| 関連browser | `PLAYWRIGHT_BROWSERS_PATH=<browser-cache> npm run test:browser -- --timeout=60000 --global-timeout=180000` | 8 pass（指定UI suite、日本語font）。timeoutは実行CLIだけで拡大、assertion/config/skipを変更しない。 |
+| 関連browser | `PLAYWRIGHT_BROWSERS_PATH=<browser-cache> npm run test:browser` | **8 pass、終了0**（指定UI suite、日本語font）。既存12秒test/90秒global/1.5秒expectを維持。HUDはfresh 10＋回転10すべて完了、失敗0、実経過10008ms。 |
 | Normal実進行 | `node --import tsx docs/evidence/aim-camera/verify-normal-fire.mts` | 同seed20261011、3操縦条件×12tickのfire on/off、位置/姿勢/速度/名目camera一致。自機発射8対0、36tick組。製品公開simulation APIを実行。 |
 | 製品画面 | 5viewport×DPR1/2×Normal/Easy=20画像 | Chromium 153.0.8010.0 / SwiftShader、実buildと通常DOM操作。fixture注入なし。日本語fontあり、page error 0。回転/負荷で保護停止のlast frameが含まれ、20枚すべての連続飛行は主張しない。 |
 | 入力所有 | 追加EventTarget検査＋上記関連browser | 模擬EventTargetと実DOM経路を実iPhoneから区別。 |
@@ -26,6 +26,8 @@ provenanceは追加したlock import/type/factoryの3行だけを除外して旧
 実行したsource/test/scriptのSHA256・log hash・記録日時、20viewportのDOM測定/画像hashは[evidence.json](evidence/aim-camera/evidence.json)。Normal対照の実行scriptと[result](evidence/aim-camera/normal-fire-result.json)も保存した。PR本文に接続先から返った最終head SHAと、ローカルindex treeとの一致を記す。自己参照を避け、evidence.json自体のhashは同JSONへ入れない。公式Playwright 1.61.1想定Chromiumとは異なるfallback binaryであるため、標準browser取得の成功とは扱わない。repositoryの依存・CI・fontを追加変更していない。
 
 ## 失敗・画像確認・残件
+
+提出初回head `86d19a9f06585d6cb41b05c554af875f70c1614f` のActions run `38157438345` は2回ともHUD testの12秒制限で失敗した。初回は全20配置を測定し配置失敗0、再実行は最後の回転caseを制限時間で中断した。時間制限を増やさず、独立したfresh documentだけを2件ずつ並行実行へ変更。caseごとのfailure/baseline/areaと時間を返し、`Promise.allSettled` 後に元のcase順で集計する。fresh全10件をjoinしてから既存10rotationと最後のread-only identity検査を従来順で実行し、PNG/JSON、200%文字、44pxボタン、4px間隔、Canvas判定、120000探索上限、失敗集約を維持した。並列work合計をwall時間から引かず、`hud-execution-timing.json` にwall/fresh phase wallとsetup/capture workを分けて記録する。変更後のローカル標準コマンドで8件合格、fresh/rotationとも10件完了・失敗0を確認。公式CIの最終head結果はPR本文へ追記する。
 
 画像568×320 DPR1のNormal/Easyと、568×320 DPR2のEasyはworldが暗いframeで、scene paintの受入には使わない。DPR2には5件の保護停止frameもあり、capture時のdataset=playingだけで描画完成とは判定しない。portrait/852×393/1280×720の描画と、指定UI-only 200%検査は別証拠。
 
