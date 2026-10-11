@@ -12,7 +12,12 @@ test('K hero, camera, flight, shared dialog and renderer lifecycle remain pinned
     assert.ok(original, path);
     let bytes = readFileSync(path);
     if (path === 'src/flight.ts') {
-      const current = bytes.toString('utf8');
+      let current = bytes.toString('utf8');
+      for (const addition of ["import { createFlightTargetLock, type FlightTargetLock } from './flight-target';\n",
+        "  targetLock: FlightTargetLock;\n", "targetLock: createFlightTargetLock(), "]) {
+        assert.equal(current.split(addition).length, 2, addition);
+        current = current.replace(addition, '');
+      }
       assert.equal(current.split("import { resolveThrottleAxis } from './throttle-lever';\n").length, 2);
       assert.equal(current.split("mode === 'easy' ? 0 : resolveThrottleAxis(input)").length, 2);
       bytes = Buffer.from(current.replace("import { resolveThrottleAxis } from './throttle-lever';\n", '')

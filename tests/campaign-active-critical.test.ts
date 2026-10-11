@@ -86,12 +86,14 @@ for (const [width, height] of [[320, 568], [568, 320], [393, 852]]) {
   });
 }
 
-test('Easy landscape neutral assistance reproduces the slow CI boundary acquisition', () => {
+test('Easy landscape neutral assistance reaches the real boundary warning within the acquisition budget', () => {
   const s = sortie('easy', 568 / 320);
-  for (let i = 0; i < 314 + 1222; i++) s.step();
-  assert.equal(s.campaign.state.status, 'running');
-  assert.equal(criticalStateActive('boundary', s.read()), false);
-  assert.ok(Math.hypot(s.campaign.state.player.position.x, s.campaign.state.player.position.z) < 1300);
+  const boundary = s.reach('boundary', {}, 314 + 1222);
+  assert.equal(boundary.campaign.status, 'running');
+  assert.equal(boundary.campaign.selfLosses, 0);
+  assert.ok(Math.hypot(s.campaign.state.player.position.x, s.campaign.state.player.position.z) >= 2100);
+  for (let i = 0; i < 6; i++) s.step();
+  assert.equal(criticalStateActive('boundary', s.read()), true);
 });
 
 test('bomb announcement witness expires and cannot be a label-only claim', () => {

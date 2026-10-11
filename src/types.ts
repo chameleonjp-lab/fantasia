@@ -44,7 +44,7 @@ export interface GameEvent {
   targetTeam?: Team; ownerAllySlot?: number; targetAllySlot?: number;
   weapon?: 'mg' | 'cannon' | 'aa' | 'bomb' | 'torpedo'; detail?: string; mountId?: string; armor?: boolean;
 }
-export interface FlightInput {
+export interface FlightInput { steeringActive?: boolean;
   /** Explicit rate axis takes precedence over legacy accelerate/brake, including zero. */
   throttle?: number;
   turn: number; climb: number; fire: boolean; loop: boolean;

@@ -1,0 +1,377 @@
+[
+  {
+    "case": "hud-normal-protected-small-landscape-text-200-priority-0.png",
+    "measurement": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 568,
+        "height": 320
+      },
+      "bounds": {
+        "x": 8,
+        "y": 8,
+        "width": 552,
+        "height": 304
+      },
+      "obstacles": [
+        {
+          "x": 8,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 87.140625,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 166.28125,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 245.421875,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 324.5625,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 403.703125,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 482.84375,
+          "y": 8,
+          "width": 77.15625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        }
+      ],
+      "panels": [
+        {
+          "x": 112,
+          "y": 160,
+          "width": 107.984375,
+          "height": 35,
+          "id": "health-label"
+        },
+        {
+          "x": 8,
+          "y": 199,
+          "width": 110,
+          "height": 3,
+          "id": "health-track"
+        },
+        {
+          "x": 420,
+          "y": 118,
+          "width": 110,
+          "height": 50,
+          "id": "instrument"
+        },
+        {
+          "x": 8,
+          "y": 226,
+          "width": 241.265625,
+          "height": 48,
+          "id": "warning"
+        },
+        {
+          "x": 112,
+          "y": 60,
+          "width": 114,
+          "height": 96,
+          "id": "campaign-hud-details"
+        },
+        {
+          "x": 296,
+          "y": 270,
+          "width": 21.609375,
+          "height": 21,
+          "id": "campaign-mode-status"
+        },
+        {
+          "x": 372,
+          "y": 278,
+          "width": 30.125,
+          "height": 44,
+          "id": "target-tally"
+        },
+        {
+          "x": 8,
+          "y": 300,
+          "width": 110,
+          "height": 18.40625,
+          "id": "bomb-hint"
+        }
+      ],
+      "movableControls": [
+        {
+          "x": 296,
+          "y": 222,
+          "width": 73.296875,
+          "height": 44,
+          "id": "game-sound"
+        },
+        {
+          "x": 509,
+          "y": 60,
+          "width": 44,
+          "height": 50,
+          "id": "pause"
+        },
+        {
+          "x": 475,
+          "y": 172,
+          "width": 51.1875,
+          "height": 62.6875,
+          "id": "bomb"
+        },
+        {
+          "x": 330,
+          "y": 118,
+          "width": 56.421875,
+          "height": 96.390625,
+          "id": "loop"
+        },
+        {
+          "x": 475,
+          "y": 239,
+          "width": 51.1875,
+          "height": 51.1875,
+          "id": "fire"
+        },
+        {
+          "x": 420,
+          "y": 172,
+          "width": 51.1875,
+          "height": 102.390625,
+          "id": "throttle"
+        }
+      ],
+      "flightData": null,
+      "threat": {
+        "x": 116,
+        "y": 275.96875,
+        "width": 106,
+        "height": 108.890625
+      }
+    },
+    "sight": {
+      "x": 246.79999999999995,
+      "y": 79.0089291012429,
+      "width": 74.4,
+      "height": 74.4
+    },
+    "provenance": "Chromium 153.0.8010.0 measured product UI, baseline 7b59137065ae7af26b37f0fa304c16bf7483ed50 also fails at 120000 checks"
+  },
+  {
+    "case": "hud-normal-protected-small-landscape-text-200-priority-4.png",
+    "measurement": {
+      "canvas": {
+        "x": 0,
+        "y": 0,
+        "width": 568,
+        "height": 320
+      },
+      "bounds": {
+        "x": 8,
+        "y": 8,
+        "width": 552,
+        "height": 304
+      },
+      "obstacles": [
+        {
+          "x": 8,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 87.140625,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 166.28125,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 245.421875,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 324.5625,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 403.703125,
+          "y": 8,
+          "width": 77.140625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        },
+        {
+          "x": 482.84375,
+          "y": 8,
+          "width": 77.15625,
+          "height": 55.703125,
+          "id": "campaign-site"
+        }
+      ],
+      "panels": [
+        {
+          "x": 112,
+          "y": 160,
+          "width": 107.984375,
+          "height": 35,
+          "id": "health-label"
+        },
+        {
+          "x": 8,
+          "y": 199,
+          "width": 110,
+          "height": 3,
+          "id": "health-track"
+        },
+        {
+          "x": 420,
+          "y": 118,
+          "width": 110,
+          "height": 50,
+          "id": "instrument"
+        },
+        {
+          "x": 8,
+          "y": 226,
+          "width": 241.265625,
+          "height": 48,
+          "id": "warning"
+        },
+        {
+          "x": 325,
+          "y": 60,
+          "width": 180,
+          "height": 24,
+          "id": "announcement"
+        },
+        {
+          "x": 112,
+          "y": 60,
+          "width": 114,
+          "height": 96,
+          "id": "campaign-hud-details"
+        },
+        {
+          "x": 296,
+          "y": 270,
+          "width": 43.21875,
+          "height": 21,
+          "id": "campaign-mode-status"
+        },
+        {
+          "x": 372,
+          "y": 278,
+          "width": 56.234375,
+          "height": 44,
+          "id": "target-tally"
+        },
+        {
+          "x": 8,
+          "y": 300,
+          "width": 110,
+          "height": 18.40625,
+          "id": "bomb-hint"
+        }
+      ],
+      "movableControls": [
+        {
+          "x": 296,
+          "y": 222,
+          "width": 73.296875,
+          "height": 44,
+          "id": "game-sound"
+        },
+        {
+          "x": 509,
+          "y": 60,
+          "width": 44,
+          "height": 50,
+          "id": "pause"
+        },
+        {
+          "x": 475,
+          "y": 172,
+          "width": 51.1875,
+          "height": 62.6875,
+          "id": "bomb"
+        },
+        {
+          "x": 330,
+          "y": 118,
+          "width": 56.421875,
+          "height": 96.390625,
+          "id": "loop"
+        },
+        {
+          "x": 475,
+          "y": 239,
+          "width": 51.1875,
+          "height": 51.1875,
+          "id": "fire"
+        },
+        {
+          "x": 420,
+          "y": 172,
+          "width": 51.1875,
+          "height": 102.390625,
+          "id": "throttle"
+        }
+      ],
+      "flightData": null,
+      "threat": {
+        "x": 116,
+        "y": 537.96875,
+        "width": 106,
+        "height": 108.890625
+      }
+    },
+    "sight": {
+      "x": 246.79999999999995,
+      "y": 79.0089291012429,
+      "width": 74.4,
+      "height": 74.4
+    },
+    "provenance": "Chromium 153.0.8010.0 measured product UI, baseline 7b59137065ae7af26b37f0fa304c16bf7483ed50 also fails at 120000 checks"
+  }
+]

@@ -5,6 +5,40 @@ import { DEFAULT_LAYOUT, controlBounds, controlDisplaySize, controlDimensions, r
 import { projectGunSight } from '../src/gun-sight';
 import { aimRadius } from '../src/aim-indicator';
 import { createGame } from '../src/simulation';
+import { readFileSync } from 'node:fs';
+
+test('measured protected landscape HUD after rotation fits full-sized panels without raising the search budget',()=>{
+  const fixtures=JSON.parse(readFileSync(new URL('./fixtures/hud-rotation-protected.json',import.meta.url),'utf8'));
+  assert.equal(fixtures.length,2);
+  for(const fixture of fixtures){
+    const before=JSON.stringify(fixture.measurement),out=layoutCampaignHud(fixture.measurement,fixture.sight);
+    assert.equal(out.status,'placed',fixture.case);assert.ok(out.searchChecks!<=120000);
+    const panels=out.panels!;
+    for(const panel of fixture.measurement.panels){
+      const placed=panels.find(item=>item.id===panel.id)!;assert.ok(placed);
+      assert.equal(placed.rect.width,panel.width);assert.equal(placed.rect.height,panel.height);
+      assert.ok(out.obstacles.every(obstacle=>!intersects(placed.rect,obstacle,4)));
+    }
+    const placed=Object.values(panels).map(panel=>panel.rect);
+    for(let i=0;i<placed.length;i++)for(let j=i+1;j<placed.length;j++)assert.equal(intersects(placed[i],placed[j],4),false);
+    assert.equal(JSON.stringify(fixture.measurement),before);
+  }
+});
+
+test('Japanese and historical 200 percent portrait respawn preserve radar, panels and controls within the same budget',()=>{
+  const fixtures=JSON.parse(readFileSync(new URL('./fixtures/hud-cjk-respawn.json',import.meta.url),'utf8'));
+  assert.equal(fixtures.length,4);for(const variant of ['NotoSansJP','historical glyph fallback'])assert.deepEqual(fixtures.filter((f:any)=>f.variant===variant).map((f:any)=>f.provenance).sort(),['fresh-page','rotation-stress']);
+  for(const fixture of fixtures){
+    const before=JSON.stringify(fixture.measurement),out=layoutCampaignHud(fixture.measurement,fixture.sight);
+    assert.equal(out.status,'placed');assert.ok(out.searchChecks!<=120000);
+    const placed=[out.radar.rect,...out.panels!.map(item=>item.rect),...(out.controls??[]).map(item=>item.rect)];
+    for(const panel of fixture.measurement.panels){const result=out.panels!.find(item=>item.id===panel.id)!;assert.ok(result);assert.equal(result.rect.width,panel.width);assert.equal(result.rect.height,panel.height);}
+    for(const control of fixture.measurement.movableControls){const result=out.controls!.find(item=>item.id===control.id)!;assert.ok(result);assert.equal(result.rect.width,control.width);assert.equal(result.rect.height,control.height);}
+    for(const rect of placed){assert.ok(rect.x>=out.bounds.x&&rect.y>=out.bounds.y&&rect.x+rect.width<=out.bounds.x+out.bounds.width&&rect.y+rect.height<=out.bounds.y+out.bounds.height);assert.ok(fixture.measurement.obstacles.every((obstacle:any)=>!intersects(rect,obstacle,4)));assert.equal(intersects(rect,fixture.sight,4),false);}
+    for(let i=0;i<placed.length;i++)for(let j=i+1;j<placed.length;j++)assert.equal(intersects(placed[i],placed[j],4),false);
+    assert.equal(JSON.stringify(fixture.measurement),before);
+  }
+});
 
 const cards320 = Array.from({ length: 7 }, (_, i) => ({ id: `site-${i + 1}`, x: 12 + i % 4 * 75, y: 116 + Math.floor(i / 4) * 60.96875, width: 71, height: 56.96875 }));
 const bounds = { x: 8, y: 8, width: 304, height: 552 };
