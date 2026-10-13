@@ -18,8 +18,8 @@ jobs:
       pages: read
     env:
       SOURCE_COMMIT: ${{ github.sha }}
-      APPROVED_PRODUCT_SOURCE: 2fe3649d6ca1bb8a99c68bdaa6c2f863fbbecd15
-      APPROVED_MAIN_PARENT: 4904bdb0ab683565978f1c1d1892708290f9c486
+      APPROVED_PRODUCT_SOURCE: 3d5cc4674e9bb30c63d171e76edc172e28ba1439
+      APPROVED_MAIN_PARENT: 3d5cc4674e9bb30c63d171e76edc172e28ba1439
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -80,7 +80,7 @@ jobs:
           manifest_path=root/'deployment.json'
           manifest=json.loads(manifest_path.read_text()) if manifest_path.exists() else {'repository':'chameleonjp-lab/fantasia','commit':os.environ['SOURCE_COMMIT'],'files':{x['path']:x['sha256'] for x in files}}
           assert manifest['commit']==os.environ['SOURCE_COMMIT']
-          manifest.update({'sourceTree':os.popen('git rev-parse HEAD^{tree}').read().strip(),'workflowCommit':os.environ['WORKFLOW_COMMIT'],'publicationAuthorizationDate':'2026-10-10','publicationScope':'User-requested verification build; final physical-phone and gameplay acceptance are not claimed'})
+          manifest.update({'sourceTree':os.popen('git rev-parse HEAD^{tree}').read().strip(),'workflowCommit':os.environ['WORKFLOW_COMMIT'],'publicationAuthorizationDate':'2026-10-13','publicationScope':'User-requested verification build; final physical-phone and gameplay acceptance are not claimed'})
           manifest_path.write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')
           PYVALIDATE
       - name: Preserve checks and pictures separately from the public site
