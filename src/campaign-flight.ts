@@ -57,13 +57,13 @@ export class CampaignFlightController {
       }
       let target = this.targets.get(actor.id);
       if (!target) {
-        // Ground objectives keep the inherited gentle stationary-target pull;
-        // dragons retain airborne tracking. No sea-target aim-point offset is used.
-        target = Object.assign(makeAircraft(actor.id, 'enemy', new Vector3()), { trackingStrength: actor.kind === 'dragon' ? 1 : .25, identityGeneration: actor.generation });
+        // Campaign soldiers and dragons remain fire/lock targets but do not
+        // pull the camera. Fixed turrets keep their gentle aim-point pull.
+        target = Object.assign(makeAircraft(actor.id, 'enemy', new Vector3()), { trackingStrength: actor.kind === 'turret' ? .25 : 0, identityGeneration: actor.generation });
         this.targets.set(actor.id, target);
       }
       target.position.set(actor.position.x, actor.position.y, actor.position.z);
-      target.trackingStrength = actor.kind === 'dragon' ? 1 : .25;
+      target.trackingStrength = actor.kind === 'turret' ? .25 : 0;
       target.identityGeneration = actor.generation; target.health = actor.hp; target.maxHealth = actor.maxHp;
       target.speed = Math.hypot(actor.velocity.x, actor.velocity.y, actor.velocity.z);
       target.yaw = target.speed > 0 ? Math.atan2(-actor.velocity.x, -actor.velocity.z) : 0;

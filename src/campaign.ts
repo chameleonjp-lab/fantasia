@@ -1,5 +1,5 @@
 import type { ActorClass, CampaignActor, CampaignEvent, CampaignFeatures, CampaignInput, CampaignMode, CampaignResult, CampaignState, CampaignTeam, ClassCounts, Origin, ScoreBreakdown, Vec } from './campaign-types';
-import { ACTOR_STATS, CAMPAIGN_DT, CAMPAIGN_LIMIT_TICKS, CAMPAIGN_MAP_VERSION, campaignRulesVersion, CAPTURE_MAX, countClasses, DEFAULT_CAMPAIGN_FEATURES, GROUND_CLASSES, INITIAL_CLASSES, validateCampaignFeatures, validateClassCounts } from './campaign-config';
+import { ACTOR_STATS, CAMPAIGN_DT, CAMPAIGN_LIMIT_TICKS, CAMPAIGN_MAP_VERSION, CAMPAIGN_TURRET_AIM_HEIGHT, campaignRulesVersion, CAPTURE_MAX, countClasses, DEFAULT_CAMPAIGN_FEATURES, GROUND_CLASSES, INITIAL_CLASSES, validateCampaignFeatures, validateClassCounts } from './campaign-config';
 import { addVec, copyVec, distanceSquared, laneBasis, radialPosition, scaleVec, terrainHeight } from './campaign-terrain';
 import { aircraftTerrainContact } from './campaign-airframe';
 import { applyDamages, collectCombat, commitActorFire, commitPlayerFire, moveActors, tickPlayerAmmo, type CampaignEmit } from './campaign-combat';
@@ -132,7 +132,7 @@ export class Campaign {
       const site = this.state.sites[lane], { u } = laneBasis(lane);
       const dragonPosition = addVec(site.position, scaleVec(u, 180)); dragonPosition.y = terrainHeight(dragonPosition.x, dragonPosition.z) + 180;
       this.spawnActor('enemy', 'dragon', lane, null, dragonPosition, 'initial');
-      const turret = this.spawnActor('enemy', 'turret', lane, null, radialPosition(lane, 1000, 6), 'initial'); site.turretId = turret.id;
+      const turret = this.spawnActor('enemy', 'turret', lane, null, radialPosition(lane, 1000, CAMPAIGN_TURRET_AIM_HEIGHT), 'initial'); site.turretId = turret.id;
     }
     validateCampaignState(this.state);
   }
