@@ -20,7 +20,7 @@ import { createCampaignHudLayout, layoutCampaignCanvasLabel, type CampaignHudLay
 import type { Aircraft, Bullet, Team } from './types';
 import type { CampaignActor, CampaignState, Vec } from './campaign-types';
 import { heightAt, radialPosition, route, sweepSphere, segmentTerrainBlocked, TERRAIN_OBSTACLES } from './campaign-terrain';
-import { ACTOR_STATS } from './campaign-config';
+import { ACTOR_STATS, CAMPAIGN_SITE_SCALE } from './campaign-config';
 import { predictAim, predictBombImpact, resolveTarget } from './campaign-combat';
 
 const GROUND_CAPACITY = 224;
@@ -435,7 +435,7 @@ export class CampaignScene {
     }
   }
   private createSite(id: number, position: Vec): SiteVisual {
-    const root = new Group(); root.position.set(position.x, position.y, position.z);
+    const root = new Group(); root.position.set(position.x, position.y, position.z); root.scale.setScalar(CAMPAIGN_SITE_SCALE);
     const stone = this.material(new MeshStandardMaterial({ color: 0xaaa68b, roughness: .89 }));
     const flagMaterial = this.material(new MeshStandardMaterial({ color: TEAM_COLORS.enemy, roughness: .92, side: DoubleSide }));
     const pole = new Mesh(this.geometry(new CylinderGeometry(.18, .22, 15, 8)), stone); pole.position.set(13, 7.5, 8); root.add(pole);
@@ -446,7 +446,9 @@ export class CampaignScene {
     const curbGeometry = this.geometry(new BoxGeometry(7, .45, 1.4));
     for (let i = 0; i < 12; i++) {
       const angle = i * Math.PI * 2 / 12, x = Math.cos(angle) * 31, z = Math.sin(angle) * 31;
-      const curb = new Mesh(curbGeometry, stone); curb.position.set(x, heightAt(position.x + x, position.z + z) - position.y + .18, z);
+      const worldX = position.x + x * CAMPAIGN_SITE_SCALE, worldZ = position.z + z * CAMPAIGN_SITE_SCALE;
+      const curb = new Mesh(curbGeometry, stone);
+      curb.position.set(x, (heightAt(worldX, worldZ) - position.y) / CAMPAIGN_SITE_SCALE + .18, z);
       curb.rotation.y = -angle + Math.PI / 2; root.add(curb);
     }
     const turret = new Group();

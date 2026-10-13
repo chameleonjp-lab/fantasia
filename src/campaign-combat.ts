@@ -1,5 +1,5 @@
 import type { ActorClass, CampaignActor, CampaignEvent, CampaignInput, CampaignPlayer, CampaignProjectile, CampaignState, EntityRef, ProjectileKind, Vec } from './campaign-types';
-import { ACTOR_STATS, CAMPAIGN_DT, classDamage, MAX_PROJECTILES } from './campaign-config';
+import { ACTOR_STATS, CAMPAIGN_DT, classDamage, MAX_GROUND_OR_TURRET_RADIUS, MAX_PROJECTILES } from './campaign-config';
 import { addVec, copyVec, distanceSquared, laneBasis, lerpVec, normalized, quantizeLanePosition, radialPosition, route, scaleVec, segmentSphereEntry, subtractVec, sweepObstacles, sweepSphere, terrainHeight, TERRAIN_OBSTACLES, xzDistanceSquared } from './campaign-terrain';
 import { rotateVec, sweptPlayerHit } from './campaign-airframe';
 
@@ -194,7 +194,7 @@ export function moveActors(state: CampaignState): void {
   const corrections = new Map<number, Vec>(), candidateActors = state.actors.filter(a => a.hp > 0 && a.kind !== 'dragon');
   const candidateGrid = new ActorGrid(candidateActors);
   for (const actor of candidateActors) if (actor.kind === 'ground') {
-    for (const other of candidateGrid.queryRadius(actor.position, actor.radius + 6.5)) {
+    for (const other of candidateGrid.queryRadius(actor.position, actor.radius + MAX_GROUND_OR_TURRET_RADIUS + .5)) {
       if (other.id === actor.id || other.kind === 'ground' && other.id < actor.id) continue;
       const separation = actor.radius + other.radius + (actor.team === other.team ? .2 : 0);
       const dy = actor.position.y - other.position.y, requiredXZ = Math.sqrt(Math.max(0, separation ** 2 - dy ** 2));
