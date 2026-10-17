@@ -98,3 +98,25 @@ test('live campaign rejects real rock and height-field occlusion and releases re
     flight.clearPending();assert.equal(flight.selectedTargetId,null);
   }
 });
+
+test('Normal fire cannot alter the live campaign aircraft or camera over a matched twelve-tick trace', () => {
+  for (const turn of [-.6, 0, .6]) for (const climb of [-.6, 0, .6]) {
+    const campaigns = [new Campaign('normal'), new Campaign('normal')];
+    for (const campaign of campaigns) campaign.state.actors = [];
+    const flights = campaigns.map(campaign => new CampaignFlightController(campaign.state));
+    for (let tick = 0; tick < 12; tick++) {
+      for (let i = 0; i < 2; i++) {
+        campaigns[i].step(flights[i].step(campaigns[i].state, { ...input, turn, climb, steeringActive: true, fire: i === 1 }));
+        flights[i].sync(campaigns[i].state);
+      }
+      assert.deepEqual(flights[0].player.position, flights[1].player.position);
+      assert.deepEqual(flights[0].player.quaternion, flights[1].player.quaternion);
+      const poses = flights.map(flight => {
+        const position = new Vector3(), rotation = new Quaternion();
+        getFlightCameraPose(flight.player, 'normal', position, rotation);
+        return { position, rotation, forward: new Vector3(0, 0, -1).applyQuaternion(rotation) };
+      });
+      assert.deepEqual(poses[0], poses[1], `camera is independent of fire at tick ${tick}`);
+    }
+  }
+});

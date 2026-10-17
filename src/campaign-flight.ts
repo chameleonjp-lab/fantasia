@@ -96,7 +96,7 @@ export class CampaignFlightController {
     const adjusted = { ...input, ...smoothFlightAssistance(flight, input, assist, CAMPAIGN_DT) };
     const loopPressed = input.loop && !flight.loopHeld; flight.loopHeld = input.loop;
     this.lastLoopCompleted = updatePlayerLoop(player, flight, adjusted, input, loopPressed, CAMPAIGN_DT,
-      advanceThrottle(flight, input, state.mode, CAMPAIGN_DT), MAX_SPEED, flight.responseMultiplier);
+      advanceThrottle(flight, input, state.mode, CAMPAIGN_DT), MAX_SPEED, flight.responseMultiplier, state.mode);
     const forward = forwardOf(player), velocity = forward.clone().multiplyScalar(player.speed);
     const autoTarget = autoFireTarget(player, targets, state.mode, input.viewAspect, flight.targetLock, unobstructed);
     const gunMuzzles = {

@@ -285,3 +285,75 @@ test(titleFor('native-capability'),async({page},info)=>{
       physicalDeviceAcceptance:'unverified',performanceAcceptance:'not-measured',releaseReady:false,backend,pageErrors:d.pageErrors,observations:d.evidence},null,2)});
   }
 });
+
+// Separate from the preserved 34-case functional ID/reporting contract.
+// The focused CI invocation sets this flag; the original 34-case invocation
+// retains its configured evidence behavior. Worker options must be top-level.
+if (process.env.FANTASIA_CAMERA_CONTRACT === '1') {
+  test.use({ screenshot: 'off', trace: 'off', video: 'off' });
+  for (const mode of ['easy', 'normal'] as const) test(`[camera-contract] ${mode} real rendered optical-axis trace and pause release`, async ({ page }) => {
+    const d = new RealRendererDriver(page);
+    let outcome = 'failed', backend: unknown;
+    try {
+      await d.boot(); backend = await d.backend();
+      // Observe the camera passed through the real CampaignScene render path.
+      // Do not replace the renderer, advance the campaign, or modify its GPU queue.
+      await page.evaluate(async () => {
+        const { CampaignScene } = await import('/src/campaign-scene.ts');
+        const original = CampaignScene.prototype.render;
+        CampaignScene.prototype.render = function (...args: Parameters<typeof original>) {
+          const rendered = original.apply(this, args);
+          if (rendered) {
+            const [state, player] = args;
+            (window as any).__cameraContractFrame = {
+              tick: state.simTick, pitch: player.pitch, bank: player.bank, speed: player.speed,
+              position: this.camera.position.toArray(), rotation: this.camera.quaternion.toArray(),
+              forward: this.camera.getWorldDirection(this.camera.position.clone()).toArray(),
+            };
+          }
+          return rendered;
+        };
+      });
+      await d.start(mode);
+      const frame = () => page.evaluate(() => (window as any).__cameraContractFrame);
+      let before = await frame(); expect(before).toBeTruthy(); expect(before.tick).toBe(0);
+      const angularDistance = (a: number[], b: number[]) => {
+        const cross = [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+        return Math.atan2(Math.hypot(...cross), a.reduce((sum, value, index) => sum + value * b[index], 0));
+      };
+      await page.keyboard.down('ArrowUp');
+      for (let tick = 0; tick < 12; tick++) {
+        if (tick === 4) { await page.keyboard.up('ArrowUp'); await page.keyboard.down('ArrowRight'); }
+        if (tick === 8) await page.keyboard.down('ArrowUp');
+        const state = await d.nextTick(), sample = await inputAt(d, state.tick - 1), after = await frame();
+        expect(after.tick).toBe(state.tick); expect(state.render.calls).toBeGreaterThan(0); expect(state.render.triangles).toBeGreaterThan(0);
+        const speed = before.speed;
+        const authority = (speed <= 85 ? .92 + (speed - 65) / 20 * .23 : speed <= 110 ? 1.15 - (speed - 85) / 25 * .15 : 1)
+          * Math.max(.78, Math.min(1, 1 - Math.max(0, speed - 115) * .008));
+        const step = .82 * authority / 60, measured = angularDistance(before.forward, after.forward);
+        expect(sample.turn).toBe(tick < 4 ? 0 : 1); expect(sample.climb).toBe(tick >= 4 && tick < 8 ? 0 : 1);
+        if (tick < 4) expect(Math.abs(measured - step)).toBeLessThanOrEqual(1e-12);
+        else {
+          expect(measured).toBeGreaterThanOrEqual(step - 1e-12);
+          expect(measured).toBeLessThanOrEqual(step * (tick < 8 ? 1.65 : Math.hypot(1, 1.65) / Math.SQRT2) + 1e-12);
+        }
+        const expectedPitch = tick < 4 ? step : tick < 8 ? 0 : step / Math.SQRT2;
+        expect(Math.abs(after.pitch - before.pitch - expectedPitch)).toBeLessThanOrEqual(1e-12);
+        d.evidence.push({ label: 'actual-camera-tick', mode, before, after, sample, measured, step }); before = after;
+      }
+      await d.drainNativeGpu();
+      await d.click('#pause'); await frozen(d, 1);
+      await page.keyboard.up('ArrowRight'); await page.keyboard.up('ArrowUp');
+      await d.click('#resume'); const released = await d.nextTick(), sample = await inputAt(d, released.tick - 1);
+      expect(sample.turn).toBe(0); expect(sample.climb).toBe(0); await neutral(d);
+      expect(d.pageErrors).toEqual([]); expect(d.releasedFences).toBe(d.createdFences); outcome = 'passed';
+    } finally {
+      // Keep focused evidence in the job log only; no new image/report artifacts.
+      console.log('FANTASIA_CAMERA_CONTRACT ' + JSON.stringify({
+        outcome, mode, backend, runtimeMocked: false, rendererMocked: false, cameraObserverOnly: true,
+        applicationQueueModified: false, physicalDeviceAcceptance: 'unverified', performanceAcceptance: 'not-measured',
+        ownedFencesCreated: d.createdFences, ownedFencesReleased: d.releasedFences, pageErrors: d.pageErrors, observations: d.evidence,
+      }));
+    }
+  });
+}
