@@ -79,3 +79,31 @@ test('fixed turrets retain their gentle camera pull', () => {
   assert.equal(output.fire, false, 'an off-circle target does not pass the firing gate');
   assert.ok(Math.abs(assistance(actual.adapter).assistTurn) > 0, 'a turret still contributes camera steering');
 });
+
+test('all five enemy NPC kinds leave the actual camera forward unchanged over twelve controller ticks', () => {
+  for (const actorClass of ['sword', 'bow', 'mage', 'cavalry', 'dragon'] as const) {
+    const expected = fixture(), actual = fixture(actorClass, .8, .15, 400);
+    for (let tick = 0; tick < 12; tick++) {
+      const controls = { ...neutral, turn: .1, climb: .05, steeringActive: true };
+      expected.adapter.step(expected.campaign.state, controls); actual.adapter.step(actual.campaign.state, controls);
+      const poses = [expected, actual].map(({ adapter }) => {
+        const position = new Vector3(), rotation = new Quaternion();
+        getFlightCameraPose(adapter.player, 'easy', position, rotation);
+        return { position, rotation, forward: new Vector3(0, 0, -1).applyQuaternion(rotation) };
+      });
+      assert.deepEqual(poses[0], poses[1], `${actorClass} cannot attract the camera at tick ${tick}`);
+      assert.equal(actual.adapter.selectedTargetId, actual.actor!.id);
+    }
+  }
+});
+
+test('turret tracking strength remains exactly one quarter and clearPending releases the lock', () => {
+  const actual = fixture('turret', .8, .15, 400);
+  actual.adapter.step(actual.campaign.state, neutral);
+  const internal = actual.adapter as unknown as { targets: Map<number, { trackingStrength: number }>; flight: { assistTurn: number; assistClimb: number; responseMultiplier: number } };
+  assert.equal(internal.targets.get(actual.actor!.id)?.trackingStrength, .25);
+  assert.ok(Math.abs(internal.flight.assistTurn) > 0);
+  actual.adapter.clearPending();
+  assert.equal(actual.adapter.selectedTargetId, null); assert.equal(internal.flight.assistTurn, 0);
+  assert.equal(internal.flight.assistClimb, 0); assert.equal(internal.flight.responseMultiplier, 1);
+});

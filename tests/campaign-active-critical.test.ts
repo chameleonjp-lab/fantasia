@@ -31,11 +31,15 @@ test('dormant warning DOM cannot supply any activation at fresh start', () => {
 
 for (const mode of ['normal', 'easy'] as const) {
   test(`${mode}: real flight equations naturally reach low altitude, collision and respawn protection`, () => {
-    const s = sortie(mode), low = s.reach('low-altitude', { climb: -1 }, 240);
-    assert.equal(low.campaign.simTick, 161);
+    const s = sortie(mode);
+    // Manual climb is now an angular rate, so the first descent step is .82/60
+    // rather than the old .95 * (1-exp(-4.2/60)) absolute-pitch response.
+    s.step({ climb: -1 }); assert.ok(Math.abs(s.flight.player.pitch + .82 / 60) <= 1e-12);
+    const low = s.reach('low-altitude', { climb: -1 }, 239);
+    assert.equal(low.campaign.simTick, 180);
     assert.equal(low.campaign.selfLosses, 0);
     const death = s.reach('respawning', { climb: -1 }, 80);
-    assert.equal(death.campaign.simTick, 200); assert.equal(death.campaign.selfLosses, 1);
+    assert.equal(death.campaign.simTick, 219); assert.equal(death.campaign.selfLosses, 1);
     assert.equal(death.campaign.livesRemaining, 2); assert.equal(death.campaign.player.hp, 0);
     const frozen = death.campaign.activeTicks;
     // Unit adapter boundary only; browser tests wait for the actual native
@@ -69,12 +73,17 @@ for (const mode of ['normal', 'easy'] as const) {
 }
 
 for (const [width, height] of [[320, 568], [568, 320], [393, 852]]) {
-  test(`Easy ${width}x${height}: gentle manual climb reaches boundary despite visible-target assistance`, () => {
+  test(`Easy ${width}x${height}: bounded manual climb and release reach boundary despite visible-target assistance`, () => {
     const s = sortie('easy', width / height);
     s.reach('enemy-targeting', {}, 500);
     for (let i = 0; i < 6; i++) s.step();
     const start = s.campaign.state.simTick;
-    const boundary = s.reach('boundary', { climb: .4 }, 1000);
+    // Holding .4 indefinitely now commands continual pitch rotation. Use a
+    // real 70-tick climb followed by release, retaining the same total 1000-tick
+    // acquisition budget and all live boundary/bomb/zero-loss assertions.
+    for (let i = 0; i < 70; i++) s.step({ climb: .4 });
+    assert.ok(s.flight.player.pitch > .35 && s.flight.player.pitch < .45);
+    const boundary = s.reach('boundary', {}, 930);
     assert.ok(boundary.campaign.simTick - start < 1000);
     assert.equal(boundary.campaign.selfLosses, 0);
     assert.ok(boundary.campaign.player.boundaryTicks >= 590);
