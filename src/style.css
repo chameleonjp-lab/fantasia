@@ -1221,7 +1221,7 @@ p {
 #app[data-campaign-hud="compact"] .flight-data { display: contents; }
 #app[data-campaign-hud="compact"] .campaign-sites {
   top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left));
-  right: max(8px, env(safe-area-inset-right)); max-width: none; gap: 2px;
+  right: max(8px, env(safe-area-inset-right)); max-width: none; gap: 2px; align-items: start;
 }
 #app[data-campaign-hud="compact"] .campaign-site { padding: 2px; }
 #app[data-campaign-hud="compact"] .campaign-site-heading { flex-wrap: wrap; gap: 2px; }
@@ -1331,7 +1331,7 @@ p {
 #campaign-mode-status { font-size: 9px; }
 
 #app[data-campaign-hud="compact"] .campaign-site-state {
-  display: block; white-space: normal; overflow-wrap: anywhere;
+  display: block; white-space: normal; overflow-wrap: anywhere; line-height: 1.3 !important;
 }
 
 /* At 320px with enlarged type, two padded pixels on either side forced the
@@ -1339,8 +1339,9 @@ p {
    Recover padding, never type size or status text. */
 @media (max-width: 360px) and (orientation: portrait) {
   #app[data-campaign-hud="compact"] .campaign-site { padding: 0; }
-  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(-n+4) { min-height: 56px; }
-  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(n+5) { min-height: 84px; }
+  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(-n+4) { min-height: 48px; }
+  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(n+5) { min-height: 48px; }
+  #app[data-campaign-hud="compact"] .campaign-site-progress { margin-block: 0; }
   #campaign-hud-details { height: 72px; }
   #app[data-campaign-hud="compact"][data-mode="normal"] .respawn-status { padding: 4px 8px; line-height: 1.15; }
 }
@@ -1490,13 +1491,19 @@ p {
 
 
 
-/* Keep portrait respawn packing within the original typography and scroll contract. */
+/* A respawn warning is a fixed readout, not a second scroll viewport. Give its
+   complete enlarged text a measured natural-height box. */
 @media (max-width: 360px) and (orientation: portrait) {
   #app[data-campaign-hud="compact"] #campaign-hud-details .target-tally,
   #app[data-campaign-hud="compact"] #hud > .target-tally { font-size: 8px; }
 
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #respawn-status {
-    top: 160px !important; height: 120px !important; min-height: 120px !important; max-height: 120px !important; box-sizing: border-box !important; padding: 2px 0 !important; line-height: 1 !important; overflow-x: hidden !important; overflow-y: auto !important; pointer-events: auto !important; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin;
+    left: max(8px, env(safe-area-inset-left)) !important; top: 160px !important;
+    width: calc(100dvw - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right))) !important;
+    max-width: calc(100dvw - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right))) !important;
+    height: auto !important; min-height: 0 !important; max-height: none !important;
+    box-sizing: border-box !important; padding: 2px !important; line-height: 1.3 !important;
+    overflow: visible !important; pointer-events: none !important;
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #announcement {
     top: 340px !important;
@@ -1506,6 +1513,17 @@ p {
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) .flight-data > .instrument {
     left: 98.5px !important;
+  }
+}
+
+/* Let long fixed alerts wrap beside the unchanged Easy sight reservation.
+   Only the shape changes: full strings, enlarged type and safety gap remain. */
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"] #hud #campaign-threat,
+  #app[data-campaign-hud="compact"][data-mode] #hud #announcement[data-campaign-critical="true"] {
+    width: calc(50dvw - 13.5vmin - 15px - max(8px, env(safe-area-inset-left), env(safe-area-inset-right))) !important;
+    max-width: calc(50dvw - 13.5vmin - 15px - max(8px, env(safe-area-inset-left), env(safe-area-inset-right))) !important;
+    white-space: normal; overflow-wrap: anywhere; padding: 2px;
   }
 }
 
