@@ -223,3 +223,19 @@ test('canonical protection inspector accepts correct state and rejects stale, in
   for (const variant of ['protection-stale', 'protection-no-attack', 'protection-hidden'] as const)
     assert.equal((await inspectReadoutContract(variant)).ok, false, variant);
 });
+
+
+test('announcement visibility gate accepts only a fully validated canonical projection', () => {
+  const source = readFileSync('browser-ui-only/ui-only.spec.ts', 'utf8');
+  const gate = source.slice(source.indexOf("  recordHudAssertion(failures, provenance, name, 'announcement-visible',"), source.indexOf("  recordHudAssertion(failures, provenance, name, 'announcement-text',"));
+  const check = (visible: boolean, ok: boolean, route: string) => runInNewContext(gate, {
+    failures: [], provenance: 'unit', name: 'unit', expect: browserExpect,
+    domEvidence: { announcement: { visible } }, announcementReachability: { ok, route },
+    recordHudAssertion: (_a: unknown, _b: unknown, _c: unknown, _d: unknown, assertion: () => void) => assertion(),
+  });
+  const projection = 'single fixed protection projection; duplicate announcement hidden';
+  assert.doesNotThrow(() => check(false, true, projection));
+  assert.doesNotThrow(() => check(true, true, 'original announcement'));
+  assert.throws(() => check(false, false, projection));
+  assert.throws(() => check(false, true, 'original announcement'));
+});

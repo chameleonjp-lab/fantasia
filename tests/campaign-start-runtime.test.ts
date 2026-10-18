@@ -143,6 +143,17 @@ test('real crash and frozen respawn countdown replace self-loss announcement wit
   assert.equal(h.nodes.get('announcement').getAttribute('aria-hidden'), 'true');
   assert.equal(h.nodes.get('warning').hidden, true);
   assert.equal(h.nodes.get('campaign-threat').textContent, '復活保護 あと2.0秒 · 自機攻撃不可');
+  for (let n = 0; n < 150 && h.read().campaign.player.protectionTicks > 0; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().campaign.player.protectionTicks, 0);
+  assert.equal(h.nodes.get('announcement').textContent, '', 'expired protection is not retained as a stale live event');
+  h.controls.climb = -1;
+  for (let n = 0; n < 350 && h.read().phase === 'playing'; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'respawning');
+  assert.match(h.nodes.get('announcement').textContent, /自機喪失/);
+  assert.equal(h.nodes.get('announcement').dataset.lifecycle, '');
+  assert.equal(h.nodes.get('announcement').hidden, false, 'later independent announcement is restored');
+  assert.equal(h.nodes.get('announcement').inert, false);
+  assert.equal(h.nodes.get('announcement').getAttribute('aria-hidden'), null);
 });
 
 test('actual main wiring stays preparing without ticks/sampling until selected frame acknowledgment, then resets clock/input once', async () => {

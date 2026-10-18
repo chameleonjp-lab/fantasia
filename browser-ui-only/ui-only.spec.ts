@@ -1452,7 +1452,8 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
       total: readout.characterCount, reachable: readout.reachableCharacterCount, sameOriginalNode: readout.sameOriginalNode,
       detailKey: readout.campaignDetail })), directSafetyHud, announcementTypography, typographyMismatchCount: staleFontSamples.length, blockedReasons })}`);
   recordHudAssertion(failures, provenance, name, 'announcement-visible',
-    () => expect(domEvidence.announcement.visible).toBe(true));
+    () => expect(domEvidence.announcement.visible || (announcementReachability.ok &&
+      announcementReachability.route === 'single fixed protection projection; duplicate announcement hidden')).toBe(true));
   recordHudAssertion(failures, provenance, name, 'announcement-text',
     () => expect(domEvidence.announcement.text).toBe(fixture.announcementText));
   recordHudAssertion(failures, provenance, name, 'announcement-priority-flag',
