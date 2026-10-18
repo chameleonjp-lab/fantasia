@@ -10,6 +10,7 @@ import * as combat from '../src/campaign-combat';
 import * as flight from '../src/campaign-flight';
 import * as terrain from '../src/campaign-terrain';
 import * as flightMath from '../src/flight';
+import { campaignProtectionReadout, campaignSafetyReadout } from '../src/campaign-hud';
 import * as start from '../src/campaign-start';
 import { RenderQueue, type RenderQueueContext } from '../src/render-queue';
 
@@ -55,7 +56,7 @@ async function appHarness() {
   };
   class Scene {
     queue = new RenderQueue(gl); camera = { aspect: 1 }; prepared = false; disposed = false; resets = 0; resizes = 0; renderAttempts = 0; lastState: any = null; overlayVisible = false; hudMeasured = false; failHud = false;
-    submissions: Array<{ mode: string; tick: number; runId: string; overlay: boolean; hudHidden: boolean; hudInert: boolean; hudAriaHidden: string | null; hint: string; announcement: string; announcementAriaHidden: string | null }> = [];
+    submissions: Array<{ mode: string; tick: number; runId: string; overlay: boolean; hudHidden: boolean; hudInert: boolean; hudAriaHidden: string | null; hint: string; announcement: string; announcementHidden: boolean; announcementAriaHidden: string | null }> = [];
     constructor() { scene = this; }
     async prepare() { this.prepared = true; }
     setOverlayVisible(visible: boolean) { this.overlayVisible = visible; } resize() { this.resizes++; } gunSight() { return { x: 0, y: 0 }; }
@@ -68,7 +69,7 @@ async function appHarness() {
       if (this.overlayVisible && !nodes.get('hud').hidden && !this.failHud) this.hudMeasured = true;
       this.submissions.push({ mode, tick: state.simTick, runId: state.runId, overlay: this.overlayVisible,
         hudHidden: nodes.get('hud').hidden, hudInert: nodes.get('hud').inert, hudAriaHidden: nodes.get('hud').getAttribute('aria-hidden'),
-        hint: nodes.get('bomb-hint').textContent, announcement: nodes.get('announcement').textContent,
+        hint: nodes.get('bomb-hint').textContent, announcement: nodes.get('announcement').textContent, announcementHidden: nodes.get('announcement').hidden,
         announcementAriaHidden: nodes.get('announcement').getAttribute('aria-hidden') });
       signaled = false; this.queue.submit(now); return true;
     }
@@ -95,7 +96,7 @@ async function appHarness() {
   const modules: Record<string, any> = {
     three, './campaign': campaign, './campaign-config': config, './campaign-combat': combat,
     './campaign-flight': flight, './campaign-terrain': terrain, './flight': flightMath,
-    './campaign-start': start, './campaign-scene': { CampaignScene: Scene }, './campaign-hud': { updateCampaignHud() {} },
+    './campaign-start': start, './campaign-scene': { CampaignScene: Scene }, './campaign-hud': { campaignProtectionReadout, campaignSafetyReadout, updateCampaignHud(state: any) { const text = campaignProtectionReadout(state); if (text) nodes.get('campaign-threat').textContent = text; } },
     './campaign-records': { CampaignRecords: class { status = 'ready'; best() { return null; } save() { return 'ineligible'; } } },
     './input': { FlightControls: Controls }, './control-settings': { ControlSettings: Settings },
     './keyboard-settings': { KeyboardSettings: Keys, ControlInputPresentation: Presentation },
@@ -138,6 +139,10 @@ test('real crash and frozen respawn countdown replace self-loss announcement wit
   assert.ok(h.read().campaign.player.protectionTicks > 0);
   assert.equal(h.nodes.get('announcement').textContent, '復活 · 2秒の保護中は自機も攻撃できません');
   assert.equal(h.nodes.get('announcement').dataset.campaignCritical, 'true');
+  assert.equal(h.nodes.get('announcement').hidden, true, 'same protection event has one visible status');
+  assert.equal(h.nodes.get('announcement').getAttribute('aria-hidden'), 'true');
+  assert.equal(h.nodes.get('warning').hidden, true);
+  assert.equal(h.nodes.get('campaign-threat').textContent, '復活保護 あと2.0秒 · 自機攻撃不可');
 });
 
 test('actual main wiring stays preparing without ticks/sampling until selected frame acknowledgment, then resets clock/input once', async () => {
@@ -373,6 +378,7 @@ for (const mode of ['easy', 'normal']) test(`${mode} selected preparation frame 
   assert.equal(selected.hudInert, true); assert.equal(selected.hudAriaHidden, 'true');
   assert.equal(h.controls.active(), false); assert.equal(h.audio.active, false);
   assert.equal(h.nodes.get('home').hidden, false); assert.equal(h.doc.activeElement.id, 'start-cancel');
+  assert.equal(selected.announcementHidden, false, 'preparing announcement participates in actual staged measurement');
   assert.equal(selected.announcementAriaHidden, 'true'); assert.match(selected.announcement, /7軍の進軍開始/); assert.equal(selected.hint, '落下地点の予測');
   h.frame(2000); assert.equal(h.read().phase, 'preparing'); assert.equal(h.read().tick, 0);
   h.signal(); h.frame(); assert.equal(h.read().phase, 'playing'); assert.equal(h.read().tick, 0);

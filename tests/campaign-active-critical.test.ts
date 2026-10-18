@@ -3,6 +3,7 @@ import { terrainHeight } from '../src/campaign-terrain';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Campaign } from '../src/campaign';
+import { campaignProtectionReadout, campaignSafetyReadout } from '../src/campaign-hud';
 import { CampaignFlightController } from '../src/campaign-flight';
 import { CRITICAL_KINDS, criticalStateActive, criticalText, fixedCriticalTextIssues, activeSampleIssues, type CriticalKind, type CriticalRuntime, type CriticalWitness } from '../browser-acceptance/active-critical-contract';
 import { detailAccessIssues, type DetailAccessEvidence } from '../browser-acceptance/detail-scroll-contract';
@@ -206,22 +207,26 @@ test('acquisition counts all four native frames, keeps single-event steps, and n
 
 // Exercise the actual fixed-state adapter, with only its renderer/DOM boundary
 // stubbed. Campaign and flight projection are the production implementations.
-function fixedHudFixture(alert: string) {
+function fixedHudFixture(alert: string, width = 320, height = 568) {
   const source = readFileSync(new URL('../scripts/ui-only-adapter.js', import.meta.url), 'utf8')
     .replace('import.meta.env.DEV', 'true');
-  const context: any = { window: { innerWidth: 320, innerHeight: 568 }, Vector3, audio: { event() {}, worldEvent() {}, finishFlight() {} }, location: { pathname: '/__ui-only' }, selectedMode: 'normal',
+  const elements = new Map<string, any>();
+  const context: any = { window: { innerWidth: width, innerHeight: height }, Vector3, audio: { event() {}, worldEvent() {}, finishFlight() {}, resetFlight() {} }, location: { pathname: '/__ui-only' }, selectedMode: 'normal',
     terrainHeight, screen: 'home', respawnRemaining: 0, announcementUntil: 0, announcementPriority: 0,
     bombPrediction: null, bombPredictionTick: 0,
-    syncMode() {}, updateHUD() {}, announce(text: string, _duration: number, priority: number) { context.announcementText = text; context.announcementPriority = priority; }, el() { return { textContent: '' }; },
+    clearInput() {}, syncAudio() {}, syncMode() {}, updateHUD() {}, el(id: string) { if (!elements.has(id)) elements.set(id, { textContent: '', dataset: {} }); return elements.get(id); },
     setScreen(value: string) { context.screen = value; },
     scene: { setUiOnlyThreat() {}, setOverlayVisible() {}, render() { return true; }, diagnostics() { return {}; } },
     resetCampaign() { context.campaign = new Campaign(context.selectedMode); context.state = context.campaign.state;
       context.flight = new CampaignFlightController(context.state); context.player = context.flight.player; },
   };
   const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  runInNewContext(transpileModule(main.slice(main.indexOf('function announce('), main.indexOf('function syncAudio(')), {}).outputText, context);
   runInNewContext(transpileModule(main.slice(main.indexOf('function handleEvents('), main.indexOf('function consumeTick(')), {}).outputText, context);
+  runInNewContext(transpileModule(main.slice(main.indexOf('function completeRespawn('), main.indexOf('function frame(')), {}).outputText, context);
   runInNewContext(source, context);
   context.fixture = context.window.__fantasiaUiOnlyTest.hud('normal', alert, 4);
+  context.announcementText = context.el('announcement').textContent;
   return context;
 }
 
@@ -329,4 +334,78 @@ test('cleared lifecycle input cannot replay late release, cancel or held-key rep
     controls.dispose();
     for (const [key, descriptor] of originals) if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key);
   }
+});
+
+
+test('protection projection retains revival, remaining seconds and all-attack restriction from state', () => {
+  const x = fixedHudFixture('protected');
+  assert.equal(campaignProtectionReadout(x.state), '復活保護 あと2.0秒 · 自機攻撃不可');
+  x.state.player.protectionTicks = 63;
+  assert.equal(campaignProtectionReadout(x.state), '復活保護 あと1.1秒 · 自機攻撃不可');
+  x.state.player.protectionTicks = 0;
+  assert.equal(campaignProtectionReadout(x.state), '');
+  x.state.player.protectionTicks = 120; x.state.status = 'respawning';
+  assert.equal(campaignProtectionReadout(x.state), '', 'waiting is a separate lifecycle with its own full text');
+});
+
+
+test('protection projection never absorbs independent boundary danger or waiting penalty', () => {
+  const x = fixedHudFixture('protected');
+  assert.equal(campaignSafetyReadout(x.state), '');
+  x.state.player.position.x = 2200; x.state.player.boundaryTicks = 123;
+  assert.equal(campaignSafetyReadout(x.state), '作戦圏へ戻って · あと3秒');
+  assert.equal(campaignProtectionReadout(x.state), '復活保護 あと2.0秒 · 自機攻撃不可');
+  const waiting = fixedHudFixture('respawn');
+  assert.equal(campaignSafetyReadout(waiting.state), '');
+  assert.equal(waiting.state.respawnPenaltyTicks, 600);
+  assert.match(waiting.announcementText, /10秒加算/);
+});
+
+
+test('reachable landscape protection uses actual production revival after natural flight loss', () => {
+  const x = fixedHudFixture('reachable-protection', 568, 320);
+  assert.equal(x.state.status, 'running'); assert.equal(x.state.player.generation, 2);
+  assert.equal(x.state.selfLosses, 1); assert.equal(x.state.player.protectionTicks, 120);
+  assert.equal(x.state.player.mg, 288); assert.equal(x.state.player.cannon, 96);
+  assert.equal(x.state.player.reloadUntilTick, null);
+  assert.equal(x.fixture.reachability.stateOverrides, false);
+  assert.equal(x.fixture.reachability.controlledRespawnBoundary, true);
+  assert.equal(x.fixture.reachability.nativeInput, false);
+  assert.equal(x.fixture.reachability.selfLossEvent.kind, 'selfLoss');
+  const expected = sortie('normal', 568 / 320);
+  for (const stage of x.fixture.reachability.path)
+    for (let i = 0; i < stage.steps; i++) expected.step(stage.action === 'fire' ? { fire: true } : { climb: -1 });
+  expected.campaign.resumeRespawn(); expected.flight.sync(expected.campaign.state, true);
+  const normalized = (state: any) => { const copy = JSON.parse(JSON.stringify(state)); delete copy.runId; return copy; };
+  assert.deepEqual(normalized(x.state), normalized(expected.campaign.state));
+});
+
+
+test('protection contract rejects missing attack meaning, stale countdown and hidden canonical text', () => {
+  const g = geometry(); g.styles[0].key = 'style:campaign-threat:0'; g.runs[0].styleKeys = ['style:campaign-threat:0'];
+  g.runs[0].text = '復活保護 あと1.1秒 · 自機攻撃不可';
+  assert.deepEqual(fixedCriticalTextIssues(g, { 'campaign-threat': '復活保護 あと' }), []);
+  const sample = { phase: 'playing', statusEvidence: { screen: 'playing', status: 'running', position: { x: 0, y: 300, z: 0 }, protectionTicks: 63 }, geometry: g };
+  assert.deepEqual(activeSampleIssues('protection', sample), []);
+  g.runs[0].text = '復活保護 あと2.0秒 · 自機攻撃不可';
+  assert.ok(activeSampleIssues('protection', sample).length);
+  g.runs[0].text = '復活保護 あと1.1秒';
+  assert.ok(fixedCriticalTextIssues(g, { 'campaign-threat': '復活保護 あと' }).length);
+  g.runs[0].text = '復活保護 あと1.1秒 · 自機攻撃不可'; g.runs[0].fragments = [];
+  assert.ok(activeSampleIssues('protection', sample).length);
+});
+
+
+test('only the actual protection producer tags its duplicate announcement', () => {
+  assert.equal(fixedHudFixture('protected').el('announcement').dataset.lifecycle, 'protection');
+  for (const alert of ['clear', 'low', 'outside', 'respawn'])
+    assert.equal(fixedHudFixture(alert).el('announcement').dataset.lifecycle, '', alert);
+});
+
+
+test('low terrain danger stays independent while revival protection is active', () => {
+  const x = fixedHudFixture('protected');
+  x.state.player.position = { x: 0, y: terrainHeight(0, 0) + 30, z: 0 };
+  assert.equal(campaignSafetyReadout(x.state), '低空注意 · 機首を上げて');
+  assert.equal(campaignProtectionReadout(x.state), '復活保護 あと2.0秒 · 自機攻撃不可');
 });

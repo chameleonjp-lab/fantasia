@@ -38,7 +38,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     selectedMode = mode;
     resetCampaign();
     syncMode();
-    if (alert === 'reachable-reload-loss' || alert === 'reachable-controls-ready') {
+    if (alert === 'reachable-reload-loss' || alert === 'reachable-controls-ready' || alert === 'reachable-protection') {
       if (mode !== 'normal') throw new Error('Reachable reload-loss requires Normal controls');
       // Actual flight inputs and campaign reducers from a standard new run.
       // No actor/site/ammo/position/status writes and no synthetic announcement.
@@ -63,13 +63,15 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
       path.push({ action: 'descend', steps: steps - fireSteps, tick: state.simTick, reloadTicksRemaining: player.reloadTicksRemaining });
       if (state.status !== 'respawning' || player.reloadTicksRemaining <= 0 || !state.events.some(event => event.kind === 'selfLoss'))
         throw new Error('Input-equation path did not reach simultaneous reload and self-loss');
+      const selfLossEvent = state.events.find(event => event.kind === 'selfLoss');
       respawnRemaining = 3;
+      if (alert === 'reachable-protection') completeRespawn(); // Actual production transition; countdown boundary is test-controlled.
       setScreen('playing'); updateHUD(); scene.setOverlayVisible(true);
       if (!scene.render(state, player, state.mode)) throw new Error('Reachable-state Canvas2D painter did not render');
       const rendered = uiOnlyCanvas();
       return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status,
         announcementPriority, announcementText: el('announcement').textContent, fixtureKind: 'input-equations-reachable-state',
-        reachability: { seed: state.seed, nativeInput: false, stateOverrides: false, path, selfLossEvent: state.events.find(event => event.kind === 'selfLoss') } };
+        reachability: { seed: state.seed, nativeInput: false, stateOverrides: false, path, selfLossEvent, controlledRespawnBoundary: alert === 'reachable-protection' } };
     }
     state.status = 'running';
     state.activeTicks = 240;
@@ -119,7 +121,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     const announcementText = alert === 'respawn' ? '自機喪失 · 復活すると記録時間に10秒加算'
       : alert === 'protected' ? '復活 · 2秒の保護中は自機も攻撃できません'
       : `砲台の予告 · 陣地${turret.laneId + 1} · ${((turret.fireAtTick - state.simTick) / 60).toFixed(1)}秒`;
-    announce(announcementText, 5, fixturePriority);
+    announce(announcementText, 5, fixturePriority, alert === 'protected' ? 'protection' : '');
     updateHUD();
     scene.setOverlayVisible(true);
     if (!scene.render(state, player, state.mode)) throw new Error('UI-only Canvas2D painter did not render');

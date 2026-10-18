@@ -88,7 +88,7 @@ test('same-mode sync does not toggle visibility and restoring an already-anchore
 
 // Run the real browser inspector against deterministic DOM geometry. This is
 // a contract regression, not a replacement for browser/layout acceptance.
-async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'secondary-outside' | 'clipped-fixed' | 'duplicate-fixed' | 'stale-ammo' | 'stale-reload' | 'stale-time' | 'dormant-reload' | 'false-protection' | 'stale-threat-time' | 'stale-threat-site' | 'stale-threat-generation' | 'hidden-child' | 'collapsed-indentation' | 'preserved-whitespace' | 'unmeasurable-nbsp' | 'unmeasurable-mixed-text' | 'mode-reparent' | 'missing-mode' | 'wrong-mode' | 'duplicate-mode' | 'hidden-mode' = 'none') {
+async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'secondary-outside' | 'clipped-fixed' | 'duplicate-fixed' | 'stale-ammo' | 'stale-reload' | 'stale-time' | 'dormant-reload' | 'false-protection' | 'stale-threat-time' | 'stale-threat-site' | 'stale-threat-generation' | 'hidden-child' | 'collapsed-indentation' | 'preserved-whitespace' | 'unmeasurable-nbsp' | 'unmeasurable-mixed-text' | 'mode-reparent' | 'missing-mode' | 'wrong-mode' | 'duplicate-mode' | 'hidden-mode' | 'actual-protection' | 'protection-stale' | 'protection-no-attack' | 'protection-hidden' = 'none') {
   const source = readFileSync(new URL('../browser-ui-only/ui-only.spec.ts', import.meta.url), 'utf8');
   const registry = source.slice(source.indexOf('const SECONDARY_HUD_READOUTS ='), source.indexOf('async function captureSecondaryHudOriginals'));
   const captureSource = source.slice(source.indexOf('async function captureSecondaryHudOriginals'), source.indexOf('async function setup'));
@@ -131,6 +131,13 @@ async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'sec
   if (change === 'wrong-mode') nodes.mode.textContent = 'ノーマル';
   if (change === 'hidden-mode') nodes.mode.hidden = true;
   if (change === 'missing-mode') delete values['#hud-mode'];
+  if (change.startsWith('protection-') || change === 'actual-protection') {
+    Object.assign(raw.campaign, { selfLosses: 1 });
+    raw.campaign.player.generation = 2; raw.campaign.player.protectionTicks = 63;
+    nodes['campaign-threat'].textContent = change === 'protection-stale' ? '復活保護 あと2.0秒 · 自機攻撃不可'
+      : change === 'protection-no-attack' ? '復活保護 あと1.1秒' : '復活保護 あと1.1秒 · 自機攻撃不可';
+    nodes['campaign-threat'].hidden = change === 'protection-hidden';
+  }
   const document = { querySelector(s: string) { return s === '#campaign-hud-details' ? details : values[s]; },
     querySelectorAll(s: string) { return values[s] ? (change === 'duplicate-fixed' && s === '.ammo' || change === 'duplicate-mode' && s === '#hud-mode') ? [values[s], values[s]] : [values[s]] : []; },
     createTreeWalker(n: Element) {
@@ -209,3 +216,10 @@ for (const variant of ['missing-mode', 'wrong-mode', 'duplicate-mode', 'hidden-m
   test(`HUD contract rejects ${variant} independently of timer text`, async () => {
     assert.equal((await inspectReadoutContract(variant)).ok, false);
   });
+
+
+test('canonical protection inspector accepts correct state and rejects stale, incomplete or hidden projection', async () => {
+  assert.equal((await inspectReadoutContract('actual-protection')).ok, true);
+  for (const variant of ['protection-stale', 'protection-no-attack', 'protection-hidden'] as const)
+    assert.equal((await inspectReadoutContract(variant)).ok, false, variant);
+});

@@ -33,7 +33,7 @@ export function criticalText(kind: CriticalKind, s: CampaignState): Record<strin
     case 'enemy-targeting': return { 'campaign-threat': '自機を照準' };
     case 'bomb-announcement': return { announcement: '爆弾投下 · 地上の味方位置にも注意' };
     case 'respawning': return { 'respawn-status': '戦況と作戦時間は停止中', 'campaign-threat': '復活待機', announcement: '自機喪失' };
-    case 'protection': return { warning: '復活保護', 'campaign-threat': '復活保護', 'bomb-hint': '復活保護中', announcement: '復活 · 2秒の保護中' };
+    case 'protection': return { 'campaign-threat': '復活保護 あと', 'bomb-hint': '復活保護中' };
   }
 }
 
@@ -48,6 +48,9 @@ export function fixedCriticalTextIssues(geometry: TextGeometry, required: Record
     if (!runs.length || !runs.every(r => r.text.trim() && r.fragments.length && r.fragments.every(f => f.width > 0 && f.height > 0))) issues.push(`${id}: missing actual text fragments`);
     if (runs.some(r => r.ancestorRegions.some(k => detailKeys.has(k)))) issues.push(`${id}: critical item moved into scrolling details`);
     if (!runs.map(r => r.text).join(' ').includes(expected)) issues.push(`${id}: missing active critical text ${expected}`);
+    if (id === 'campaign-threat' && expected === '復活保護 あと'
+      && !/^復活保護 あと\d+\.\d秒 · 自機攻撃不可$/u.test(runs.map(r => r.text).join(' ').trim()))
+      issues.push('protection projection lost remaining seconds or all-attack restriction');
   }
   return issues;
 }
@@ -62,6 +65,13 @@ export function activeSampleIssues(kind: CriticalKind, sample: any): string[] {
   if (kind === 'low-altitude' && !(s.protectionTicks === 0 && Math.hypot(p.x, p.z) <= 2100 && p.y - terrainHeight(p.x, p.z) < 65)) return ['Low-altitude condition expired'];
   if (kind === 'boundary' && !(Math.hypot(p.x, p.z) > 2100)) return ['Boundary condition expired'];
   if (kind === 'reload' && !(s.reloadTicksRemaining > 0)) return ['Reload condition expired'];
-  if (kind === 'protection' && !(s.protectionTicks > 0)) return ['Protection condition expired'];
+  if (kind === 'protection') {
+    if (!(s.protectionTicks > 0)) return ['Protection condition expired'];
+    const geometry = sample.geometry as TextGeometry | undefined;
+    if (!geometry) return ['Missing protection text geometry'];
+    const expected = `復活保護 あと${(s.protectionTicks / 60).toFixed(1)}秒 · 自機攻撃不可`;
+    if (fixedCriticalTextIssues(geometry, { 'campaign-threat': expected }).length)
+      return ['Protection text differs from atomic remaining ticks or is not fully visible'];
+  }
   return [];
 }

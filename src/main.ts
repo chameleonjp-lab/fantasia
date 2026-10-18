@@ -9,7 +9,7 @@ import { CampaignFlightController } from './campaign-flight';
 import { terrainHeight, distanceSquared, sweepSphere } from './campaign-terrain';
 import { CampaignScene } from './campaign-scene';
 import { CampaignStartPreparation, type StartPreparationFailure } from './campaign-start';
-import { updateCampaignHud } from './campaign-hud';
+import { updateCampaignHud, campaignProtectionReadout, campaignSafetyReadout } from './campaign-hud';
 import type { CampaignEvent } from './campaign-types';
 import { forwardOf } from './flight';
 import { FlightControls } from './input';
@@ -189,8 +189,9 @@ function setScreen(next: typeof screen) {
   const focus = next === 'preparing' ? 'start-cancel' : next === 'home' ? 'start' : next === 'paused' ? 'resume' : next === 'result' ? 'retry' : null;
   if (focus) el<HTMLButtonElement>(focus).focus({ preventScroll: true }); else canvas.focus({ preventScroll: true });
 }
-function announce(text: string, duration = 3, priority = 0) {
+function announce(text: string, duration = 3, priority = 0, lifecycle: 'protection' | '' = '') {
   if (state.activeTicks < announcementUntil && priority < announcementPriority) return;
+  el('announcement').dataset.lifecycle = lifecycle;
   announcementPriority = priority; el('announcement').dataset.campaignCritical = String(priority >= 1); el('announcement').textContent = text; announcementUntil = state.activeTicks + duration * 60;
 }
 function syncAudio() {
@@ -348,15 +349,32 @@ function updateHUD() {
   el('reload-status').dataset.progress = String(1 - player.reloadTicksRemaining / 360);
   const health = Math.max(0, Math.min(100, player.health / player.maxHealth * 100)); el('health').textContent = String(Math.ceil(health)); el('health-bar').style.width = `${health}%`;
   el('altitude').textContent = `${Math.round(player.position.y)}m`; el('speed').textContent = `${Math.round(player.speed * 3.6)}km/h`;
-  const outside = Math.hypot(player.position.x, player.position.z) > 2100, protectedPlayer = state.player.protectionTicks > 0;
-  el('warning').hidden = screen !== 'playing' || state.status !== 'running' || (!outside && !protectedPlayer && player.position.y - terrainHeight(player.position.x, player.position.z) >= 65);
-  el('warning').textContent = outside ? `作戦圏へ戻って · あと${Math.ceil(state.player.boundaryTicks / 60)}秒`
-    : protectedPlayer ? `復活保護 あと${(state.player.protectionTicks / 60).toFixed(1)}秒 · 自機攻撃不可` : '低空注意 · 機首を上げて';
+  const safetyWarning = campaignSafetyReadout(state);
+  el('warning').hidden = screen !== 'playing' || safetyWarning === '';
+  el('warning').textContent = safetyWarning;
   el('loop-status').textContent = player.loopProgress > 0 ? '宙返り中' : player.loopCooldown > 0 ? `${player.loopCooldown.toFixed(1)}秒` : 'すぐ使える';
   el('flight-tip').hidden = state.activeTicks > 480; el('respawn-status').hidden = screen !== 'playing' || state.status !== 'respawning';
   el('respawn-status').textContent = `復活まで ${Math.max(1, Math.ceil(respawnRemaining))}秒 · 戦況と作戦時間は停止中`;
   if (state.activeTicks > announcementUntil) el('announcement').textContent = '';
+  // Only a tagged duplicate of the same protection lifecycle is suppressed.
+  // Other announcements and the independently computed boundary warning stay.
+  const duplicateProtection = el('announcement').dataset.lifecycle === 'protection';
+  // Preparing measures the same real announcement rectangle while its existing
+  // staging CSS suppresses pixels. AT/input remain inactive until playing.
+  const announcementHidden = (screen !== 'playing' && screen !== 'preparing') || duplicateProtection;
+  const announcementInactive = screen !== 'playing' || duplicateProtection;
+  el('announcement').hidden = announcementHidden;
+  el('announcement').inert = announcementInactive;
+  if (announcementInactive) el('announcement').setAttribute('aria-hidden', 'true');
+  else el('announcement').removeAttribute('aria-hidden');
+  if (duplicateProtection && !campaignProtectionReadout(state)) el('announcement').textContent = '';
   updateCampaignHud(state, player); updateBombCue(); positionReloadStatus();
+}
+function completeRespawn() {
+  if (state.status !== 'respawning') return;
+  campaign.resumeRespawn(); flight.sync(state, true); respawnRemaining = 0; bombPredictionTick = -1;
+  clearInput(); audio.resetFlight(); syncAudio();
+  announce('復活 · 2秒の保護中は自機も攻撃できません', 2, 5, 'protection');
 }
 function frame() {
   const now = performance.now(); if (disposed) return; frameId = requestAnimationFrame(frame);
@@ -373,7 +391,7 @@ function frame() {
     } else if (state.status === 'respawning') {
       respawnRemaining -= dt;
       if (respawnRemaining <= 0) {
-        campaign.resumeRespawn(); flight.sync(state, true); bombPredictionTick = -1; clearInput(); audio.resetFlight(); syncAudio(); announce('復活 · 2秒の保護中は自機も攻撃できません', 2, 5);
+        completeRespawn();
       }
     } else if (state.status === 'running') {
       if (accumulator + dt > .25) {

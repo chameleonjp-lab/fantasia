@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 
 type Timings = { name: string; setupMs: number; tourMs: number; captureMs: number };
-type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss'; priority: 0 | 4 | 5 };
+type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss' | 'reachable-protection'; priority: 0 | 4 | 5 };
 type HudProvenance = 'fresh-page' | 'rotation-stress';
 type HudFailureRecord = { case: string; provenance: HudProvenance | 'aggregate'; stage: string; message: string; stack?: string };
 type HudCaseCoverage = { case: string; attempted: boolean; evidenceCompleted: boolean; imageSaved: boolean; jsonSaved: boolean; exceptionMessage?: string; notRunReason?: string };
@@ -679,7 +679,7 @@ async function repaintFixedFixture(page: Page) {
 
 async function inspectAnnouncementReachability(page: Page, priority: number, originalAnnouncementHandle: any) {
   return page.evaluate(({ priorityValue, originalAnnouncement }) => {
-    const node = document.querySelector<HTMLElement>('#announcement');
+    let node = document.querySelector<HTMLElement>('#announcement');
     const details = document.querySelector<HTMLElement>('#campaign-hud-details');
     if (!node) return { ok: false, priority: priorityValue, reason: 'missing original #announcement node', glyphs: [], clipChain: [] };
     const originalNode = originalAnnouncement instanceof HTMLElement ? originalAnnouncement : null;
@@ -690,6 +690,22 @@ async function inspectAnnouncementReachability(page: Page, priority: number, ori
     const compactMode = app?.dataset.campaignHud === 'compact';
     const oldScrollTop = details?.scrollTop ?? 0;
     const issues: string[] = [];
+    const state = (window as any).__fantasiaReadState(false)?.campaign;
+    const projectedProtection = node.dataset.lifecycle === 'protection';
+    if (projectedProtection) {
+      if (!node.hidden || node.getAttribute('aria-hidden') !== 'true' || !node.inert)
+        issues.push('duplicate protection announcement remains exposed');
+      const canonical = document.querySelector<HTMLElement>('#campaign-threat');
+      const expected = `復活保護 あと${(state?.player?.protectionTicks / 60).toFixed(1)}秒 · 自機攻撃不可`;
+      if (state?.status !== 'running' || !(state.player.protectionTicks > 0 && state.player.protectionTicks <= 120)
+        || state.player.generation <= 1 || state.selfLosses <= 0) issues.push('invalid authoritative protection lifecycle');
+      if (!canonical || document.querySelectorAll('#campaign-threat').length !== 1)
+        return { ok: false, issues: [...issues, 'missing or duplicated canonical protection status'], glyphs: [], clipChain: [] };
+      if (canonical.textContent !== expected || canonical.getAttribute('role') !== 'status' || canonical.getAttribute('aria-live') !== 'polite')
+        issues.push('canonical protection value or live semantics differ from authoritative state');
+      if (details?.contains(canonical)) issues.push('canonical protection moved into scrolling details');
+      node = canonical; // The unchanged character-by-character check below now measures the sole visible projection.
+    }
     const innerBox = (element: HTMLElement) => {
       const rect = element.getBoundingClientRect(), left = rect.left + element.clientLeft, top = rect.top + element.clientTop;
       return { left, top, right: left + element.clientWidth, bottom: top + element.clientHeight };
@@ -714,7 +730,7 @@ async function inspectAnnouncementReachability(page: Page, priority: number, ori
     if (nodeVisibility === 'hidden' || nodeVisibility === 'collapse') issues.push(`announcement computed visibility is ${nodeVisibility}`);
     if (clipChain.some(item => item.clipPath !== 'none' || item.clip !== 'auto' || item.contain.split(/\s+/).includes('paint')))
       issues.push('announcement has clip-path, legacy clip, or paint containment that this geometry check cannot resolve');
-    const compactPriorityZero = priorityValue < 1 && compactMode;
+    const compactPriorityZero = priorityValue < 1 && compactMode && !projectedProtection;
     if (compactPriorityZero) {
       if (!details || !details.contains(node)) issues.push('compact priority-0 live announcement is outside the permitted secondary detail viewport');
       if (details && !['auto', 'scroll'].includes(getComputedStyle(details).overflowY)) issues.push('compact priority-0 detail viewport is not vertically scrollable');
@@ -801,7 +817,7 @@ async function inspectAnnouncementReachability(page: Page, priority: number, ori
     if (!glyphs.length) issues.push('announcement contains no measurable characters');
     const visibleBox = visibleRectFor((() => { const range = document.createRange(); range.selectNodeContents(node); return range; })());
     return { ok: issues.length === 0 && allGlyphsVisible, priority: priorityValue, liveCount,
-      route: compactPriorityZero ? 'compact secondary details with per-character scroll reachability' : 'direct visible announcement',
+      route: projectedProtection ? 'single fixed protection projection; duplicate announcement hidden' : compactPriorityZero ? 'compact secondary details with per-character scroll reachability' : 'direct visible announcement',
       campaignHudMode: compactMode ? 'compact' : 'full', sameOriginalNode, originalNodeConnected,
       text: node.textContent, elementRect: (() => { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })(),
       visibleBox, viewport: { width: innerWidth, height: innerHeight },
@@ -887,7 +903,7 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
         } else if (state?.player?.protectionTicks > 0) {
           if (state.player.generation <= 1 || state.selfLosses <= 0 || state.player.protectionTicks > 120)
             nodeIssues.push('invalid authoritative protection state');
-          expectedThreat = `復活保護 · 発砲できません · ${(state.player.protectionTicks / 60).toFixed(1)}秒`;
+          expectedThreat = `復活保護 あと${(state.player.protectionTicks / 60).toFixed(1)}秒 · 自機攻撃不可`;
         } else {
           const threats = (state?.actors ?? []).filter((a: any) => a.hp > 0 && a.team === 'enemy' && a.phase === 'telegraph'
             && a.targetRef?.id === state?.player?.id && a.targetRef?.generation === state?.player?.generation
@@ -1043,7 +1059,8 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
 async function inspectDirectSafetyHud(page: Page, alert: HudCase['alert']) {
   return page.evaluate(alertValue => {
     const details = document.querySelector<HTMLElement>('#campaign-hud-details');
-    const warning = document.querySelector<HTMLElement>('#warning');
+    const protection = alertValue === 'protected' || alertValue === 'reachable-protection';
+    const warning = document.querySelector<HTMLElement>(protection ? '#campaign-threat' : '#warning');
     const canvas = document.querySelector<HTMLCanvasElement>('#markers');
     const fullyVisibleThroughAncestors = (element: HTMLElement, rect: DOMRect) => {
       let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom;
@@ -1070,7 +1087,7 @@ async function inspectDirectSafetyHud(page: Page, alert: HudCase['alert']) {
       return { visible: clips.length === 0 && left <= rect.left + 0.5 && top <= rect.top + 0.5
         && right >= rect.right - 0.5 && bottom >= rect.bottom - 0.5, clips };
     };
-    const activeWarning = ['outside', 'protected', 'low'].includes(alertValue);
+    const activeWarning = ['outside', 'protected', 'reachable-protection', 'low'].includes(alertValue);
     const warningStyle = warning ? getComputedStyle(warning) : null, warningRect = warning?.getBoundingClientRect();
     const warningClip = warning && warningRect ? fullyVisibleThroughAncestors(warning, warningRect) : { visible: false, clips: ['missing warning rect'] };
     const warningVisible = Boolean(warning && warningStyle && warningRect && !warning.hidden && !warning.closest('[hidden]')
@@ -1083,7 +1100,7 @@ async function inspectDirectSafetyHud(page: Page, alert: HudCase['alert']) {
       && canvasRect.width >= innerWidth - 1 && canvasRect.height >= innerHeight - 1 && !details?.contains(canvas)
       && canvasClip.visible);
     const expectedWarningText = alertValue === 'outside' ? '作戦圏へ戻って'
-      : alertValue === 'protected' ? '復活保護' : alertValue === 'low' ? '低空注意' : null;
+      : protection ? '復活保護' : alertValue === 'low' ? '低空注意' : null;
     const warningIssue = activeWarning
       ? !warning ? 'missing #warning' : !warningVisible ? '#warning is not directly visible on-screen outside secondary details'
         : expectedWarningText && !warning.textContent?.includes(expectedWarningText) ? `#warning text is missing ${expectedWarningText}` : null
@@ -1763,7 +1780,8 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
     expect(fixture.mode, `fixed Normal fixture ${JSON.stringify(normalModeState)}`).toBe('normal');
     expect(normalModeState.appMode).toBe('normal'); expect(normalModeState.stateMode).toBe('normal'); expect(normalModeState.controlsHidden).toBe(false);
     await expect(page.locator('#fire')).toBeVisible(); await expect(page.locator('#throttle')).toBeVisible();
-    await expect(page.locator('#warning')).toContainText('復活保護');
+    await expect(page.locator('#campaign-threat')).toContainText('復活保護');
+    await expect(page.locator('#warning')).toBeHidden();
     await expect(page.locator('#reload-status')).toBeHidden();
     await expect(page.locator('#reload-status')).toHaveText('');
     await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
@@ -1982,7 +2000,13 @@ test('Native held input is released across real loss and controls return after p
   const ids = ['fire', 'loop', 'bomb', 'throttle'];
   await page.evaluate(ids => {
     (window as any).__controlOriginals = ids.map(id => document.getElementById(id));
-    (window as any).__controlSettings = ids.map(id => { const n = document.getElementById(id)!; return { hidden: n.hidden, width: getComputedStyle(n).width, height: getComputedStyle(n).height }; });
+    (window as any).__controlSettings = ids.map(id => {
+      const n = document.getElementById(id)!, style = getComputedStyle(n), rect = n.getBoundingClientRect();
+      return { hidden: n.hidden, width: rect.width, height: rect.height, text: n.textContent, className: n.className,
+        ariaLabel: n.getAttribute('aria-label'), ariaDisabled: n.getAttribute('aria-disabled'), ready: n.dataset.ready,
+        settings: Object.fromEntries(['--control-x', '--control-y', '--control-size', '--control-height', '--control-opacity'].map(key => [key, n.style.getPropertyValue(key)])),
+        minWidth: style.minWidth, minHeight: style.minHeight };
+    });
   }, ids);
   const fire = page.locator('#fire');
   await fire.focus();
@@ -2015,13 +2039,56 @@ test('Native held input is released across real loss and controls return after p
   expect(released.sample.fire || released.sample.loop || released.sample.bomb).toBe(false);
   expect(released.sample.throttle).toBe(0);
   const restored = await page.evaluate(ids => ids.map((id, index) => {
-    const n = document.getElementById(id)!; const original = (window as any).__controlSettings[index];
-    return { identity: n === (window as any).__controlOriginals[index], hidden: n.hidden === original.hidden,
-      width: getComputedStyle(n).width === original.width, height: getComputedStyle(n).height === original.height,
-      visible: getComputedStyle(n).display !== 'none', captures: n.hasPointerCapture(1) };
+    const n = document.getElementById(id)!, original = (window as any).__controlSettings[index], rect = n.getBoundingClientRect();
+    const style = getComputedStyle(n), settings = Object.fromEntries(Object.keys(original.settings).map(key => [key, n.style.getPropertyValue(key)]));
+    const after = { width: rect.width, height: rect.height, text: n.textContent, className: n.className,
+      ariaLabel: n.getAttribute('aria-label'), ariaDisabled: n.getAttribute('aria-disabled'), ready: n.dataset.ready,
+      settings, minWidth: style.minWidth, minHeight: style.minHeight };
+    const glyphIssues: string[] = []; let glyphCount = 0;
+    const walker = document.createTreeWalker(n, NodeFilter.SHOW_TEXT); let text: Node | null;
+    while ((text = walker.nextNode())) {
+      let offset = 0;
+      for (const character of Array.from(text.textContent ?? '')) {
+        const start = offset; offset += character.length; if (/\s/u.test(character)) continue;
+        glyphCount++; const range = document.createRange(); range.setStart(text, start); range.setEnd(text, offset);
+        const g = range.getBoundingClientRect();
+        if (!(g.width > 0 && g.height > 0) || g.left < rect.left - .5 || g.right > rect.right + .5 || g.top < rect.top - .5 || g.bottom > rect.bottom + .5)
+          glyphIssues.push(`${character}: outside control`);
+        for (let parent = text.parentElement; parent; parent = parent.parentElement) {
+          const s = getComputedStyle(parent), box = parent.getBoundingClientRect();
+          if (parent.hidden || s.display === 'none' || s.visibility !== 'visible' || Number(s.opacity) === 0) glyphIssues.push(`${character}: hidden ancestor`);
+          if ((s.overflowX !== 'visible' && (g.left < box.left + parent.clientLeft - .5 || g.right > box.left + parent.clientLeft + parent.clientWidth + .5))
+            || (s.overflowY !== 'visible' && (g.top < box.top + parent.clientTop - .5 || g.bottom > box.top + parent.clientTop + parent.clientHeight + .5))) glyphIssues.push(`${character}: clipped ancestor`);
+        }
+      }
+    }
+    const minimumWidth = Math.max(44, parseFloat(original.settings['--control-size']) || 0);
+    const minimumHeight = id === 'throttle' ? Math.max(44, parseFloat(original.settings['--control-height']) || 0) : minimumWidth;
+    return { id, before: original, after, identity: n === (window as any).__controlOriginals[index], hidden: n.hidden === original.hidden,
+      settingsUnchanged: JSON.stringify(settings) === JSON.stringify(original.settings),
+      sameTextDimensions: n.textContent !== original.text || (Math.abs(rect.width - original.width) < .01 && Math.abs(rect.height - original.height) < .01),
+      minimumSize: rect.width >= minimumWidth - .5 && rect.height >= minimumHeight - .5,
+      visible: style.display !== 'none', captures: n.hasPointerCapture(1), glyphCount, glyphIssues };
   }), ids);
-  expect(restored.every(r => r.identity && r.hidden && r.width && r.height && r.visible && !r.captures)).toBe(true);
-  await checkGeometry(page, '#hud');
-  await capture(page, info, 'native-input-controls-restored.png');
+  // Preserve the actual differing value even if any subsequent assertion fails.
   await info.attach('native-input-lifecycle.json', { body: Buffer.from(JSON.stringify({ held, loss, paused, revived, released, restored }, null, 2)), contentType: 'application/json' });
+  await capture(page, info, 'native-input-controls-restored.png');
+  for (const r of restored) {
+    expect(r.identity && r.hidden && r.settingsUnchanged && r.sameTextDimensions && r.minimumSize && r.visible && !r.captures,
+      `${r.id} restoration: ${JSON.stringify(r)}`).toBe(true);
+    expect(r.glyphCount).toBeGreaterThan(0); expect(r.glyphIssues).toEqual([]);
+  }
+  await checkGeometry(page, '#hud');
+
+});
+
+
+test('Reachable Normal revival protection is one full visible status at 568x320 and 200%', async ({ browser }, info) => {
+  const hudCase: HudCase = { name: 'hud-normal-reachable-protection-landscape-text-200-priority-5.png',
+    width: 568, height: 320, mode: 'normal', alert: 'reachable-protection', priority: 5 };
+  const coverage: HudCaseCoverage = { case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+  const result = await runFreshHudCase(browser, info, hudCase, coverage);
+  await info.attach('reachable-protection-coverage.json', { body: Buffer.from(JSON.stringify({ coverage, ...result }, null, 2)), contentType: 'application/json' });
+  expect(coverage.evidenceCompleted).toBe(true);
+  expect(result.failures, 'natural flight plus production revival retains protection duration, attack lockout and independent information').toEqual([]);
 });

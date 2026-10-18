@@ -1,6 +1,7 @@
 import type { Aircraft } from './types';
 import type { CampaignState, SiteOwner } from './campaign-types';
 import { CAPTURE_MAX, countClasses } from './campaign-config';
+import { terrainHeight } from './campaign-terrain';
 
 const OWNER_LABELS: Record<SiteOwner, string> = { friendly: '味方', enemy: '敵', neutral: '中立' };
 
@@ -48,9 +49,24 @@ export function campaignSiteReadouts(state: CampaignState): CampaignSiteReadout[
   });
 }
 
+/** One current-state projection owns revival protection and attack lockout.
+ * Waiting, independent boundary danger and other announcements stay separate. */
+export function campaignProtectionReadout(state: CampaignState): string {
+  return state.status === 'running' && state.player.protectionTicks > 0
+    ? `復活保護 あと${(state.player.protectionTicks / 60).toFixed(1)}秒 · 自機攻撃不可` : '';
+}
+
+export function campaignSafetyReadout(state: CampaignState): string {
+  if (state.status !== 'running') return '';
+  const p = state.player;
+  if (Math.hypot(p.position.x, p.position.z) > 2100) return `作戦圏へ戻って · あと${Math.ceil(p.boundaryTicks / 60)}秒`;
+  return p.position.y - terrainHeight(p.position.x, p.position.z) < 65 ? '低空注意 · 機首を上げて' : '';
+}
+
 export function campaignThreatReadout(state: CampaignState): string {
   if (state.status === 'respawning') return '復活待機 · 戦役時計は停止中';
-  if (state.player.protectionTicks > 0) return `復活保護 · 発砲できません · ${(state.player.protectionTicks / 60).toFixed(1)}秒`;
+  const protection = campaignProtectionReadout(state);
+  if (protection) return protection;
   const threats = state.actors.filter(actor => actor.hp > 0 && actor.team === 'enemy' && actor.phase === 'telegraph' && actor.targetRef?.id === state.player.id)
     .sort((a, b) => (a.class === 'turret' ? 0 : a.class === 'dragon' ? 1 : 2) - (b.class === 'turret' ? 0 : b.class === 'dragon' ? 1 : 2) || (a.fireAtTick ?? Infinity) - (b.fireAtTick ?? Infinity));
   if (threats.length) {
