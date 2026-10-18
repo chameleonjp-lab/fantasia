@@ -88,7 +88,7 @@ test('same-mode sync does not toggle visibility and restoring an already-anchore
 
 // Run the real browser inspector against deterministic DOM geometry. This is
 // a contract regression, not a replacement for browser/layout acceptance.
-async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'secondary-outside' | 'clipped-fixed' | 'duplicate-fixed' | 'stale-ammo' | 'stale-reload' | 'stale-time' | 'dormant-reload' | 'false-protection' | 'stale-threat-time' | 'stale-threat-site' | 'stale-threat-generation' | 'hidden-child' = 'none') {
+async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'secondary-outside' | 'clipped-fixed' | 'duplicate-fixed' | 'stale-ammo' | 'stale-reload' | 'stale-time' | 'dormant-reload' | 'false-protection' | 'stale-threat-time' | 'stale-threat-site' | 'stale-threat-generation' | 'hidden-child' | 'collapsed-indentation' | 'preserved-whitespace' | 'unmeasurable-nbsp' | 'unmeasurable-mixed-text' = 'none') {
   const source = readFileSync(new URL('../browser-ui-only/ui-only.spec.ts', import.meta.url), 'utf8');
   const registry = source.slice(source.indexOf('const SECONDARY_HUD_READOUTS ='), source.indexOf('async function captureSecondaryHudOriginals'));
   const inspector = source.slice(source.indexOf('async function inspectSecondaryHudReachability'), source.indexOf('async function inspectDirectSafetyHud'));
@@ -128,15 +128,16 @@ async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'sec
       reloadUntilTick: change === 'dormant-reload' ? null : 348, protectionTicks: 0 } } };
   const document = { querySelector(s: string) { return s === '#campaign-hud-details' ? details : values[s]; },
     querySelectorAll(s: string) { return values[s] ? change === 'duplicate-fixed' && s === '.ammo' ? [values[s], values[s]] : [values[s]] : []; },
-    createTreeWalker(n: Element) { let used = false; return { nextNode() { if (used) return null; used = true; const child = new Element('hidden-child', n.textContent); child.parentElement = n; return { textContent: n.textContent, parentElement: change === 'hidden-child' ? child : n }; } }; },
-    createRange() { return { startContainer: null as any, setStart(container: any) { this.startContainer = container; }, setEnd() {}, getBoundingClientRect() {
+    createTreeWalker(n: Element) { let used = false, indentation = false; return { nextNode() { if (!indentation && n.id === 'timer' && ['collapsed-indentation', 'preserved-whitespace', 'unmeasurable-nbsp', 'unmeasurable-mixed-text'].includes(change)) { indentation = true; return { textContent: change === 'unmeasurable-nbsp' ? '\u00a0' : change === 'unmeasurable-mixed-text' ? 'A ' : '\n            ', parentElement: n }; } if (used) return null; used = true; const child = new Element('hidden-child', n.textContent); child.parentElement = n; return { textContent: n.textContent, parentElement: change === 'hidden-child' ? child : n }; } }; },
+    createRange() { return { startContainer: null as any, startOffset: 0, endOffset: 0, setStart(container: any, offset: number) { this.startContainer = container; this.startOffset = offset; }, setEnd(_container: any, offset: number) { this.endOffset = offset; }, cloneRange() { return { ...this }; }, collapse() {}, getBoundingClientRect() {
+      if (/^[\t\n\f\r ]+$/.test(this.startContainer.textContent) || this.startContainer.textContent === '\u00a0' || this.startContainer.textContent === 'A ') return { x: 0, y: 0, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
       return change === 'clipped-fixed' ? { ...rect, left: -5, x: -5 } : { ...rect, width: 2, right: 12, height: 10, bottom: 20 };
     } }; },
   };
   const inspect = runInNewContext(transpileModule(`${registry}\n${inspector}\ninspectSecondaryHudReachability;`, {
     compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.None },
   }).outputText, { window: { __fantasiaReadState: () => raw }, document, HTMLElement: Element, NodeFilter: { SHOW_TEXT: 4 }, innerWidth: 568, innerHeight: 320,
-    getComputedStyle(n: Element) { return { display: 'block', visibility: 'visible', opacity: n.id === 'hidden-child' ? '0' : '1', contentVisibility: 'visible',
+    getComputedStyle(n: Element) { return { whiteSpace: change === 'preserved-whitespace' ? 'pre' : 'normal', display: 'block', visibility: 'visible', opacity: n.id === 'hidden-child' ? '0' : '1', contentVisibility: 'visible',
       clipPath: 'none', clip: 'auto', contain: '', overflowX: 'visible', overflowY: n === details ? 'auto' : 'visible' }; } });
   return inspect(null, { evaluate(fn: any, input: any) { return fn(nodes, input); } }, Object.fromEntries(Object.entries(nodes).map(([k, n]) => [k, n.textContent])));
 }
@@ -171,3 +172,15 @@ test('HUD pixels still reject a missing active reload arc', async () => {
 test('HUD pixels reject a missing projected point for an active authoritative threat', async () => {
   await assert.rejects(inspectReloadPixels(false, 0, true, null));
 });
+
+test('HUD contract accepts collapsed HTML indentation without dropping meaningful glyphs', async () => {
+  const result = await inspectReadoutContract('collapsed-indentation'); assert.equal(result.ok, true, JSON.stringify(result.issues));
+});
+test('HUD contract still rejects unmeasurable preserved whitespace', async () => {
+  assert.equal((await inspectReadoutContract('preserved-whitespace')).ok, false);
+});
+
+for (const variant of ['unmeasurable-nbsp', 'unmeasurable-mixed-text'] as const)
+  test(`HUD contract does not discard ${variant} as HTML indentation`, async () => {
+    assert.equal((await inspectReadoutContract(variant)).ok, false);
+  });

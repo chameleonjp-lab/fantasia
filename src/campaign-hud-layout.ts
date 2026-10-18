@@ -120,6 +120,9 @@ export interface HudLayout {
   canvasLabels?: Array<{ id: string; status: Placement['status']; rect: HudRect }>;
   compact?: boolean;
   searchChecks?: number;
+  searchLimit?: number;
+  primarySearchChecks?: number;
+  recoverySearchChecks?: number;
   fixedConflicts?: Array<{ first: string; second: string }>;
 }
 function fullSizeFallback(rect: HudRect, bounds: HudRect): HudRect {
@@ -176,6 +179,74 @@ export function layoutCampaignHud(measurement: HudMeasurement, sight: HudRect): 
 /** Pack the full measured readouts, preserving controls and the actual sight.
  * The bounded search can report blocked; it never shrinks or drops a panel. */
 const isFixedControl = (id: string) => ['game-sound', 'pause', 'bomb', 'loop', 'fire', 'throttle'].includes(id);
+/** Two deterministic MaxRects passes on measured dimensions. Expanding every
+ * rectangle by half the clearance represents fixed and mutual gaps uniformly.
+ * Recovery has its own explicit 6000-check cap; exhaustion is not a fit. */
+function packFreeSpace(bounds: HudRect, obstacles: readonly HudRect[], items: readonly HudObstacle[], work: { remaining: number }): Map<string, HudRect> | null {
+  const floor = Math.max(0, work.remaining - 6_000);
+  const spend = () => work.remaining > floor && (--work.remaining, true);
+  const expand = (r: HudRect): HudRect => ({ x: r.x - 2, y: r.y - 2, width: r.width + 4, height: r.height + 4 });
+  const subtract = (free: HudRect[], used: HudRect): HudRect[] | null => {
+    const pieces: HudRect[] = [];
+    for (const f of free) {
+      if (!spend()) return null;
+      if (!intersects(f, used)) { pieces.push(f); continue; }
+      if (used.x > f.x) pieces.push({ ...f, width: used.x - f.x });
+      if (used.x + used.width < f.x + f.width) pieces.push({ ...f, x: used.x + used.width, width: f.x + f.width - used.x - used.width });
+      if (used.y > f.y) pieces.push({ ...f, height: used.y - f.y });
+      if (used.y + used.height < f.y + f.height) pieces.push({ ...f, y: used.y + used.height, height: f.y + f.height - used.y - used.height });
+    }
+    if (pieces.length > 256) return null;
+    const kept: HudRect[] = [];
+    for (let i = 0; i < pieces.length; i++) {
+      const p = pieces[i]; let contained = false;
+      for (let j = 0; j < pieces.length; j++) {
+        if (i === j) continue;
+        if (!spend()) return null;
+        const q = pieces[j];
+        if (q.x <= p.x && q.y <= p.y && q.x + q.width >= p.x + p.width && q.y + q.height >= p.y + p.height
+          && (q.x !== p.x || q.y !== p.y || q.width !== p.width || q.height !== p.height || j < i)) { contained = true; break; }
+      }
+      if (!contained && valid(p)) kept.push(p);
+    }
+    return kept;
+  };
+  let reserved = [expand(bounds)];
+  for (const obstacle of obstacles) { const next = subtract(reserved, expand(obstacle)); if (!next) return null; reserved = next; }
+  for (const pass of [0, 1]) {
+    const order = [...items].sort((a, b) => (pass === 0 ? b.width * b.height - a.width * a.height : b.width + b.height - a.width - a.height) || a.id.localeCompare(b.id));
+    let free = [...reserved]; const placed = new Map<string, HudRect>();
+    for (const item of order) {
+      const width = item.width + 4, height = item.height + 4;
+      let best: { x: number; y: number; short: number; long: number } | null = null;
+      for (const f of free) {
+        if (!spend()) return null;
+        if (width > f.width || height > f.height) continue;
+        const candidate = { x: f.x, y: pass === 0 ? f.y + f.height - height : f.y,
+          short: Math.round(Math.min(f.width - width, f.height - height) * 1e7) / 1e7,
+          long: Math.round(Math.max(f.width - width, f.height - height) * 1e7) / 1e7 };
+        if (!best || candidate.short < best.short || candidate.short === best.short && (candidate.long < best.long
+          || candidate.long === best.long && (candidate.y < best.y || candidate.y === best.y && candidate.x < best.x))) best = candidate;
+      }
+      if (!best) break;
+      const rect = { x: best.x + 2, y: best.y + 2, width: item.width, height: item.height };
+      // Final exact predicates match the product; never certify rounded gaps.
+      if (rect.x < bounds.x || rect.y < bounds.y || rect.x + rect.width > bounds.x + bounds.width || rect.y + rect.height > bounds.y + bounds.height) break;
+      let safe = true;
+      for (const other of [...obstacles, ...placed.values()]) {
+        if (!spend()) return null;
+        if (intersects(rect, other, 4)) { safe = false; break; }
+      }
+      if (!safe) break;
+      placed.set(item.id, rect);
+      if (placed.size === items.length) return placed;
+      const next = subtract(free, expand(rect)); if (!next) return null; free = next;
+    }
+    if (placed.size === items.length) return placed;
+  }
+  return null;
+}
+
 function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudLayout {
   const { canvas, bounds } = measurement, radius = canvas.width < 360 ? 42 : 49;
   const radar = { id: 'radar', x: canvas.width - radius * 2 - 19,
@@ -249,11 +320,24 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
     }
     return false;
   };
+  // Run the original search and its original 120k budget unchanged. Only a
+  // failed compact search may use the separately measured 6k recovery budget.
+  // Thus every successful original placement (including preferences used by
+  // subsequent canvas labels) returns without entering the new algorithm.
   let found = search(0);
   if (!found && !invalid && portraitRespawn) {
     searchFloor = 0; placed.clear(); items.splice(0, items.length, ...originalItems);
     found = search(0);
   }
+  const recovery = { remaining: 6_000 };
+  const useRecovery = !found && !invalid && !fixedConflicts.length && !measurement.canvasLabels?.length && measurement.movableControls && canvas.width <= 600;
+  if (useRecovery) {
+    placed.clear();
+    const packed = packFreeSpace(bounds, obstacles, items, recovery);
+    if (packed) { for (const [id, rect] of packed) placed.set(id, rect); found = true; }
+  }
+  const primarySearchChecks = 120_000 - Math.max(0, work.remaining);
+  const recoverySearchChecks = 6_000 - recovery.remaining;
   const status: Placement['status'] = invalid ? 'invalid' : found && !fixedConflicts.length ? 'placed' : 'blocked';
   const rectFor = (item: HudObstacle) => found ? placed.get(item.id)! : fullSizeFallback(item, bounds);
   const radarRect = rectFor(radar);
@@ -262,7 +346,8 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
   const canvasLabels = measurement.canvasLabels?.map(item => ({ id: item.id, status, rect: rectFor(item) }));
   const finalObstacles = controls ? [...obstacles, ...controls.map(item => ({ ...item.rect, id: item.id }))] : obstacles;
   const threat = panels.find(panel => panel.id === 'campaign-threat');
-  return { status, canvas, bounds, obstacles: finalObstacles, panels, controls, canvasLabels, compact: Boolean(controls), fixedConflicts, searchChecks: 120_000 - Math.max(0, work.remaining),
+  return { status, canvas, bounds, obstacles: finalObstacles, panels, controls, canvasLabels, compact: Boolean(controls), fixedConflicts, searchChecks: primarySearchChecks + recoverySearchChecks,
+    searchLimit: useRecovery ? 126_000 : 120_000, primarySearchChecks, recoverySearchChecks,
     radar: { status, rect: radarRect, radius, center: { x: radarRect.x + radius + 1, y: radarRect.y + radius + 1 } },
     threat: threat ? { status, rect: threat.rect } : null };
 }

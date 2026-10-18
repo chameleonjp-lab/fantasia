@@ -911,6 +911,15 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
         const records: Array<{ index: number; character: string; whitespace: boolean; range: Range }> = [];
         while ((textNode = walker.nextNode())) {
           const value = textNode.textContent ?? '';
+          // HTML indentation is not a painted character when CSS collapses the
+          // entire whitespace-only text node. Keep source-text equality above;
+          // never waive mixed text, NBSP, preserved whitespace or painted spaces.
+          if (/^[\t\n\f\r ]+$/u.test(value) && textNode.parentElement
+            && ['normal', 'nowrap'].includes(getComputedStyle(textNode.parentElement).whiteSpace)) {
+            const whole = document.createRange(); whole.setStart(textNode, 0); whole.setEnd(textNode, value.length);
+            const box = whole.getBoundingClientRect();
+            if (box.width === 0 && box.height === 0) continue;
+          }
           let offset = 0;
           for (const character of Array.from(value)) {
             const range = document.createRange(); range.setStart(textNode, offset); range.setEnd(textNode, offset + character.length);
@@ -1272,11 +1281,24 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
   recordHudAssertion(failures, provenance, name, 'missing-aim-reload-reservation-rejection', () => expect(missingRingAreaEvidence.status).toBe('invalid'));
   recordHudAssertion(failures, provenance, name, 'duplicate-aim-reload-reservation-rejection', () => expect(duplicateRingAreaEvidence.status).toBe('invalid'));
   recordHudAssertion(failures, provenance, name, 'malformed-aim-reload-reservation-rejection', () => expect(malformedRingAreaEvidence.status).toBe('invalid'));
+  const searchLimit = layout?.searchLimit ?? 120000;
+  recordHudAssertion(failures, provenance, name, 'independent-search-budget-contract', () => {
+    expect(Number.isInteger(layout?.primarySearchChecks)).toBe(true);
+    expect(Number.isInteger(layout?.recoverySearchChecks)).toBe(true);
+    expect(layout.primarySearchChecks).toBeGreaterThanOrEqual(0);
+    expect(layout.primarySearchChecks).toBeLessThanOrEqual(120000);
+    expect(layout.recoverySearchChecks).toBeGreaterThanOrEqual(0);
+    expect(layout.recoverySearchChecks).toBeLessThanOrEqual(6000);
+    expect(layout.searchChecks).toBe(layout.primarySearchChecks + layout.recoverySearchChecks);
+    expect(layout.searchChecks).toBeLessThanOrEqual(126000);
+    expect([120000, 126000]).toContain(searchLimit);
+  });
   const blockedReasons = layout?.status === 'blocked'
     ? [
       ...(layout.fixedConflicts?.length ? [{ kind: 'fixed-conflicts', pairs: layout.fixedConflicts }] : []),
-      ...(layout.searchChecks >= 120000 ? [{ kind: 'bounded-search-exhausted', checks: layout.searchChecks, limit: 120000 }] : []),
-      ...(!layout.fixedConflicts?.length && layout.searchChecks < 120000 ? [{ kind: 'no-complete-full-size-packing', searchChecks: layout.searchChecks }] : []),
+      ...(layout.primarySearchChecks >= 120000 ? [{ kind: 'primary-search-exhausted', checks: layout.primarySearchChecks, limit: 120000, recoveryChecks: layout.recoverySearchChecks, recoveryLimit: 6000 }] : []),
+      ...(layout.searchChecks >= searchLimit ? [{ kind: 'bounded-search-exhausted', checks: layout.searchChecks, limit: searchLimit }] : []),
+      ...(!layout.fixedConflicts?.length && layout.searchChecks < searchLimit ? [{ kind: 'no-complete-full-size-packing', searchChecks: layout.searchChecks }] : []),
       ...(areaBound.status === 'measured' && areaBound.shortageGap0 ? [{ kind: 'necessary-area-shortage', gap: 0, required: areaBound.requiredArea, availableUpperBound: areaBound.availableUpperBoundGap0, deficit: areaBound.deficitGap0 }] : []),
       ...(areaBound.status === 'measured' && areaBound.shortageGap4 ? [{ kind: 'necessary-area-shortage', gap: 4, required: areaBound.requiredArea, availableUpperBound: areaBound.availableUpperBoundGap4, deficit: areaBound.deficitGap4 }] : []),
     ]
@@ -1371,13 +1393,14 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
         naiveArea: overlapFixtureRects.reduce((sum, rect) => sum + rect.width * rect.height, 0),
         unionArea: overlappingAreaFixture, deduplicatedArea: 50 },
     },
-    searchBudget: { checks: layout?.searchChecks ?? null, limit: 120000,
-      state: layout?.status === 'placed' ? 'completed' : layout?.searchChecks >= 120000 ? 'exhausted' : 'stopped-before-limit',
+    searchBudget: { checks: layout?.searchChecks ?? null, limit: searchLimit,
+      primaryChecks: layout?.primarySearchChecks, primaryLimit: 120000, recoveryChecks: layout?.recoverySearchChecks, recoveryLimit: 6000,
+      state: layout?.status === 'placed' ? 'completed' : layout?.searchChecks >= searchLimit ? 'exhausted' : 'stopped-before-limit',
       areaClassification: areaBound.status !== 'measured' ? 'invalid-area-evidence'
         : areaBound.shortageGap0 ? 'necessary-area-shortage-even-at-zero-gap'
           : areaBound.shortageGap4 ? 'necessary-area-shortage-at-product-gap-4'
             : 'area-alone-does-not-prove-impossibility',
-      searchClassification: layout?.status === 'blocked' && layout?.searchChecks >= 120000 ? 'bounded-search-exhaustion'
+      searchClassification: layout?.status === 'blocked' && layout?.searchChecks >= searchLimit ? 'bounded-search-exhaustion'
         : layout?.status === 'blocked' ? 'blocked-before-search-limit'
           : layout?.status ?? 'missing' },
     blockedReasons,
@@ -1414,7 +1437,7 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
   await runCheck('DOM and Canvas HUD geometry', () => checkHudGeometry(page));
   await runCheck('44px HUD controls', () => checkGeometry(page, '#hud'));
   return { screenshotMs, areaBound, areaClassification: evidence.searchBudget.areaClassification,
-    layoutStatus: layout?.status ?? 'missing', searchChecks: layout?.searchChecks ?? null, blockedReasons };
+    layoutStatus: layout?.status ?? 'missing', searchChecks: layout?.searchChecks ?? null, searchLimit, blockedReasons };
 }
 
 test.afterAll(() => {
@@ -1589,7 +1612,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
         'fresh-page', caseFailures, coverage);
       caseCaptureMs += inspection.screenshotMs;
       measuredArea = { status: inspection.areaBound.status, areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
-        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons };
+        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, searchLimit: inspection.searchLimit, blockedReasons: inspection.blockedReasons };
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
     } catch (error) {
       caseCaptureMs += await captureHudFailureEvidence(freshPage, info, coverage, caseFailures, 'fresh-page', hudCase.name, 'case-exception', error,
@@ -1651,7 +1674,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
       rotationAreaEvidence.push({ case: hudCase.name, status: inspection.areaBound.status,
         areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
-        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons });
+        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, searchLimit: inspection.searchLimit, blockedReasons: inspection.blockedReasons });
     } finally {
       await secondaryOriginals.originalNodes.dispose();
     }
@@ -1797,8 +1820,8 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
       gap0Shortages: cases.filter(item => item.areaBound?.shortageGap0 === true).length,
       gap4Shortages: cases.filter(item => item.areaBound?.shortageGap4 === true).length,
       gap4OnlyShortages: cases.filter(item => item.areaBound?.shortageGap4 === true && item.areaBound?.shortageGap0 !== true).length,
-      searchExhausted: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks >= 120000).length,
-      blockedBeforeSearchLimit: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks < 120000).length,
+      searchExhausted: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks >= (item.searchLimit ?? 120000)).length,
+      blockedBeforeSearchLimit: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks < (item.searchLimit ?? 120000)).length,
     },
     cases,
   });
