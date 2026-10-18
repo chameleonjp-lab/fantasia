@@ -1299,6 +1299,11 @@ p {
 }
 #campaign-hud-details .campaign-site-force,
 #campaign-hud-details .campaign-site-wave { overflow: visible; text-overflow: clip; font-size: 9px; }
+/* A moved site's pixel line-height snapshot must not compress enlarged type.
+   Measure complete lines for the heading, force and reinforcement readouts. */
+#campaign-hud-details [data-site-detail],
+#campaign-hud-details [data-site-detail] * { line-height: 1.3 !important; }
+#campaign-hud-details [data-site-detail] > b { display: block; }
 @media (orientation: landscape) and (max-height: 600px) {
   #campaign-hud-details .campaign-site-force,
   #campaign-hud-details .campaign-site-wave { font-size: 8px; }
@@ -1322,7 +1327,7 @@ p {
 #app[data-campaign-hud="compact"] #hud > .target-tally { font-size: 9px; }
 #app[data-campaign-hud="compact"] #hud > .target-tally > span,
 #app[data-campaign-hud="compact"] #hud > .target-tally > small { font-size: 9px; }
-#app[data-campaign-hud="compact"] #hud > .target-tally > b { font-size: 22px; line-height: 1; }
+#app[data-campaign-hud="compact"] #hud > .target-tally > b { font-size: 22px; line-height: 1.3 !important; }
 #campaign-mode-status { font-size: 9px; }
 
 #app[data-campaign-hud="compact"] .campaign-site-state {

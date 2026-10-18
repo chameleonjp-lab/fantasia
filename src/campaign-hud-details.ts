@@ -235,7 +235,12 @@ export class CampaignHudDetails {
     if (this.lives) { if (compact) { if (this.lives.parentElement !== this.hud) this.move(this.lives, this.hud); } else this.restore(this.lives); }
     for (const [node, key] of this.entries) {
       const critical = node.dataset.campaignCritical === 'true';
-      if (!compact) { this.restore(node); continue; }
+      // Remaining time, ammunition and active threat/reload status must stay
+      // readable without scrolling. Keep their source parents so the existing
+      // instrument measurement and responsive styles still include them.
+      if (!compact || ['campaign-limit', 'ammo', 'campaign-threat', 'reload-status'].includes(key)) {
+        this.restore(node); continue;
+      }
       if (critical) {
         node.removeAttribute('data-campaign-detail'); node.removeAttribute('tabindex');
         if (node.parentElement !== this.hud) this.move(node, this.hud);
