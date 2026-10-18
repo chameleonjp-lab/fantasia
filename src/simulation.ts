@@ -521,7 +521,8 @@ function fixedStep(state: GameState, input: FlightInput): void {
   const origin = flight.assistClimbMode === climbMode ? flight.assistClimb
     : automaticPitch && activePitch ? clamp(player.pitch / PLAYER_MAX_PITCH, -1, 1) : 0;
   flight.assistClimb = manual ? 0 : slew(origin, assist.climb - input.climb, 1.5);
-  flight.assistClimbMode = manual || (!activePitch && flight.assistClimb === 0) ? undefined : climbMode;
+  if (manual || (!activePitch && flight.assistClimb === 0)) delete flight.assistClimbMode;
+  else flight.assistClimbMode = climbMode;
   if (flight.assistTurn * input.turn < 0) flight.assistTurn = 0;
   if (flight.assistClimb * input.climb < 0) flight.assistClimb = 0;
   flight.responseMultiplier = slew(flight.responseMultiplier, assist.responseMultiplier, 2.5);

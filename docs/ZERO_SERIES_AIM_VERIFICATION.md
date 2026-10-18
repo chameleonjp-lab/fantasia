@@ -86,3 +86,9 @@ campaignの対象制限（兵士・dragonの補助強度0、turretの既存強�
 - normal/keyboard: score rules explain contribution, clear-only bonuses and rounding
 - real circular-stick mapping reaches and completes reload with six/seven tick sample jitter
 - browser reload practice engages aircraft and completes real magazines despite uneven input delivery
+
+### 同日12:43 JST：inactive controller構造の互換性
+
+初回head `1f08f977070c9cfa3bd7ee16dc084885288d595e` の[CI run 39094141179](https://github.com/chameleonjp-lab/fantasia/actions/runs/39094141179)は成功。併行検査で判明した任意modeキーの互換性も同じ承認範囲で是正し、inactive・clear・対象切替時は不要キー自体を取り除く。legacy経路は既存減衰がゼロになるまでmodeを保持する。数値制御と対象制限は変更しない。
+
+最終ローカル再検査：`npm test` 486/486合格、build成功、関連3ファイル37/37合格。optional `test:legacy` は703件中678合格・25失敗・skip0で、上記baselineの失敗名25件と完全一致。初期inactive、activeから対象喪失・manual release・clearのcontrollerキー一致回帰を追加した。再提出headのCIは別途照合し、初回headの成功を転記しない。
