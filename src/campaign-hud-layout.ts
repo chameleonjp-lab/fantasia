@@ -213,8 +213,13 @@ function packFreeSpace(bounds: HudRect, obstacles: readonly HudRect[], items: re
   };
   let reserved = [expand(bounds)];
   for (const obstacle of obstacles) { const next = subtract(reserved, expand(obstacle)); if (!next) return null; reserved = next; }
-  for (const pass of [0, 1]) {
-    const order = [...items].sort((a, b) => (pass === 0 ? b.width * b.height - a.width * a.height : b.width + b.height - a.width - a.height) || a.id.localeCompare(b.id));
+  // Short-wide bounds benefit from reserving broad readouts before tall ones.
+  // Portrait keeps the established orders; no state names or fixture positions
+  // participate. Both orientations share the same two-pass/6000-check cap.
+  const passes = bounds.width > bounds.height ? [2, 0] : [0, 1];
+  for (const pass of passes) {
+    const order = [...items].sort((a, b) => (pass === 2 ? b.width * b.width * b.height - a.width * a.width * a.height
+      : pass === 0 ? b.width * b.height - a.width * a.height : b.width + b.height - a.width - a.height) || a.id.localeCompare(b.id));
     let free = [...reserved]; const placed = new Map<string, HudRect>();
     for (const item of order) {
       const width = item.width + 4, height = item.height + 4;
@@ -222,9 +227,9 @@ function packFreeSpace(bounds: HudRect, obstacles: readonly HudRect[], items: re
       for (const f of free) {
         if (!spend()) return null;
         if (width > f.width || height > f.height) continue;
-        const candidate = { x: f.x, y: pass === 0 ? f.y + f.height - height : f.y,
-          short: Math.round(Math.min(f.width - width, f.height - height) * 1e7) / 1e7,
-          long: Math.round(Math.max(f.width - width, f.height - height) * 1e7) / 1e7 };
+        const candidate = { x: pass === 2 ? f.x + f.width - width : f.x, y: pass === 1 ? f.y : f.y + f.height - height,
+          short: Math.round((pass === 2 ? f.x + f.width : Math.min(f.width - width, f.height - height)) * 1e7) / 1e7,
+          long: Math.round((pass === 2 ? f.y + f.height - height : Math.max(f.width - width, f.height - height)) * 1e7) / 1e7 };
         if (!best || candidate.short < best.short || candidate.short === best.short && (candidate.long < best.long
           || candidate.long === best.long && (candidate.y < best.y || candidate.y === best.y && candidate.x < best.x))) best = candidate;
       }

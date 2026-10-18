@@ -8,6 +8,8 @@ import { CRITICAL_KINDS, criticalStateActive, criticalText, fixedCriticalTextIss
 import { detailAccessIssues, type DetailAccessEvidence } from '../browser-acceptance/detail-scroll-contract';
 import type { FlightInput } from '../src/types';
 import { runInNewContext } from 'node:vm';
+import { transpileModule } from 'typescript';
+import { Vector3 } from 'three';
 import { criticalRuntimeEvidence, CriticalAcquisitionDriver } from '../browser-acceptance/active-critical-driver';
 import { RealRendererDriver } from '../browser-acceptance/real-driver';
 
@@ -207,17 +209,19 @@ test('acquisition counts all four native frames, keeps single-event steps, and n
 function fixedHudFixture(alert: string) {
   const source = readFileSync(new URL('../scripts/ui-only-adapter.js', import.meta.url), 'utf8')
     .replace('import.meta.env.DEV', 'true');
-  const context: any = { window: {}, location: { pathname: '/__ui-only' }, selectedMode: 'normal',
+  const context: any = { window: { innerWidth: 320, innerHeight: 568 }, Vector3, audio: { event() {}, worldEvent() {}, finishFlight() {} }, location: { pathname: '/__ui-only' }, selectedMode: 'normal',
     terrainHeight, screen: 'home', respawnRemaining: 0, announcementUntil: 0, announcementPriority: 0,
     bombPrediction: null, bombPredictionTick: 0,
-    syncMode() {}, updateHUD() {}, announce(text: string) { context.announcementText = text; }, el() { return { textContent: '' }; },
+    syncMode() {}, updateHUD() {}, announce(text: string, _duration: number, priority: number) { context.announcementText = text; context.announcementPriority = priority; }, el() { return { textContent: '' }; },
     setScreen(value: string) { context.screen = value; },
     scene: { setUiOnlyThreat() {}, setOverlayVisible() {}, render() { return true; }, diagnostics() { return {}; } },
     resetCampaign() { context.campaign = new Campaign(context.selectedMode); context.state = context.campaign.state;
       context.flight = new CampaignFlightController(context.state); context.player = context.flight.player; },
   };
+  const main = readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  runInNewContext(transpileModule(main.slice(main.indexOf('function handleEvents('), main.indexOf('function consumeTick(')), {}).outputText, context);
   runInNewContext(source, context);
-  context.window.__fantasiaUiOnlyTest.hud('normal', alert, 4);
+  context.fixture = context.window.__fantasiaUiOnlyTest.hud('normal', alert, 4);
   return context;
 }
 
@@ -251,4 +255,22 @@ for (const alert of ['protected', 'respawn']) test(`UI fixture ${alert}: lifecyc
   const x = fixedHudFixture(alert);
   assert.equal(x.announcementText, alert === 'protected' ? '復活 · 2秒の保護中は自機も攻撃できません' : '自機喪失 · 復活すると記録時間に10秒加算');
   if (alert === 'protected') assert.equal(x.state.actors.some((a: any) => a.targetRef?.id === x.state.player.id && a.targetRef.generation !== x.state.player.generation), false);
+});
+
+test('reachable reload-loss fixture uses real flight steps and actual loss notice without synthetic world overrides', () => {
+  const x = fixedHudFixture('reachable-reload-loss');
+  assert.equal(x.fixture.fixtureKind, 'input-equations-reachable-state');
+  assert.equal(x.state.seed, 20261005);
+  assert.equal(x.state.simTick, 933); assert.equal(x.state.activeTicks, 933);
+  assert.equal(x.state.status, 'respawning'); assert.equal(x.player.reloadTicksRemaining, 142);
+  assert.equal(x.state.player.mg, 0); assert.equal(x.state.player.cannon, 0);
+  assert.equal(x.state.selfLosses, 1); assert.equal(x.state.respawnPenaltyTicks, 600);
+  assert.equal(x.announcementPriority, 5);
+  assert.equal(x.announcementText, '自機喪失 · 復活すると記録時間に10秒加算');
+  assert.equal(x.state.sites.every((site: any) => site.owner === 'enemy' && !site.contested), true);
+  const direct = sortie('normal', 320 / 568);
+  for (let tick = 0; tick < 716; tick++) direct.step({ fire: true });
+  for (let tick = 0; tick < 217; tick++) direct.step({ climb: -1 });
+  const normalize = (state: any) => JSON.parse(JSON.stringify({ ...state, runId: undefined }));
+  assert.deepEqual(normalize(x.state), normalize(direct.campaign.state));
 });

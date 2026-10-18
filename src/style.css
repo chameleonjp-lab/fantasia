@@ -1557,3 +1557,12 @@ p {
     height: 64px !important;
   }
 }
+
+/* Preserve full enlarged secondary text through the existing scroll viewport.
+   Only short Normal landscape uses a smaller window; fixed critical readouts,
+   control preferences and the sight reservation keep their measured sizes. */
+@media (orientation: landscape) and (max-width: 600px) and (max-height: 360px) {
+  #app[data-campaign-hud="compact"][data-mode="normal"] #campaign-hud-details {
+    height: 64px;
+  }
+}

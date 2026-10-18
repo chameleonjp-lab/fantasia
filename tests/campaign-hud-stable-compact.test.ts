@@ -88,9 +88,10 @@ test('same-mode sync does not toggle visibility and restoring an already-anchore
 
 // Run the real browser inspector against deterministic DOM geometry. This is
 // a contract regression, not a replacement for browser/layout acceptance.
-async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'secondary-outside' | 'clipped-fixed' | 'duplicate-fixed' | 'stale-ammo' | 'stale-reload' | 'stale-time' | 'dormant-reload' | 'false-protection' | 'stale-threat-time' | 'stale-threat-site' | 'stale-threat-generation' | 'hidden-child' | 'collapsed-indentation' | 'preserved-whitespace' | 'unmeasurable-nbsp' | 'unmeasurable-mixed-text' = 'none') {
+async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'secondary-outside' | 'clipped-fixed' | 'duplicate-fixed' | 'stale-ammo' | 'stale-reload' | 'stale-time' | 'dormant-reload' | 'false-protection' | 'stale-threat-time' | 'stale-threat-site' | 'stale-threat-generation' | 'hidden-child' | 'collapsed-indentation' | 'preserved-whitespace' | 'unmeasurable-nbsp' | 'unmeasurable-mixed-text' | 'mode-reparent' | 'missing-mode' | 'wrong-mode' | 'duplicate-mode' | 'hidden-mode' = 'none') {
   const source = readFileSync(new URL('../browser-ui-only/ui-only.spec.ts', import.meta.url), 'utf8');
   const registry = source.slice(source.indexOf('const SECONDARY_HUD_READOUTS ='), source.indexOf('async function captureSecondaryHudOriginals'));
+  const captureSource = source.slice(source.indexOf('async function captureSecondaryHudOriginals'), source.indexOf('async function setup'));
   const inspector = source.slice(source.indexOf('async function inspectSecondaryHudReachability'), source.indexOf('async function inspectDirectSafetyHud'));
   const rect = { x: 10, y: 10, left: 10, top: 10, right: 210, bottom: 110, width: 200, height: 100 };
   class Element {
@@ -99,7 +100,7 @@ async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'sec
     constructor(public id: string, public textContent: string) {}
     contains(n: Element) { for (let p: Element | null = n; p; p = p.parentElement) if (p === this) return true; return false; }
     getBoundingClientRect() { return rect; }
-    closest() { return null; }
+    closest(selector: string) { if (selector !== '#hud-mode') return null; for(let p: Element | null = this; p; p = p.parentElement) if(p.id === 'mode') return p; return null; }
     getAttribute(k: string) { return k === 'aria-label' ? '残弾数' : k === 'role' ? 'status' : k === 'aria-live' ? 'polite' : null; }
     querySelector(selector: string) { return values[selector] ?? null; }
   }
@@ -109,7 +110,7 @@ async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'sec
   const descriptors = [
     ['campaign-threat', '#campaign-threat', '砲台の魔法 · 自機を照準中 · 陣地1 · 1.2秒'], ['reload-status', '#reload-status', '再装填中 あと1.8秒'],
     ['campaign-limit', '.campaign-limit', '期限まで 19:56'], ['ammo', '.ammo', '機銃 0 · 機関砲 0'],
-    ['timer', '.time-block', '作戦経過 00:04.00'], ['score', '.score-readout', 'スコア 0'], ['wingmen', '.wingmen', '味方兵 168 · 予備 336'],
+    ['mode', '#hud-mode', 'イージー'], ['timer', '.time-block', '作戦経過 00:04.00'], ['score', '.score-readout', 'スコア 0'], ['wingmen', '.wingmen', '味方兵 168 · 予備 336'],
   ];
   for (const [key, selector, text] of descriptors) {
     const n = nodes[key] = new Element(key, text); values[selector] = n;
@@ -124,22 +125,38 @@ async function inspectReadoutContract(change: 'none' | 'fixed-in-details' | 'sec
   if (change === 'stale-threat-time') nodes['campaign-threat'].textContent = '砲台の魔法 · 自機を照準中 · 陣地1 · 9.9秒';
   if (change === 'stale-threat-site') nodes['campaign-threat'].textContent = '砲台の魔法 · 自機を照準中 · 陣地4 · 1.2秒';
   const raw = { screen: 'playing', phase: 'playing', player: { reloadTicksRemaining: change === 'dormant-reload' ? 0 : 108 },
-    campaign: { activeTicks: 240, simTick: 240, status: 'running', actors: [{ hp: 600, team: 'enemy', class: 'turret', phase: 'telegraph', laneId: 0, fireAtTick: 312, lockedAim: null, targetRef: { id: 1, generation: change === 'stale-threat-generation' ? 0 : 1 } }], player: { id: 1, generation: 1, mg: 0, cannon: 0,
+    campaign: { mode: 'easy', activeTicks: 240, simTick: 240, status: 'running', actors: [{ hp: 600, team: 'enemy', class: 'turret', phase: 'telegraph', laneId: 0, fireAtTick: 312, lockedAim: null, targetRef: { id: 1, generation: change === 'stale-threat-generation' ? 0 : 1 } }], player: { id: 1, generation: 1, mg: 0, cannon: 0,
       reloadUntilTick: change === 'dormant-reload' ? null : 348, protectionTicks: 0 } } };
+  if (change === 'mode-reparent') { nodes.mode.parentElement = nodes.timer; nodes.timer.textContent += nodes.mode.textContent; }
+  if (change === 'wrong-mode') nodes.mode.textContent = 'ノーマル';
+  if (change === 'hidden-mode') nodes.mode.hidden = true;
+  if (change === 'missing-mode') delete values['#hud-mode'];
   const document = { querySelector(s: string) { return s === '#campaign-hud-details' ? details : values[s]; },
-    querySelectorAll(s: string) { return values[s] ? change === 'duplicate-fixed' && s === '.ammo' ? [values[s], values[s]] : [values[s]] : []; },
-    createTreeWalker(n: Element) { let used = false, indentation = false; return { nextNode() { if (!indentation && n.id === 'timer' && ['collapsed-indentation', 'preserved-whitespace', 'unmeasurable-nbsp', 'unmeasurable-mixed-text'].includes(change)) { indentation = true; return { textContent: change === 'unmeasurable-nbsp' ? '\u00a0' : change === 'unmeasurable-mixed-text' ? 'A ' : '\n            ', parentElement: n }; } if (used) return null; used = true; const child = new Element('hidden-child', n.textContent); child.parentElement = n; return { textContent: n.textContent, parentElement: change === 'hidden-child' ? child : n }; } }; },
+    querySelectorAll(s: string) { return values[s] ? (change === 'duplicate-fixed' && s === '.ammo' || change === 'duplicate-mode' && s === '#hud-mode') ? [values[s], values[s]] : [values[s]] : []; },
+    createTreeWalker(n: Element) {
+      const child = new Element('hidden-child', n.textContent); child.parentElement = n;
+      const modeInside = n === nodes.timer && nodes.mode.parentElement === n;
+      const list: any[] = [{ textContent: modeInside ? n.textContent.slice(0, -nodes.mode.textContent.length) : n.textContent, parentElement: change === 'hidden-child' ? child : n }];
+      if (modeInside) list.push({ textContent: nodes.mode.textContent, parentElement: nodes.mode });
+      if (n.id === 'timer' && ['collapsed-indentation', 'preserved-whitespace', 'unmeasurable-nbsp', 'unmeasurable-mixed-text'].includes(change))
+        list.unshift({ textContent: change === 'unmeasurable-nbsp' ? '\u00a0' : change === 'unmeasurable-mixed-text' ? 'A ' : '\n            ', parentElement: n });
+      return { nextNode() { return list.shift() ?? null; } };
+    },
     createRange() { return { startContainer: null as any, startOffset: 0, endOffset: 0, setStart(container: any, offset: number) { this.startContainer = container; this.startOffset = offset; }, setEnd(_container: any, offset: number) { this.endOffset = offset; }, cloneRange() { return { ...this }; }, collapse() {}, getBoundingClientRect() {
       if (/^[\t\n\f\r ]+$/.test(this.startContainer.textContent) || this.startContainer.textContent === '\u00a0' || this.startContainer.textContent === 'A ') return { x: 0, y: 0, left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
       return change === 'clipped-fixed' ? { ...rect, left: -5, x: -5 } : { ...rect, width: 2, right: 12, height: 10, bottom: 20 };
     } }; },
   };
-  const inspect = runInNewContext(transpileModule(`${registry}\n${inspector}\ninspectSecondaryHudReachability;`, {
+  const inspect = runInNewContext(transpileModule(`${registry}\n${captureSource}\n${inspector}\n({ inspect: inspectSecondaryHudReachability, capture: captureSecondaryHudOriginals });`, {
     compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.None },
   }).outputText, { window: { __fantasiaReadState: () => raw }, document, HTMLElement: Element, NodeFilter: { SHOW_TEXT: 4 }, innerWidth: 568, innerHeight: 320,
     getComputedStyle(n: Element) { return { whiteSpace: change === 'preserved-whitespace' ? 'pre' : 'normal', display: 'block', visibility: 'visible', opacity: n.id === 'hidden-child' ? '0' : '1', contentVisibility: 'visible',
       clipPath: 'none', clip: 'auto', contain: '', overflowX: 'visible', overflowY: n === details ? 'auto' : 'visible' }; } });
-  return inspect(null, { evaluate(fn: any, input: any) { return fn(nodes, input); } }, Object.fromEntries(Object.entries(nodes).map(([k, n]) => [k, n.textContent])));
+  const captured = await inspect.capture({ evaluateHandle(fn: any, input: any) { const saved = fn(input); return { evaluate(cb: any, value: any) { return cb(saved, value); } }; }, evaluate(fn: any, input: any) { return fn(input); } });
+  if (change === 'mode-reparent') {
+    nodes.timer.textContent = nodes.timer.textContent.slice(0, -nodes.mode.textContent.length); nodes.mode.parentElement = null;
+  }
+  return inspect.inspect(null, captured.originalNodes, captured.originalText);
 }
 test('HUD contract accepts original fixed critical nodes and genuinely secondary scrolling nodes', async () => {
   const result = await inspectReadoutContract(); assert.equal(result.ok, true, JSON.stringify(result.issues));
@@ -182,5 +199,13 @@ test('HUD contract still rejects unmeasurable preserved whitespace', async () =>
 
 for (const variant of ['unmeasurable-nbsp', 'unmeasurable-mixed-text'] as const)
   test(`HUD contract does not discard ${variant} as HTML indentation`, async () => {
+    assert.equal((await inspectReadoutContract(variant)).ok, false);
+  });
+
+test('HUD contract retains an original mode moved out of the timer during compact reflow', async () => {
+  const result = await inspectReadoutContract('mode-reparent'); assert.equal(result.ok, true, JSON.stringify(result.issues));
+});
+for (const variant of ['missing-mode', 'wrong-mode', 'duplicate-mode', 'hidden-mode'] as const)
+  test(`HUD contract rejects ${variant} independently of timer text`, async () => {
     assert.equal((await inspectReadoutContract(variant)).ok, false);
   });

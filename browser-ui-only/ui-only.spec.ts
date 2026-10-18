@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 
 type Timings = { name: string; setupMs: number; tourMs: number; captureMs: number };
-type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn'; priority: 0 | 4 };
+type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss'; priority: 0 | 4 | 5 };
 type HudProvenance = 'fresh-page' | 'rotation-stress';
 type HudFailureRecord = { case: string; provenance: HudProvenance | 'aggregate'; stage: string; message: string; stack?: string };
 type HudCaseCoverage = { case: string; attempted: boolean; evidenceCompleted: boolean; imageSaved: boolean; jsonSaved: boolean; exceptionMessage?: string; notRunReason?: string };
@@ -36,6 +36,7 @@ const SECONDARY_HUD_READOUTS = [
   { key: 'wingmen', selector: '.wingmen', detailKey: 'wingmen', location: 'detail' },
 ] as const;
 const FIXED_HUD_READOUTS = [
+  { key: 'mode', selector: '#hud-mode', detailKey: null, location: 'fixed' },
   { key: 'campaign-threat', selector: '#campaign-threat', detailKey: null, location: 'fixed' },
   { key: 'reload-status', selector: '#reload-status', detailKey: null, location: 'fixed' },
   { key: 'campaign-limit', selector: '.campaign-limit', detailKey: null, location: 'fixed' },
@@ -46,8 +47,15 @@ const LIVE_HUD_READOUTS = [...SECONDARY_HUD_READOUTS, ...FIXED_HUD_READOUTS];
 async function captureSecondaryHudOriginals(page: Page) {
   const originalNodes = await page.evaluateHandle(readouts => Object.fromEntries(
     readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)])), LIVE_HUD_READOUTS);
-  const originalText = await page.evaluate(readouts => Object.fromEntries(
-    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)?.textContent ?? null])), LIVE_HUD_READOUTS);
+  const originalText = await page.evaluate(readouts => Object.fromEntries(readouts.map(readout => {
+    const node = document.querySelector<HTMLElement>(readout.selector);
+    if (!node || readout.key !== 'timer') return [readout.key, node?.textContent ?? null];
+    // The original mode node moves to the fixed compact HUD. It has its own
+    // identity/value/full-text contract; only its DOM subtree is outside timer.
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let part: Node | null, text = '';
+    while ((part = walker.nextNode())) if (!part.parentElement?.closest('#hud-mode')) text += part.textContent ?? '';
+    return [readout.key, text];
+  })), LIVE_HUD_READOUTS);
   return { originalNodes, originalText };
 }
 
@@ -837,7 +845,11 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
       const original = originalNodes?.[readout.key] instanceof HTMLElement ? originalNodes[readout.key] as HTMLElement : null;
       const expected = expectedText[readout.key];
       const nodeIssues: string[] = [];
-      const text = node?.textContent ?? null;
+      let text = node?.textContent ?? null;
+      if (node && readout.key === 'timer') {
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let part: Node | null; text = '';
+        while ((part = walker.nextNode())) if (!part.parentElement?.closest('#hud-mode')) text += part.textContent ?? '';
+      }
       const fixed = readout.location === 'fixed';
       const dormant = readout.key === 'reload-status' && expected === '';
       const nodeStyle = node ? getComputedStyle(node) : null;
@@ -856,6 +868,9 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
         nodeIssues.push('original live node is hidden or has no rendered box');
       if (typeof expected !== 'string' || (!dormant && !expected.trim()) || text !== expected)
         nodeIssues.push(`original live text changed or was empty: expected ${JSON.stringify(expected)}, received ${JSON.stringify(text)}`);
+      if (readout.key === 'mode' && (!['easy', 'normal'].includes(state?.mode)
+        || text !== (state.mode === 'normal' ? 'ノーマル' : 'イージー')))
+        nodeIssues.push('mode text differs from authoritative campaign mode');
       if (readout.key === 'reload-status') {
         const ticks = state?.player?.reloadUntilTick === null ? 0 : Math.max(0, state?.player?.reloadUntilTick - state?.simTick);
         const expectedReload = ticks > 0 ? `再装填中 あと${(ticks / 60).toFixed(1)}秒` : '';
@@ -910,6 +925,7 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
         let textNode: Node | null, index = 0;
         const records: Array<{ index: number; character: string; whitespace: boolean; range: Range }> = [];
         while ((textNode = walker.nextNode())) {
+          if (readout.key === 'timer' && textNode.parentElement?.closest('#hud-mode')) continue;
           const value = textNode.textContent ?? '';
           // HTML indentation is not a painted character when CSS collapses the
           // entire whitespace-only text node. Keep source-text equality above;
@@ -1365,6 +1381,8 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
     viewport: domEvidence.viewport,
     mode,
     announcementPriority: fixture.announcementPriority,
+    fixtureKind: fixture.fixtureKind,
+    reachability: fixture.reachability ?? null,
     announcement: domEvidence.announcement,
     announcementReachability,
     secondaryHudReachability,
@@ -1529,41 +1547,11 @@ test('Storage failure offers session-only settings and expires after reload', as
   await record('storage-failure-session-only', setupMs, started, captureMs);
 });
 
-test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page, browser }, info) => {
-  let setupMs = 0; let captureMs = 0; const started = performance.now();
-  const hudFailures: HudFailureRecord[] = [];
-  const freshBaselineByCase = new Map<string, any>();
-  const freshBaselineEvidence: unknown[] = [];
-  const freshAreaEvidence: Array<Record<string, any>> = [];
-  const rotationAreaEvidence: Array<Record<string, any>> = [];
-  const freshCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
-  const rotationCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
-  const freshCoverageByCase = new Map(freshCoverage.map(coverage => [coverage.case, coverage]));
-  const rotationCoverageByCase = new Map(rotationCoverage.map(coverage => [coverage.case, coverage]));
-  let rotationReady = false;
-  let originalReadState: any = null;
-  let originalLivesNoteHandle: any = null;
-  let originalAnnouncementHandle: any = null;
-
-  try {
-    setupMs += await setup(page);
-    originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
-    originalLivesNoteHandle = await page.evaluateHandle(() => [...document.querySelectorAll<HTMLElement>('#app small')]
-      .find(node => node.textContent?.trim() === '現在機を含む') ?? null);
-    originalAnnouncementHandle = await page.evaluateHandle(() => document.querySelector<HTMLElement>('#announcement'));
-    rotationReady = true;
-  } catch (error) {
-    const setupCoverage: HudCaseCoverage = { case: 'rotation-stress-setup', attempted: true, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
-    captureMs += await captureHudFailureEvidence(page, info, setupCoverage, hudFailures, 'rotation-stress', 'rotation-stress-setup', 'shared-page-setup', error);
-    for (const coverage of rotationCoverage) coverage.notRunReason = `shared rotation page setup failed: ${setupCoverage.exceptionMessage ?? String(error)}`;
-  }
-
-  const runFreshCase = async (hudCase: HudCase) => {
+async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCase, coverage: HudCaseCoverage) {
     // Every fixed state gets its own document with its viewport set before UI setup.
     // This prevents a previous mode/priority/rotation from becoming its baseline.
     const caseFailures: HudFailureRecord[] = [];
     let caseSetupMs = 0; let caseCaptureMs = 0; let freshBaseline: any = null;
-    const coverage = freshCoverageByCase.get(hudCase.name)!;
     coverage.attempted = true;
     let freshPage: Page | undefined;
     let originalSecondaryNodesHandle: any = null;
@@ -1630,14 +1618,44 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
     return { setupWorkMs: caseSetupMs, captureWorkMs: caseCaptureMs, failures: caseFailures, baseline: freshBaseline,
       area: { case: hudCase.name, ...(measuredArea ?? { status: 'not-measured', areaBound: null,
         areaClassification: 'not-run-or-interrupted-before-area-inspection', layoutStatus: 'not-measured', searchChecks: null, blockedReasons: [] }) } };
-  };
+  }
+
+test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page, browser }, info) => {
+  let setupMs = 0; let captureMs = 0; const started = performance.now();
+  const hudFailures: HudFailureRecord[] = [];
+  const freshBaselineByCase = new Map<string, any>();
+  const freshBaselineEvidence: unknown[] = [];
+  const freshAreaEvidence: Array<Record<string, any>> = [];
+  const rotationAreaEvidence: Array<Record<string, any>> = [];
+  const freshCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
+  const rotationCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
+  const freshCoverageByCase = new Map(freshCoverage.map(coverage => [coverage.case, coverage]));
+  const rotationCoverageByCase = new Map(rotationCoverage.map(coverage => [coverage.case, coverage]));
+  let rotationReady = false;
+  let originalReadState: any = null;
+  let originalLivesNoteHandle: any = null;
+  let originalAnnouncementHandle: any = null;
+
+  try {
+    setupMs += await setup(page);
+    originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
+    originalLivesNoteHandle = await page.evaluateHandle(() => [...document.querySelectorAll<HTMLElement>('#app small')]
+      .find(node => node.textContent?.trim() === '現在機を含む') ?? null);
+    originalAnnouncementHandle = await page.evaluateHandle(() => document.querySelector<HTMLElement>('#announcement'));
+    rotationReady = true;
+  } catch (error) {
+    const setupCoverage: HudCaseCoverage = { case: 'rotation-stress-setup', attempted: true, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+    captureMs += await captureHudFailureEvidence(page, info, setupCoverage, hudFailures, 'rotation-stress', 'rotation-stress-setup', 'shared-page-setup', error);
+    for (const coverage of rotationCoverage) coverage.notRunReason = `shared rotation page setup failed: ${setupCoverage.exceptionMessage ?? String(error)}`;
+  }
+
   // Two independent documents at a time reduce serial setup cost without sharing
   // state. Join every case and collect evidence in HUD_CASES order before rotation.
   const freshStarted = performance.now();
   let freshSetupWorkMs = 0; let freshCaptureWorkMs = 0;
   for (let index = 0; index < HUD_CASES.length; index += 2) {
     const cases = HUD_CASES.slice(index, index + 2);
-    const results = await Promise.allSettled(cases.map(runFreshCase));
+    const results = await Promise.allSettled(cases.map(hudCase => runFreshHudCase(browser, info, hudCase, freshCoverageByCase.get(hudCase.name)!)));
     for (const [offset, result] of results.entries()) {
       const hudCase = cases[offset];
       if (result.status === 'rejected') {
@@ -1865,6 +1883,19 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
     rotationStress: rotationCoverageSummary.counts, area: { freshPage: freshAreaSummary.counts, rotationStress: rotationAreaSummary.counts },
     failureCount: hudFailures.length, failureCases: hudFailures.map(failure => ({ provenance: failure.provenance, case: failure.case, stage: failure.stage })) })}`);
   expect(hudFailures, 'fresh-page and original rotation-stress cases completed independently; full HUD geometry, Canvas pixels, text and 44px checks pass').toEqual([]);
+});
+
+// An extra observation, not a replacement for any of the twenty synthetic
+// stress observations above. The standard seed/input equations reach this state;
+// native-input E2E and other seeds remain separate evidence requirements.
+test('Reachable Normal reload and self-loss retain every 200% HUD readout at 320x568', async ({ browser }, info) => {
+  const hudCase: HudCase = { name: 'hud-normal-reachable-reload-loss-portrait-text-200-priority-5.png',
+    width: 320, height: 568, mode: 'normal', alert: 'reachable-reload-loss', priority: 5 };
+  const coverage: HudCaseCoverage = { case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+  const result = await runFreshHudCase(browser, info, hudCase, coverage);
+  await info.attach('reachable-reload-loss-coverage.json', { body: Buffer.from(JSON.stringify({ coverage, ...result }, null, 2)), contentType: 'application/json' });
+  expect(coverage.evidenceCompleted, 'reachable-state PNG and JSON were both captured').toBe(true);
+  expect(result.failures, 'real-input-equation state obeys the unchanged full HUD geometry/text/control contract').toEqual([]);
 });
 
 test('Pause screen details, Rules and settings remain usable without advancing a run', async ({ page }, info) => {

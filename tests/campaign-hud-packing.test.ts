@@ -140,3 +140,18 @@ test('late primary search success is preserved before attempting recovery', () =
   assert.equal(packed.recoverySearchChecks, 0);
   assert.equal(packed.primarySearchChecks, 108833);
 });
+
+// Exact 6a7be91 CI dimensions, with only the proposed secondary viewport height
+// changed. This is a geometry prediction; browser scroll/glyph proof is separate.
+const protectedLandscapeDetail64 = {"measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":112,"y":160,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":199,"width":110,"height":3,"id":"health-track"},{"x":420,"y":118,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":144,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":210.453125,"height":27.03125,"id":"ammo"},{"x":376,"y":150,"width":180,"height":56,"id":"campaign-threat"},{"x":8,"y":226,"width":280,"height":58,"id":"warning"},{"x":112,"y":60,"width":114,"height":96,"id":"campaign-hud-details"},{"x":296,"y":270,"width":72,"height":24,"id":"campaign-mode-status"},{"x":372,"y":278,"width":70.625,"height":57.1875,"id":"target-tally"},{"x":8,"y":300,"width":110,"height":9.203125,"id":"bomb-hint"}],"movableControls":[{"x":296,"y":222,"width":81.296875,"height":44,"id":"game-sound"},{"x":509,"y":60,"width":44,"height":50,"id":"pause"},{"x":475,"y":172,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":330,"y":118,"width":86.203125,"height":100.390625,"id":"loop"},{"x":475,"y":239,"width":62,"height":51.1875,"id":"fire"},{"x":420,"y":172,"width":51.1875,"height":102.390625,"id":"throttle"}],"flightData":{"x":252,"y":188,"width":210.453125,"height":27.03125},"threat":{"x":376,"y":150,"width":180,"height":56}},"sight":{"x":246.79999999999995,"y":79.0089291012429,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}};
+test('short landscape width-biased recovery packs full-size protected HUD with a 64px secondary viewport', () => {
+  const input = structuredClone(protectedLandscapeDetail64);
+  input.measurement.panels.find(panel => panel.id === 'campaign-hud-details')!.height = 64;
+  const before = JSON.stringify(input);
+  const out = assertPacked(input.measurement, input.sight);
+  assert.equal(out.primarySearchChecks, 120_000);
+  assert(out.recoverySearchChecks! > 0 && out.recoverySearchChecks! <= 6_000);
+  assert(out.searchChecks! <= 126_000);
+  assert.equal(JSON.stringify(input), before);
+  assert.deepEqual(layoutCampaignHud(input.measurement, input.sight), out);
+});

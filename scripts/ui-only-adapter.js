@@ -38,6 +38,34 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     selectedMode = mode;
     resetCampaign();
     syncMode();
+    if (alert === 'reachable-reload-loss') {
+      if (mode !== 'normal') throw new Error('Reachable reload-loss requires Normal controls');
+      // Actual flight inputs and campaign reducers from a standard new run.
+      // No actor/site/ammo/position/status writes and no synthetic announcement.
+      // This is input-equation reachability, not native browser input E2E.
+      announcementUntil = 0; announcementPriority = 0; el('announcement').textContent = '';
+      scene.setUiOnlyThreat(null);
+      const input = { turn: 0, climb: 0, accelerate: false, brake: false, fire: false, bomb: false, loop: false,
+        viewAspect: window.innerWidth / window.innerHeight, steeringRevision: 0 };
+      const path = []; let steps = 0;
+      const step = patch => {
+        campaign.step(flight.step(state, { ...input, ...patch })); flight.sync(state); handleEvents(state.events); steps++;
+      };
+      while (state.status === 'running' && player.reloadTicksRemaining <= 0 && steps < 1000) step({ fire: true });
+      path.push({ action: 'fire', steps, tick: state.simTick, reloadTicksRemaining: player.reloadTicksRemaining });
+      const fireSteps = steps;
+      while (state.status === 'running' && steps < 1600) step({ climb: -1 });
+      path.push({ action: 'descend', steps: steps - fireSteps, tick: state.simTick, reloadTicksRemaining: player.reloadTicksRemaining });
+      if (state.status !== 'respawning' || player.reloadTicksRemaining <= 0 || !state.events.some(event => event.kind === 'selfLoss'))
+        throw new Error('Input-equation path did not reach simultaneous reload and self-loss');
+      respawnRemaining = 3;
+      setScreen('playing'); updateHUD(); scene.setOverlayVisible(true);
+      if (!scene.render(state, player, state.mode)) throw new Error('Reachable-state Canvas2D painter did not render');
+      const rendered = uiOnlyCanvas();
+      return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status,
+        announcementPriority, announcementText: el('announcement').textContent, fixtureKind: 'input-equations-reachable-state',
+        reachability: { seed: state.seed, nativeInput: false, stateOverrides: false, path, selfLossEvent: state.events.find(event => event.kind === 'selfLoss') } };
+    }
     state.status = 'running';
     state.activeTicks = 240;
     state.simTick = 240;
