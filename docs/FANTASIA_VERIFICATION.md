@@ -61,3 +61,15 @@ GitHub CI run [37258940524](https://github.com/chameleonjp-lab/fantasia/actions/
 計画で指定した実機スマートフォンおよびデスクトップ環境で性能と操作を検証する。全状態・全姿勢の画像を同条件で比較し、人の所見を保存する。Normal/Easy の規定時間内の勝利を正式入力で取得し、consumed-input replay、複数戦術・10seedの結果を残す。最終候補 SHA に対して不足している F 条件を再検証し、独立レビューと公開ゲートがすべて合格した場合に Pages を公開し、実URLと配信 manifest を確認する。
 
 実機条件を viewport emulation で置き換えたり、fixture のHP/所有者変更を勝利証跡に使ったりしない。公開準備済み workflow があることと、公開条件に合格したことを分けて記録する。
+
+## 2026-10-18 追補: 速度レバー統合後の報告理由の訂正
+
+本書の2026-10-05候補に対する「速度レバー・v2保存移行は未統合」という記録は、当時の状態として保持する。後続の[共通UI・速度レバー統合](COMMON_UI_THROTTLE_INTEGRATION.md)で実装は接続済みであり、現在の未実装事項として読み替えない。今回照合したmainは `dc9e1dcf8899baed3d07b1b1e5064cba4c982a2f`、treeは `79232d8fc20d5a13bfb51f319058e96fcab05262`。
+
+`scripts/clean-acceptance-report.ts`にも旧候補の説明が残り、34件の報告に「レバー・v2保存が存在しない」と出力されていた。F-03/F-04は「別のレバー4件の同一候補証拠を照合する必要があり、この34件のreportはその証拠を読み込まない」、F-07は「活動警告と実機証拠は別の受入」という説明へ訂正した。各項目の`blocked`、F-18/F-19の`not-covered`、`releaseReady:false`、実機未検証、性能未測定、および既存の証拠検証ロジックは変更していない。
+
+この報告訂正候補のローカル検証は、追加回帰が旧reportで16件合格・1件失敗、訂正後17件合格・失敗0。`npm test`は487件合格・失敗0・skip0、`npm run build`は成功した。既存のbundle-size警告は残る。実行対象のゲームsource、34件/4件/12件のbrowser試験、時間上限、描画安全条件、公開gateは不変。
+
+現行mainと同じtreeのPR head `9435af6e167a799c38264056323138c7ce46f996`は[CI run 39094757711](https://github.com/chameleonjp-lab/fantasia/actions/runs/39094757711)でunit/build、短いUI-only試験、実描画camera試験が成功した。ただし、このrunでは34件・レバー4件・活動警告12件はskipされている。本追補時点では現行sourceで各34/4/12件のcollectionを確認しただけで、未実行の結果を合格へ転記しない。既存`Verify Fantasia`の手動入力`full_browser_acceptance=true`で全suiteを起動できるが、この追補はその実行成功や公開完了を意味しない。
+
+竜火球は[暫定停止版](DRAGON_FIREBALL_SUSPENSION.md)のまま。実機iPhoneのフリーズ解決、F-01〜20の全合格、最終候補の独立公開レビューは別途必要であり、`RELEASE_GATE.json`は変更していない。

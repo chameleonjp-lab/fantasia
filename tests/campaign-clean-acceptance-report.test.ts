@@ -28,6 +28,27 @@ test('only complete exact discovery with evidence passes; release/performance re
   assert.equal(r.releaseReady,false); assert.equal(r.physicalDeviceAcceptance,'unverified'); assert.equal(r.performanceAcceptance,'not-measured');
   assert.deepEqual(r.categories.map(c=>c.category),[1,2,3,4,5,6,7,8,9,10]);
 });
+test('product blockers describe unvalidated supplemental evidence without claiming implemented lever and v2 saves are absent',async()=>{
+  for(const raw of [fixture(),undefined]) {
+    const r=await report(raw);
+    const blocks=new Map(r.productContractBlocks.map(block=>[block.gate,block]));
+    for(const gate of ['F-03','F-04']) {
+      const block=blocks.get(gate)!;
+      assert.equal(block.status,'blocked');
+      assert.match(block.reason,/same-candidate.*separate 4-case throttle suite/i);
+      assert.match(block.reason,/does not read that evidence/i);
+      assert.doesNotMatch(block.reason,/are absent|old acceleration\/brake|current v1 settings/i);
+    }
+    assert.equal(blocks.get('F-07')!.status,'blocked');
+    assert.match(blocks.get('F-07')!.reason,/active-warning.*physical-phone/i);
+    assert.doesNotMatch(blocks.get('F-07')!.reason,/missing lever/i);
+    assert.equal(blocks.get('F-18')!.status,'not-covered');
+    assert.equal(blocks.get('F-19')!.status,'not-covered');
+    assert.equal(r.releaseReady,false);
+    assert.equal(r.physicalDeviceAcceptance,'unverified');
+    assert.equal(r.performanceAcceptance,'not-measured');
+  }
+});
 test('missing, malformed, empty and discovery-only output fail closed',async()=>{
   const discovery=fixture(); for(const s of discovery.suites[0].specs) s.tests[0].results=[];
   for(const raw of [undefined,{}, {suites:[]},{suites:[null]},discovery]) assert.equal((await report(raw)).browserAcceptance,'not-passed');

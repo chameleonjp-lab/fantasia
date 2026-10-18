@@ -34,9 +34,11 @@ Live geometry independently measures current DOM panel children (including displ
 `acceptance-cases.ts` is the exact 34-case discovery contract. Run:
 
 ```
-npm run test:browser
+npm run test:browser:legacy-acceptance -- --grep-invert camera-contract
 node --import tsx scripts/report-clean-acceptance.ts
 ```
+
+The current `npm run test:browser` command runs the separate short UI-only suite. To run the 34-case suite above together with the separate four-lever and twelve-warning suites in existing GitHub CI, manually run `Verify Fantasia` with `full_browser_acceptance=true`. Keep each suite's exact-candidate results separate; this reporter reads only the 34-case evidence.
 
 The reporter requires every exact title/category/project once, expectedStatus=passed, one passed attempt, no errors/retries/skips, and one readable schema-valid evidence attachment. It checks native backend identification, error lists, matching case/category, completion evidence, balanced test-owned fences, explicit injection labels, enlarged-text and seven-site evidence, and native completed receipts. Missing/malformed/discovery-only/duplicate/expected-failure evidence fails. Raw attempts and attachments are retained. A report exit code of zero means only the declared checks and their evidence validated.
 
@@ -44,9 +46,9 @@ Both JSON and Markdown retain product blocks. `suiteImplementationComplete` mean
 
 ## Product gates remain blocked
 
-- F-03: required Normal throttle-lever integration/input/accessibility is absent. Current acceleration/brake-button coverage must not certify the newer lever contract
-- F-04: required v1-preserving v2 layout saves/migration and lever settings are absent. Current v1 settings checks do not certify v2
-- F-07: declared responsive checks still require native execution and cannot fill missing product/lever acceptance
+- F-03: acceptance additionally requires reviewed same-candidate evidence from the separate four-case throttle suite for Normal lever ownership and accessibility; this 34-case reporter does not read that evidence
+- F-04: acceptance additionally requires reviewed same-candidate evidence from the separate four-case throttle suite for v1-preserving v2 layout saves/migration and lever settings; this 34-case reporter does not read that evidence
+- F-07: declared responsive checks cover only this bounded suite; same-candidate active-warning and physical-phone evidence remain separate and are not certified here
 - F-18: named-device performance, maximum-load firing, 120-second workload, 20-minute soak and restart/leak measurements are not covered
 - F-19: actual-input full Normal/Easy victory, defeat/restart and final-candidate independent acceptance are not covered
 
