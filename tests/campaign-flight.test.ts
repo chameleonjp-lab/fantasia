@@ -160,3 +160,22 @@ test('actual CampaignScene render uses the bank-independent optical axis and the
       assert.ok(angle(correctedForward, camera.getWorldDirection(new Vector3())) <= 1e-12, 'render follows the authoritative quaternion correction');
     }
 });
+
+
+test('campaign turret acquisition starts absolute pitch from current pose', () => {
+  for (const pitch of [-.05, .05]) {
+    const campaign = new Campaign('easy'), adapter = new CampaignFlightController(campaign.state);
+    adapter.player.position.set(0, 2400, 0); adapter.player.pitch = pitch; adapter.player.yaw = 0; updateQuaternion(adapter.player);
+    const position = new Vector3(), rotation = new Quaternion();
+    getFlightCameraPose(adapter.player, 'easy', position, rotation);
+    const point = new Vector3(0, Math.sign(pitch)*.6*500*Math.tan(FLIGHT_FOV*Math.PI/360), -500).applyQuaternion(rotation).add(position);
+    const turret = campaign.state.actors.find(a => a.team === 'enemy' && a.kind === 'turret')!;
+    turret.position = {x:point.x,y:point.y,z:point.z}; turret.previous = {...turret.position};
+    campaign.state.actors = [turret];
+    adapter.step(campaign.state, neutral);
+    assert.ok((adapter.player.pitch - pitch)*pitch > 0, 'must approach the turret without a horizontal dip');
+    const before = adapter.player.pitch;
+    adapter.step(campaign.state, {...neutral, turn:.1});
+    assert.ok(Math.abs(adapter.player.pitch-before) < .0005, 'turn-only optional steering must not reuse absolute history');
+  }
+});

@@ -170,3 +170,24 @@ test('friendly aircraft crossings are harmless while enemy contact ends the play
   const enemy = state.enemies[0]; enemy.health = 100; enemy.position.copy(state.player.position); enemy.previous.copy(enemy.position);
   stepGame(state, neutral); assert.equal(state.endReason, 'collision'); assert.equal(state.player.health, 0);
 });
+
+
+import { Quaternion } from 'three';
+import { makeAircraft } from '../src/mission';
+import { FLIGHT_FOV, getFlightCameraPose } from '../src/flight-view';
+test('legacy Easy simulation starts pitch from live attitude and releases to manual rate', () => {
+  for (const pitch of [-.6, .6]) for (const turnOnly of [false, true]) {
+    const state = createGame(73, 'easy'), player = state.player;
+    player.position.set(0, 2400, 0); player.pitch=pitch; player.yaw=0; updateQuaternion(player);
+    const position=new Vector3(), rotation=new Quaternion();
+    getFlightCameraPose(player,'easy',position,rotation);
+    const point=new Vector3(0,Math.sign(pitch)*.6*500*Math.tan(FLIGHT_FOV*Math.PI/360),-500).applyQuaternion(rotation).add(position);
+    state.enemies=[makeAircraft(999,'enemy',point)]; state.allies=[]; state.ships=[];
+    startGame(state); stepGame(state,{...neutral,viewAspect:393/852});
+    assert.ok((player.pitch-pitch)*pitch>0);
+    const before=player.pitch;
+    if (!turnOnly) state.enemies[0].position.set(100000,2400,100000);
+    stepGame(state,{...neutral,turn:turnOnly?.1:0,climb:turnOnly?0:.1,viewAspect:393/852});
+    assert.ok(Math.abs(player.pitch-before)<=.82/60*.125+1e-12,'absolute pitch cannot become a manual rate');
+  }
+});
