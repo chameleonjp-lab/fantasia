@@ -54,30 +54,44 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     player.position.set(position.x, position.y, position.z);
     state.player.position = { ...position };
     state.player.bombs = 0; // Make the actual painter skip its predictive bomb guide.
-    player.reloadTicksRemaining = 108;
-    state.player.reloadUntilTick = state.simTick + player.reloadTicksRemaining;
+    // Synthetic reload stress state still obeys authoritative ammo invariants.
+    state.player.mg = 0; state.player.cannon = 0;
+    state.player.reloadUntilTick = state.simTick + 108;
     bombPrediction = null; bombPredictionTick = state.simTick; // updateHUD does not calculate flight prediction for this fixed state.
-    state.player.protectionTicks = alert === 'protected' ? 180 : 0;
+    state.player.protectionTicks = 0;
     state.player.boundaryTicks = alert === 'outside' ? 90 : 600;
     scene.setUiOnlyThreat(null);
     const turret = state.actors.find(actor => actor.team === 'enemy' && actor.class === 'turret');
-    if (turret) {
+    if (turret && alert !== 'respawn' && alert !== 'protected') {
       turret.phase = 'telegraph';
       turret.targetRef = { id: state.player.id, generation: state.player.generation };
-      turret.fireAtTick = state.simTick + 90;
+      turret.fireAtTick = state.simTick + 72;
       turret.lockedAim = null;
       scene.setUiOnlyThreat(turret);
     }
-    if (alert === 'respawn') { state.status = 'respawning'; respawnRemaining = 2.4; }
-    else state.status = 'running';
+    if (alert === 'respawn' || alert === 'protected') {
+      // Use the real loss/respawn reducers, rather than a status-only label.
+      campaign.step({ playerPosition: { x: 0, y: ground, z: 0 } });
+      if (state.status !== 'respawning') throw new Error('UI fixture failed to enter actual respawn');
+      respawnRemaining = 2.4;
+      if (alert === 'protected') { campaign.resumeRespawn(); respawnRemaining = 0; }
+    }
+    // One authoritative state feeds both the HUD and the renderer.
+    flight.sync(state, true);
     setScreen('playing');
     announcementUntil = 0; announcementPriority = 0; el('announcement').textContent = '';
-    announce('砲台の予告 · 陣地4 · 1.5秒', 5, fixturePriority);
+    // Lifecycle notices and threat notices describe this fixture's state.
+    // Priority remains an explicit synthetic stress dimension, not a claim
+    // that normal gameplay emits this exact combination or priority.
+    const announcementText = alert === 'respawn' ? '自機喪失 · 復活すると記録時間に10秒加算'
+      : alert === 'protected' ? '復活 · 2秒の保護中は自機も攻撃できません'
+      : `砲台の予告 · 陣地${turret.laneId + 1} · ${((turret.fireAtTick - state.simTick) / 60).toFixed(1)}秒`;
+    announce(announcementText, 5, fixturePriority);
     updateHUD();
     scene.setOverlayVisible(true);
     if (!scene.render(state, player, state.mode)) throw new Error('UI-only Canvas2D painter did not render');
     const rendered = uiOnlyCanvas();
-    return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status, announcementPriority: fixturePriority };
+    return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status, announcementPriority: fixturePriority, announcementText, fixtureKind: 'synthetic-hud-stress' };
   }
 
   function uiOnlyPause() {

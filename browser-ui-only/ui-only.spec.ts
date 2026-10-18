@@ -31,17 +31,23 @@ const TYPOGRAPHY_SELECTORS = [
 ];
 
 const SECONDARY_HUD_READOUTS = [
-  { key: 'campaign-threat', selector: '#campaign-threat', detailKey: 'campaign-threat' },
-  { key: 'reload-status', selector: '#reload-status', detailKey: 'reload-status' },
-  { key: 'campaign-limit', selector: '.campaign-limit', detailKey: 'campaign-limit' },
-  { key: 'ammo', selector: '.ammo', detailKey: 'ammo' },
+  { key: 'timer', selector: '.time-block', detailKey: 'timer', location: 'detail' },
+  { key: 'score', selector: '.score-readout', detailKey: 'score', location: 'detail' },
+  { key: 'wingmen', selector: '.wingmen', detailKey: 'wingmen', location: 'detail' },
 ] as const;
+const FIXED_HUD_READOUTS = [
+  { key: 'campaign-threat', selector: '#campaign-threat', detailKey: null, location: 'fixed' },
+  { key: 'reload-status', selector: '#reload-status', detailKey: null, location: 'fixed' },
+  { key: 'campaign-limit', selector: '.campaign-limit', detailKey: null, location: 'fixed' },
+  { key: 'ammo', selector: '.ammo', detailKey: null, location: 'fixed' },
+] as const;
+const LIVE_HUD_READOUTS = [...SECONDARY_HUD_READOUTS, ...FIXED_HUD_READOUTS];
 
 async function captureSecondaryHudOriginals(page: Page) {
   const originalNodes = await page.evaluateHandle(readouts => Object.fromEntries(
-    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)])), SECONDARY_HUD_READOUTS);
+    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)])), LIVE_HUD_READOUTS);
   const originalText = await page.evaluate(readouts => Object.fromEntries(
-    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)?.textContent ?? null])), SECONDARY_HUD_READOUTS);
+    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)?.textContent ?? null])), LIVE_HUD_READOUTS);
   return { originalNodes, originalText };
 }
 
@@ -802,6 +808,10 @@ async function inspectAnnouncementReachability(page: Page, priority: number, ori
 async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: any, originalText: Record<string, string | null>) {
   return originalNodesHandle.evaluate((originalNodes, input) => {
     const { readouts, expectedText } = input;
+    // Capture numeric authority independently of the DOM baseline. A stale
+    // but visually reachable string must not certify a live instrument.
+    const raw = (window as any).__fantasiaReadState(false);
+    const state = raw?.campaign;
     const details = document.querySelector<HTMLElement>('#campaign-hud-details');
     const issues: string[] = [];
     if (!details) return { ok: false, issues: ['missing #campaign-hud-details'], viewport: null, readouts: [] };
@@ -828,35 +838,74 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
       const expected = expectedText[readout.key];
       const nodeIssues: string[] = [];
       const text = node?.textContent ?? null;
+      const fixed = readout.location === 'fixed';
+      const dormant = readout.key === 'reload-status' && expected === '';
       const nodeStyle = node ? getComputedStyle(node) : null;
       const nodeRect = node?.getBoundingClientRect();
       const inDetails = Boolean(node && details.contains(node));
       const sameOriginalNode = Boolean(node && original && node === original && original.isConnected);
       if (matches.length !== 1) nodeIssues.push(`expected one ${readout.selector}, found ${matches.length}`);
       if (!node || !sameOriginalNode) nodeIssues.push('original live node was removed or replaced');
-      if (!node || !inDetails || node.dataset.campaignDetail !== readout.detailKey)
+      if (fixed) {
+        if (inDetails || node?.dataset.campaignDetail) nodeIssues.push('critical live node is inside scrolling details');
+      } else if (!node || !inDetails || node.dataset.campaignDetail !== readout.detailKey)
         nodeIssues.push(`original live node is outside detail slot ${readout.detailKey}`);
-      if (!node || node.hidden || !nodeStyle || nodeStyle.display === 'none' || nodeStyle.visibility === 'hidden'
-        || nodeStyle.opacity === '0' || !nodeRect || nodeRect.width <= 0 || nodeRect.height <= 0 || node.closest('[hidden], [aria-hidden="true"], [inert]'))
+      if (dormant && (!node?.hidden || text !== '')) nodeIssues.push('inactive reload must be empty and hidden');
+      if (!dormant && (!node || node.hidden || !nodeStyle || nodeStyle.display === 'none' || nodeStyle.visibility === 'hidden'
+        || nodeStyle.opacity === '0' || !nodeRect || nodeRect.width <= 0 || nodeRect.height <= 0 || node.closest('[hidden], [aria-hidden="true"], [inert]')))
         nodeIssues.push('original live node is hidden or has no rendered box');
-      if (typeof expected !== 'string' || !expected.trim() || text !== expected)
+      if (typeof expected !== 'string' || (!dormant && !expected.trim()) || text !== expected)
         nodeIssues.push(`original live text changed or was empty: expected ${JSON.stringify(expected)}, received ${JSON.stringify(text)}`);
-      if (node && readout.key === 'reload-status' && !text?.includes('再装填中')) nodeIssues.push('reload status text does not identify active reloading');
+      if (readout.key === 'reload-status') {
+        const ticks = state?.player?.reloadUntilTick === null ? 0 : Math.max(0, state?.player?.reloadUntilTick - state?.simTick);
+        const expectedReload = ticks > 0 ? `再装填中 あと${(ticks / 60).toFixed(1)}秒` : '';
+        if (!Number.isFinite(ticks) || raw.player.reloadTicksRemaining !== ticks || text !== expectedReload)
+          nodeIssues.push('reload text or flight state differs from authoritative remaining ticks');
+      }
       if (node && readout.key === 'campaign-threat' && (!text?.trim() || node.getAttribute('role') !== 'status'
         || node.getAttribute('aria-live') !== 'polite')) nodeIssues.push('threat readout text or live status semantics are missing');
+      if (readout.key === 'campaign-threat') {
+        let expectedThreat = '';
+        if (state?.status === 'respawning') {
+          if (state.player.hp !== 0 || state.livesRemaining <= 0) nodeIssues.push('invalid authoritative respawn state');
+          expectedThreat = '復活待機 · 戦役時計は停止中';
+        } else if (state?.player?.protectionTicks > 0) {
+          if (state.player.generation <= 1 || state.selfLosses <= 0 || state.player.protectionTicks > 120)
+            nodeIssues.push('invalid authoritative protection state');
+          expectedThreat = `復活保護 · 発砲できません · ${(state.player.protectionTicks / 60).toFixed(1)}秒`;
+        } else {
+          const threats = (state?.actors ?? []).filter((a: any) => a.hp > 0 && a.team === 'enemy' && a.phase === 'telegraph'
+            && a.targetRef?.id === state?.player?.id && a.targetRef?.generation === state?.player?.generation
+            && Number.isFinite(a.fireAtTick) && a.fireAtTick > state.simTick)
+            .sort((a: any, b: any) => (a.class === 'turret' ? 0 : a.class === 'dragon' ? 1 : 2)
+              - (b.class === 'turret' ? 0 : b.class === 'dragon' ? 1 : 2) || a.fireAtTick - b.fireAtTick);
+          if (threats.length) {
+            const a = threats[0], label = a.class === 'turret' ? '砲台の魔法' : a.class === 'dragon' ? '竜の火球' : a.class === 'bow' ? '弓兵の矢' : '地上の魔法';
+            expectedThreat = `${label} · 自機を${a.lockedAim ? '照準固定' : '照準中'} · 陣地${a.laneId + 1} · ${((a.fireAtTick - state.simTick) / 60).toFixed(1)}秒${threats.length > 1 ? ` · ほか${threats.length - 1}` : ''}`;
+          }
+        }
+        if (text !== expectedThreat) nodeIssues.push('threat meaning, target, site or remaining time differs from authoritative state');
+      }
       if (node && readout.key === 'campaign-limit') {
         const timer = node.querySelector<HTMLElement>('#remaining-time');
         if (!text?.includes('期限まで') || !timer?.textContent?.trim() || !/^\d+:\d{2}$/u.test(timer.textContent.trim()))
           nodeIssues.push('remaining mission time label or live value is missing');
+        const remaining = Math.max(0, 72000 - state?.activeTicks);
+        const expectedTime = `${Math.floor(remaining / 3600)}:${String(Math.floor(remaining / 60) % 60).padStart(2, '0')}`;
+        if (!Number.isFinite(remaining) || timer?.textContent?.trim() !== expectedTime)
+          nodeIssues.push('remaining mission time differs from authoritative active ticks');
       }
       if (node && readout.key === 'ammo') {
         const machineGun = node.querySelector<HTMLElement>('#mg-ammo'), cannon = node.querySelector<HTMLElement>('#cannon-ammo');
         if (node.getAttribute('aria-label') !== '残弾数' || !text?.includes('機銃') || !text.includes('機関砲')
           || !machineGun?.textContent?.trim() || !cannon?.textContent?.trim()) nodeIssues.push('live machine-gun or cannon ammunition readout is missing');
+        if (!Number.isInteger(state?.player?.mg) || !Number.isInteger(state?.player?.cannon)
+          || machineGun?.textContent?.trim() !== String(state.player.mg) || cannon?.textContent?.trim() !== String(state.player.cannon))
+          nodeIssues.push('ammunition differs from authoritative state');
       }
       const glyphs: any[] = [];
-      if (node) {
-        details.scrollTop = 0;
+      if (node && !dormant) {
+        if (!fixed) details.scrollTop = 0;
         const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
         let textNode: Node | null, index = 0;
         const records: Array<{ index: number; character: string; whitespace: boolean; range: Range }> = [];
@@ -892,7 +941,7 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
             return { rect: null, clips: ['no glyph or whitespace-caret line-position rectangle'], visible: false, geometry };
           let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom;
           const clips: string[] = [];
-          for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
+          for (let ancestor: HTMLElement | null = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement; ancestor; ancestor = ancestor.parentElement) {
             const style = getComputedStyle(ancestor), box = innerBox(ancestor);
             const label = ancestor.id || (typeof ancestor.className === 'string' ? ancestor.className : '') || ancestor.tagName.toLowerCase();
             if (ancestor.hidden || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse'
@@ -924,7 +973,7 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
             if (measured.rect) initial = { ...measured, geometry: 'whitespace line context' };
           }
           let testedScrollTop: number | null = null;
-          if (initial.rect) {
+          if (initial.rect && !fixed) {
             const box = innerBox(details), rect = initial.rect;
             if (rect.top < box.top - 0.5 || rect.bottom > box.bottom + 0.5) {
               const maxScroll = Math.max(0, details.scrollHeight - details.clientHeight);
@@ -942,14 +991,14 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
             if (measured.rect) result = { ...measured, geometry: 'whitespace line context' };
           }
           const visible = result.visible;
-          if (!visible) nodeIssues.push(`character ${record.index} ${JSON.stringify(record.character)} is not scroll-reachable${result.clips.length ? ` (${result.clips.join(',')})` : ''}`);
+          if (!visible) nodeIssues.push(`character ${record.index} ${JSON.stringify(record.character)} is not ${fixed ? 'fully visible without scrolling' : 'scroll-reachable'}${result.clips.length ? ` (${result.clips.join(',')})` : ''}`);
           glyphs.push({ index: record.index, character: record.character, whitespace: record.whitespace,
             initialRect: initial.rect, initialGeometry: initial.geometry, testedScrollTop, visibleRect: result.rect,
             visibleGeometry: result.geometry, visible, clips: result.clips });
         }
       }
       const evidence = { key: readout.key, selector: readout.selector, expectedDetailKey: readout.detailKey,
-        count: matches.length, connected: Boolean(node?.isConnected), sameOriginalNode, inDetails,
+        count: matches.length, connected: Boolean(node?.isConnected), sameOriginalNode, inDetails, fixed, dormant,
         campaignDetail: node?.dataset.campaignDetail ?? null, tabindex: node?.getAttribute('tabindex') ?? null,
         text, expectedText: expected, rect: nodeRect ? { x: nodeRect.x, y: nodeRect.y, width: nodeRect.width, height: nodeRect.height } : null,
         scroll: details ? { scrollTop: details.scrollTop, scrollHeight: details.scrollHeight, clientHeight: details.clientHeight,
@@ -961,9 +1010,9 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
     }
     details.scrollTop = oldScrollTop;
     return { ok: issues.length === 0 && readoutEvidence.length === readouts.length
-        && readoutEvidence.every(item => item.characterCount > 0 && item.characterCount === item.reachableCharacterCount && item.issues.length === 0),
+        && readoutEvidence.every(item => (item.dormant || item.characterCount > 0) && item.characterCount === item.reachableCharacterCount && item.issues.length === 0),
       issues, viewport, readouts: readoutEvidence };
-  }, { readouts: SECONDARY_HUD_READOUTS, expectedText: originalText });
+  }, { readouts: LIVE_HUD_READOUTS, expectedText: originalText });
 }
 
 async function inspectDirectSafetyHud(page: Page, alert: HudCase['alert']) {
@@ -1068,14 +1117,22 @@ async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: an
     const threat = canvas.threatPoint;
     const warningPixels = threat ? annulus(threat.x, threat.y, 13, 2.5, rgba => rgba[0] > 180 && rgba[1] > 90 && rgba[1] < 205 && rgba[2] < 160 && rgba[3] > 70) : 0;
     const alphaPixels = count({ x: 0, y: 0, width: canvas.width, height: canvas.height }, rgba => rgba[3] > 0);
-    return { alphaPixels, ring, reloadRing, centerDot, crosshair, radarPixels, warningPixels };
+    const state = (window as any).__fantasiaReadState(false).campaign;
+    const reloadActive = state.player.reloadUntilTick !== null && state.player.reloadUntilTick > state.simTick;
+    const threatActive = state.status === 'running' && state.player.protectionTicks === 0
+      && state.actors.some((a: any) => a.hp > 0 && a.team === 'enemy' && a.phase === 'telegraph'
+        && a.targetRef?.id === state.player.id && a.targetRef?.generation === state.player.generation && a.fireAtTick > state.simTick);
+    return { alphaPixels, ring, reloadRing, reloadActive, threatActive, centerDot, crosshair, radarPixels, warningPixels };
   }, { mode, canvas });
   expect(pixels.alphaPixels, 'Canvas2D product painter produced visible pixels').toBeGreaterThan(500);
   expect(pixels.ring, 'aim circle pixels exist at the product-projected sight').toBeGreaterThan(50);
-  expect(pixels.reloadRing, 'fixed reload arc pixels exist around the aim circle').toBeGreaterThan(20);
+  if (pixels.reloadActive) expect(pixels.reloadRing, 'active reload arc pixels exist around the aim circle').toBeGreaterThan(20);
   expect(pixels.centerDot, 'aim center pixels exist').toBeGreaterThan(0);
   expect(pixels.radarPixels, 'product radar pixels exist in its measured region').toBeGreaterThan(200);
-  expect(pixels.warningPixels, 'product telegraph pixels exist at its projected warning point').toBeGreaterThan(5);
+  if (pixels.threatActive) {
+    expect(canvas.threatPoint, 'active threat has a projected warning point').toBeTruthy();
+    expect(pixels.warningPixels, 'product telegraph pixels exist at its projected warning point').toBeGreaterThan(5);
+  }
   if (mode === 'normal') for (const [index, count] of pixels.crosshair.entries()) expect(count, `normal crosshair arm ${index}`).toBeGreaterThan(0);
 }
 
@@ -1339,7 +1396,7 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
   recordHudAssertion(failures, provenance, name, 'announcement-visible',
     () => expect(domEvidence.announcement.visible).toBe(true));
   recordHudAssertion(failures, provenance, name, 'announcement-text',
-    () => expect(domEvidence.announcement.text).toContain('砲台の予告'));
+    () => expect(domEvidence.announcement.text).toBe(fixture.announcementText));
   recordHudAssertion(failures, provenance, name, 'announcement-priority-flag',
     () => expect(domEvidence.announcement.critical).toBe(String(fixture.announcementPriority >= 1)));
   for (const font of fontScale.fontBaselines ?? []) recordHudAssertion(failures,
@@ -1665,7 +1722,9 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
     expect(fixture.mode, `fixed Normal fixture ${JSON.stringify(normalModeState)}`).toBe('normal');
     expect(normalModeState.appMode).toBe('normal'); expect(normalModeState.stateMode).toBe('normal'); expect(normalModeState.controlsHidden).toBe(false);
     await expect(page.locator('#fire')).toBeVisible(); await expect(page.locator('#throttle')).toBeVisible();
-    await expect(page.locator('#warning')).toContainText('復活保護'); await expect(page.locator('#reload-status')).toContainText('再装填中');
+    await expect(page.locator('#warning')).toContainText('復活保護');
+    await expect(page.locator('#reload-status')).toBeHidden();
+    await expect(page.locator('#reload-status')).toHaveText('');
     await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
     await inspect(normalProtected0, 'normal', fixture, coverage);
     const normalAim = await page.evaluate(async () => {

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { terrainHeight } from '../src/campaign-terrain';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Campaign } from '../src/campaign';
@@ -198,4 +200,55 @@ test('acquisition counts all four native frames, keeps single-event steps, and n
   driver.budget.steps = 1799; calls.length = 0;
   await assert.rejects(driver.step(), /animation-step budget exceeded/);
   assert.deepEqual(calls, []); assert.equal(driver.budget.maxSteps, 1800); assert.equal(driver.budget.wallMs, 120000);
+});
+
+// Exercise the actual fixed-state adapter, with only its renderer/DOM boundary
+// stubbed. Campaign and flight projection are the production implementations.
+function fixedHudFixture(alert: string) {
+  const source = readFileSync(new URL('../scripts/ui-only-adapter.js', import.meta.url), 'utf8')
+    .replace('import.meta.env.DEV', 'true');
+  const context: any = { window: {}, location: { pathname: '/__ui-only' }, selectedMode: 'normal',
+    terrainHeight, screen: 'home', respawnRemaining: 0, announcementUntil: 0, announcementPriority: 0,
+    bombPrediction: null, bombPredictionTick: 0,
+    syncMode() {}, updateHUD() {}, announce(text: string) { context.announcementText = text; }, el() { return { textContent: '' }; },
+    setScreen(value: string) { context.screen = value; },
+    scene: { setUiOnlyThreat() {}, setOverlayVisible() {}, render() { return true; }, diagnostics() { return {}; } },
+    resetCampaign() { context.campaign = new Campaign(context.selectedMode); context.state = context.campaign.state;
+      context.flight = new CampaignFlightController(context.state); context.player = context.flight.player; },
+  };
+  runInNewContext(source, context);
+  context.window.__fantasiaUiOnlyTest.hud('normal', alert, 4);
+  return context;
+}
+
+for (const alert of ['clear', 'outside', 'low']) test(`UI fixture ${alert}: reload state and displayed flight ammo agree`, () => {
+  const x = fixedHudFixture(alert);
+  assert.equal(criticalStateActive('reload', { screen: x.screen, phase: 'playing', campaign: x.state, player: x.player }), true);
+  assert.equal(x.player.mg, x.state.player.mg); assert.equal(x.player.cannon, x.state.player.cannon);
+  assert.equal(x.player.health, x.state.player.hp);
+});
+test('UI fixture respawn carries a real loss, zero HP and a single record penalty', () => {
+  const x = fixedHudFixture('respawn');
+  assert.equal(criticalStateActive('respawning', { screen: x.screen, phase: 'respawning', campaign: x.state, player: x.player }), true);
+  assert.equal(x.state.selfLosses, 1); assert.equal(x.state.livesRemaining, 2); assert.equal(x.state.respawnPenaltyTicks, 600);
+  assert.equal(x.player.health, 0);
+});
+test('UI fixture protection follows actual respawn restoration, without stale reload', () => {
+  const x = fixedHudFixture('protected');
+  assert.equal(criticalStateActive('protection', { screen: x.screen, phase: 'playing', campaign: x.state, player: x.player }), true);
+  assert.equal(x.state.player.protectionTicks, 120);
+  assert.equal(x.state.player.reloadUntilTick, null); assert.equal(x.player.reloadTicksRemaining, 0);
+  assert.equal(x.player.mg, 288); assert.equal(x.player.cannon, 96); assert.equal(x.player.bombs, 2);
+});
+
+for (const alert of ['clear', 'outside', 'low']) test(`UI fixture ${alert}: announcement and threat refer to the same live turret`, () => {
+  const x = fixedHudFixture(alert), turret = x.state.actors.find((a: any) => a.team === 'enemy' && a.class === 'turret');
+  assert.equal(turret.targetRef.generation, x.state.player.generation);
+  assert.equal(turret.fireAtTick - x.state.simTick, 72);
+  assert.equal(x.announcementText, `砲台の予告 · 陣地${turret.laneId + 1} · 1.2秒`);
+});
+for (const alert of ['protected', 'respawn']) test(`UI fixture ${alert}: lifecycle notice is not an unrelated fabricated turret warning`, () => {
+  const x = fixedHudFixture(alert);
+  assert.equal(x.announcementText, alert === 'protected' ? '復活 · 2秒の保護中は自機も攻撃できません' : '自機喪失 · 復活すると記録時間に10秒加算');
+  if (alert === 'protected') assert.equal(x.state.actors.some((a: any) => a.targetRef?.id === x.state.player.id && a.targetRef.generation !== x.state.player.generation), false);
 });
