@@ -3,7 +3,7 @@ import test from 'node:test';
 import { Vector3, Quaternion } from 'three';
 import { getFlightAssist, autoFireTarget } from '../src/flight-assist';
 import { FLIGHT_FOV, getFlightCameraPose } from '../src/flight-view';
-import { createFlightTargetLock, smoothFlightAssistance } from '../src/flight-target';
+import { createFlightTargetLock, smoothFlightAssistance, clearFlightAssistance, type FlightAssistanceState } from '../src/flight-target';
 
 const numeric = false, callback = false;
 const input = { turn: 0, climb: 0, fire: false, loop: false, viewAspect: 393 / 852 };
@@ -118,5 +118,40 @@ test('Normal fire cannot alter the live campaign aircraft or camera over a match
       });
       assert.deepEqual(poses[0], poses[1], `camera is independent of fire at tick ${tick}`);
     }
+  }
+});
+
+
+test('Easy pitch origin survives acquisition, switch, release and zero crossing', () => {
+  const state: any = { assistTurn: 0, assistClimb: 0, responseMultiplier: 1, targetLock: createFlightTargetLock() };
+  const pull = { turn: 0, climb: .9, responseMultiplier: 1, hasVisibleTarget: true };
+  assert.ok(smoothFlightAssistance(state, input, pull, 1/60, .6).climb > .6);
+  state.targetLock.changed = true;
+  assert.ok(smoothFlightAssistance(state, input, {...pull, climb:-.9}, 1/60, -.6).climb < -.6);
+  smoothFlightAssistance(state, input, {...pull, hasVisibleTarget:false}, 1/60, -.6);
+  assert.equal(state.assistClimb, 0);
+  assert.ok(smoothFlightAssistance(state, input, pull, 1/60, .6).climb > .6);
+  const manual = {...input, climb:.1};
+  const rate = smoothFlightAssistance(state, manual, {...pull, climb:.2}, 1/60);
+  assert.ok(Math.abs(rate.climb - .1) <= .025 + 1e-12, 'absolute history must not leak into manual rates');
+  state.targetLock.changed = true;
+  assert.equal(smoothFlightAssistance(state, input, {...pull, climb:-.5}, 1/60, .025).climb, 0);
+  assert.equal(smoothFlightAssistance(state, input, {...pull, climb:-.5}, 1/60, .025).climb, -.025);
+});
+
+
+test('inactive assistance keeps the inherited Normal controller field set', () => {
+  const state: FlightAssistanceState = { assistTurn:0, assistClimb:0, responseMultiplier:1, targetLock:createFlightTargetLock() };
+  const originalFields = Object.keys(state).sort();
+  smoothFlightAssistance(state, {turn:.1,climb:.1}, {turn:.1,climb:.1,responseMultiplier:1,hasVisibleTarget:false}, 1/60);
+  assert.deepEqual(Object.keys(state).sort(), originalFields);
+  smoothFlightAssistance(state, {turn:0,climb:0}, {turn:0,climb:.9,responseMultiplier:1,hasVisibleTarget:true}, 1/60, .6);
+  assert.equal(state.assistClimbMode, 'absolute');
+  clearFlightAssistance(state);
+  assert.deepEqual(Object.keys(state).sort(), originalFields);
+  for (const manual of [false, true]) {
+    smoothFlightAssistance(state, {turn:0,climb:0}, {turn:0,climb:.9,responseMultiplier:1,hasVisibleTarget:true}, 1/60, .6);
+    smoothFlightAssistance(state, {turn:manual?.5:0,climb:0}, {turn:0,climb:.9,responseMultiplier:1,hasVisibleTarget:manual}, 1/60);
+    assert.deepEqual(Object.keys(state).sort(), originalFields);
   }
 });

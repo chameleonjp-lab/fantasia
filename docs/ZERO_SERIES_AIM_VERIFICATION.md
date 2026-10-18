@@ -40,3 +40,55 @@ provenanceは追加したlock import/type/factoryの3行だけを除外して旧
 射撃時の上下ずれは次のように切り分ける。ボタンfireだけではこの短いNormal対照でpitch/camera差を再現しない。1指持替えは操縦release→climb=0→既存水平復帰が起きるのでfire起因と断定しない。Easy標的補助の不一致とゲキチンNormal固定照準/衝突cameraは別の確認済み経路として修正。センリョウの危険時自動上昇は射撃とは別の保護。実iPhone特有のpointer capture/イベント順序は引き続き未確認。
 
 マージ前iPhone手順：(1)Normalで操縦指の微上下を維持し別指で射撃、射撃指のみ離す/移動。(2)操縦指を離して同じ指で射撃し、release時の水平復帰と比較。(3)Easyの円内A/画面端B・遮蔽・微入力で標的/発射を確認。(4)ゲキチン母艦近傍・bank/上昇、センリョウ安全高度/危険接近で照準/回避表示を見る。(5)回転→停止→設定Save/Cancel→明示再開、速度目標とfresh inputを確認。上下ずれが残れば作品/mode/iPhone・iOS/指操作/場面を記録。実機受入とmergeは利用者が行う。
+
+
+## 2026-10-18 Easy追尾開始時の上下反転対策
+
+確認日時：2026-10-18 12:33 JST。比較元mainは `ea986603108b679d4f7ea01168f1a9dc5b6a7d31`。本節より前の検査・画像は各記載時点の記録で、今回の実機確認を意味しない。
+
+Easyの両軸無入力時だけ、追尾pitchの平滑化をゼロではなく現在姿勢から開始する。新規捕捉・対象切替・再捕捉・ゼロ通過を区別し、微小手動入力へ戻るときは絶対姿勢の履歴を相対角速度へ持ち越さない。turnだけの入力でも、任意の `steeringActive` が省略されても手動経路へ戻る。旧simulation経路は対象喪失時の既存減衰を保ち、減衰中の絶対姿勢を手動rateとして再利用しない。
+
+campaignの対象制限（兵士・dragonの補助強度0、turretの既存強度）、遮蔽、世代、対象選択、yaw、Normal操作は維持。今回の変更は既存7ファイル：`src/flight-target.ts`、`src/campaign-flight.ts`、`src/simulation.ts`、`tests/campaign-aim-regression.test.ts`、`tests/campaign-flight.test.ts`、`tests/simulation.test.ts`、本書。
+
+- 変更前sourceで新規helper回帰、実campaign turret捕捉、実legacy捕捉の各回帰が失敗することを確認。上下標的と現在pitch正負の両方を検査。
+- 変更後 `npm test`：485件合格、失敗0、skip0。campaign turn-onlyの任意flag省略時はpitch差分0.0005rad未満も個別再確認（初回relative slewの上限に基づく）。
+- `npm run test:legacy`：702件中677合格・25失敗・skip0。比較元mainは699件中674合格・25失敗。失敗名の集合は完全一致、新規失敗0・解消0。追加3回帰は合格。旧艦船系を含むこの任意suiteは全合格ではなく、対象外の既知失敗を隠すskipや期待値変更はしていない。
+- `npm run build`：TypeScriptとVite成功。既存の500kB超bundle警告あり。
+- 独立読取レビューでsource・回帰を確認。旧helperとの相対入力比較も一致。
+- 今回はローカル論理・build検査まで。CIの最新head結果はPRへ記録する。ブラウザー描画・iPhone実機での体感改善、マージ、本番反映は未実施。
+
+旧版は上記固定main commitに保持。復元はこの差分のrevertで可能。同じ公開リポジトリのDraft PRへ提出し、追加素材・依存・workflowの変更は含めない。
+
+### legacy比較で一致した25失敗名
+
+- approved four-ship mission reaches all-clear through real inputs while idle is not a guaranteed win
+- standard mission remains reachable through circular touch conversion with six/seven tick sample jitter
+- Easy fleet pilot clears actual CI26 request/acceptance delays without saturated yaw oscillation
+- easy browser pilot clears with recorded uneven sampling plus one-tick delivery lag
+- normal browser pilot clears with recorded uneven sampling plus one-tick delivery lag
+- Normal fleet-first pilot clears acceptance-relative CI20 cadence with 1-tick delivery lag
+- Normal fleet-first pilot clears acceptance-relative CI20 cadence with 5-tick delivery lag
+- Normal recovery pilot clears actual CI21 observed request/acceptance timings
+- easy clears with CI28 component delivery timing from a fresh mission
+- normal clears with CI28 component delivery timing from a fresh mission
+- easy clears with CI29 component delivery timing from a fresh mission
+- mixed target selection still follows the closest visible target regardless of its assist strength
+- air-to-ship switching keeps the existing smooth response and manual climb clears residual pull
+- rule guide shows only the active device instructions and current keyboard bindings
+- source offscreen yaw boost ramps gently in both modes without amplifying bank or pitch
+- Normal input releases only the ended finger while steering and another action remain held
+- CI38 consumed inputs preserve the real collision
+- CI38 consumed inputs preserve the real collision except the verified lateral dodge
+- Normal default fleet clears through manual fire and circular input with six/seven and coarse twelve tick hold
+- easy/touch: score rules explain contribution, clear-only bonuses and rounding
+- easy/keyboard: score rules explain contribution, clear-only bonuses and rounding
+- normal/touch: score rules explain contribution, clear-only bonuses and rounding
+- normal/keyboard: score rules explain contribution, clear-only bonuses and rounding
+- real circular-stick mapping reaches and completes reload with six/seven tick sample jitter
+- browser reload practice engages aircraft and completes real magazines despite uneven input delivery
+
+### 同日12:43 JST：inactive controller構造の互換性
+
+初回head `1f08f977070c9cfa3bd7ee16dc084885288d595e` の[CI run 39094141179](https://github.com/chameleonjp-lab/fantasia/actions/runs/39094141179)は成功。併行検査で判明した任意modeキーの互換性も同じ承認範囲で是正し、inactive・clear・対象切替時は不要キー自体を取り除く。legacy経路は既存減衰がゼロになるまでmodeを保持する。数値制御と対象制限は変更しない。
+
+最終ローカル再検査：`npm test` 486/486合格、build成功、関連3ファイル37/37合格。optional `test:legacy` は703件中678合格・25失敗・skip0で、上記baselineの失敗名25件と完全一致。初期inactive、activeから対象喪失・manual release・clearのcontrollerキー一致回帰を追加した。再提出headのCIは別途照合し、初回headの成功を転記しない。

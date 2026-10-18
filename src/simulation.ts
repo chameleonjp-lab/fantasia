@@ -3,7 +3,7 @@ import { createScoreLedger, recordTargetDamage, scoreBreakdown, finalScore, SCOR
 import { RULES_VERSION } from './mission';
 import { Quaternion, Vector3 } from 'three';
 import { assignTargets, targetFor, updateAI } from './ai';
-import { applyEasyShotCorrection, autoFireTarget, getFlightAssist, predictedShotDirection } from './flight-assist';
+import { applyEasyShotCorrection, autoFireTarget, getFlightAssist, PLAYER_MAX_PITCH, predictedShotDirection } from './flight-assist';
 import { advanceThrottle, clamp, createFlightController, forwardOf, MAX_SPEED, updateAircraftMotion, updatePlayerLoop } from './flight';
 import type { FlightController } from './flight';
 import { FIXED_DT, makeAircraft, makeFleet, MAX_BULLETS, MAX_EVENTS_PER_STEP, REINFORCEMENT_HEAL, REINFORCEMENT_TICK, ALLY_RESPAWN_TICKS, PLAYER_BOMB_CAPACITY, PLAYER_TORPEDO_CAPACITY, PAYLOAD_RELOAD_TICKS, MAX_ORDNANCE, INITIAL_FLIGHT_ALTITUDE, EASY_INITIAL_FLIGHT_ALTITUDE, resolveMissionConfig } from './mission';
@@ -510,9 +510,19 @@ function fixedStep(state: GameState, input: FlightInput): void {
   const assist = getFlightAssist(player, targets, input, state.mode);
   const slew = (current: number, target: number, rate: number) => current + clamp(target - current, -rate * FIXED_DT, rate * FIXED_DT);
   const manual = Math.max(Math.abs(input.turn), Math.abs(input.climb)) >= 0.35;
-  const flight = meta.flight;
+  const flight = meta.flight as typeof meta.flight & { assistClimbMode?: 'absolute' | 'relative' };
   flight.assistTurn = manual ? 0 : slew(flight.assistTurn, assist.turn - input.turn, 2.5);
-  flight.assistClimb = manual ? 0 : slew(flight.assistClimb, assist.climb - input.climb, 1.5);
+  const automaticPitch = state.mode === 'easy' && !input.steeringActive
+    && Math.max(Math.abs(input.turn), Math.abs(input.climb)) <= EPSILON;
+  const climbMode = automaticPitch ? 'absolute' : 'relative';
+  const activePitch = assist.hasVisibleTarget && Math.abs(assist.climb - input.climb) >= 1e-12;
+  // Preserve this legacy path's fade on target loss, but never mix absolute
+  // attitude history with a relative manual-rate command.
+  const origin = flight.assistClimbMode === climbMode ? flight.assistClimb
+    : automaticPitch && activePitch ? clamp(player.pitch / PLAYER_MAX_PITCH, -1, 1) : 0;
+  flight.assistClimb = manual ? 0 : slew(origin, assist.climb - input.climb, 1.5);
+  if (manual || (!activePitch && flight.assistClimb === 0)) delete flight.assistClimbMode;
+  else flight.assistClimbMode = climbMode;
   if (flight.assistTurn * input.turn < 0) flight.assistTurn = 0;
   if (flight.assistClimb * input.climb < 0) flight.assistClimb = 0;
   flight.responseMultiplier = slew(flight.responseMultiplier, assist.responseMultiplier, 2.5);

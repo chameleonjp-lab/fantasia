@@ -5,7 +5,7 @@ import { distanceSquared, segmentTerrainBlocked } from './campaign-terrain';
 import type { CampaignActor, CampaignInput, CampaignPlayer, CampaignState, Vec } from './campaign-types';
 import { makeAircraft } from './mission';
 import { advanceThrottle, clamp, createFlightController, CRUISE_SPEED, forwardOf, MAX_SPEED, updatePlayerLoop, updateQuaternion } from './flight';
-import { applyEasyShotCorrection, autoFireTarget, getFlightAssist, predictedShotDirection } from './flight-assist';
+import { applyEasyShotCorrection, autoFireTarget, getFlightAssist, PLAYER_MAX_PITCH, predictedShotDirection } from './flight-assist';
 import { FLIGHT_VISIBILITY_RANGE } from './flight-view';
 import type { Aircraft, FlightInput } from './types';
 
@@ -93,7 +93,10 @@ export class CampaignFlightController {
     player.previous.copy(player.position); player.age += CAMPAIGN_DT;
     const unobstructed = (target: { position: Vector3 }) => !segmentTerrainBlocked(player.position, target.position);
     const assist = getFlightAssist(player, targets, input, state.mode, flight.targetLock, unobstructed);
-    const adjusted = { ...input, ...smoothFlightAssistance(flight, input, assist, CAMPAIGN_DT) };
+    const automaticPitch = state.mode === 'easy' && !input.steeringActive
+      && Math.max(Math.abs(input.turn), Math.abs(input.climb)) <= 1e-8;
+    const pitchOrigin = automaticPitch ? clamp(player.pitch / PLAYER_MAX_PITCH, -1, 1) : undefined;
+    const adjusted = { ...input, ...smoothFlightAssistance(flight, input, assist, CAMPAIGN_DT, pitchOrigin) };
     const loopPressed = input.loop && !flight.loopHeld; flight.loopHeld = input.loop;
     this.lastLoopCompleted = updatePlayerLoop(player, flight, adjusted, input, loopPressed, CAMPAIGN_DT,
       advanceThrottle(flight, input, state.mode, CAMPAIGN_DT), MAX_SPEED, flight.responseMultiplier, state.mode);
