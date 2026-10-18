@@ -161,9 +161,9 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
   const passed=issues.length===0;
   return {schemaVersion:2,evidenceFormat:'sha256-byte-reference-with-raw-json-pointer',classification:'clean-sheet-browser-functional-and-capability',suiteImplementationComplete:true,
     productContractBlocks:[
-      {gate:'F-03',status:'blocked',reason:'Normal throttle lever integration, ownership and accessibility required by THROTTLE_LEVER_ADAPTER are absent; old acceleration/brake controls are current-runtime coverage only'},
-      {gate:'F-04',status:'blocked',reason:'Required v1-preserving v2 layout saves/migration and lever settings are absent; current v1 settings tests are not the v2 contract'},
-      {gate:'F-07',status:'blocked',reason:'Declared responsive functional checks require native execution and cannot replace the missing lever or complete product acceptance'},
+      {gate:'F-03',status:'blocked',reason:'Acceptance additionally requires reviewed same-candidate evidence from the separate 4-case throttle suite for Normal lever ownership and accessibility; this 34-case report does not read that evidence'},
+      {gate:'F-04',status:'blocked',reason:'Acceptance additionally requires reviewed same-candidate evidence from the separate 4-case throttle suite for v1-preserving v2 layout saves/migration and lever settings; this 34-case report does not read that evidence'},
+      {gate:'F-07',status:'blocked',reason:'Declared responsive functional checks cover only this bounded suite; same-candidate active-warning and physical-phone evidence remain separate and are not certified here'},
       {gate:'F-18',status:'not-covered',reason:'Named-device performance, maximum load, soak and restart/leak acceptance are not measured'},
       {gate:'F-19',status:'not-covered',reason:'Actual-input Normal/Easy full victory, defeat/restart and final-candidate independent acceptance remain outside this bounded suite'},
     ],
