@@ -1533,3 +1533,27 @@ p {
     height: min(var(--control-height, 128px), 100px) !important; max-height: 100px !important;
   }
 }
+
+/* Complete enlarged respawn readouts need compact text flow, not smaller
+   text or touch targets. Remove only decoration, keep all safety reservations,
+   and let the original strings determine each box's natural height. */
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"] .campaign-site { border-width: 0; }
+  #app[data-campaign-hud="compact"] .campaign-site-heading { gap: 0; }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud :is(#campaign-threat, #reload-status, #respawn-status, #announcement[data-campaign-critical="true"]) {
+    padding: 0 !important; border-width: 0;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud :is(#campaign-threat, #announcement[data-campaign-critical="true"]) {
+    width: 106px !important; max-width: 106px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud #respawn-status {
+    width: 238px !important;
+    max-width: calc(100dvw - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right))) !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) .flight-data > .instrument {
+    width: max-content; flex-wrap: nowrap; white-space: nowrap;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #campaign-hud-details {
+    height: 64px !important;
+  }
+}
