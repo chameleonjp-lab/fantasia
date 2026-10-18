@@ -214,11 +214,14 @@ function packFreeSpace(bounds: HudRect, obstacles: readonly HudRect[], items: re
   let reserved = [expand(bounds)];
   for (const obstacle of obstacles) { const next = subtract(reserved, expand(obstacle)); if (!next) return null; reserved = next; }
   // Short-wide bounds benefit from reserving broad readouts before tall ones.
-  // Portrait keeps the established orders; no state names or fixture positions
-  // participate. Both orientations share the same two-pass/6000-check cap.
-  const passes = bounds.width > bounds.height ? [2, 0] : [0, 1];
+  // Multiple bands wider than two thirds of portrait bounds cannot share a
+  // row; reserve them by width first. This is a bounded geometric heuristic,
+  // not an existence proof. No lifecycle, control ID or fixture name is used.
+  // All choices retain two passes and the same total 6000-check cap.
+  const broadBands = items.filter(item => item.width > bounds.width * 2 / 3).length;
+  const passes = bounds.width > bounds.height ? [2, 0] : broadBands >= 2 ? [3, 0] : [0, 1];
   for (const pass of passes) {
-    const order = [...items].sort((a, b) => (pass === 2 ? b.width * b.width * b.height - a.width * a.width * a.height
+    const order = [...items].sort((a, b) => (pass === 3 ? b.width - a.width : pass === 2 ? b.width * b.width * b.height - a.width * a.width * a.height
       : pass === 0 ? b.width * b.height - a.width * a.height : b.width + b.height - a.width - a.height) || a.id.localeCompare(b.id));
     let free = [...reserved]; const placed = new Map<string, HudRect>();
     for (const item of order) {

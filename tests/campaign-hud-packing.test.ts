@@ -155,3 +155,16 @@ test('short landscape width-biased recovery packs full-size protected HUD with a
   assert.equal(JSON.stringify(input), before);
   assert.deepEqual(layoutCampaignHud(input.measurement, input.sight), out);
 });
+
+// Exact 6fec6ea natural-state dimensions, with only inactive flight controls removed.
+const respawnInactiveCapture = {"measurement":{"canvas":{"x":0,"y":0,"width":320,"height":568},"bounds":{"x":8,"y":8,"width":304,"height":552},"obstacles":[{"x":8,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":237.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":8,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"}],"panels":[{"x":189.59375,"y":518,"width":82.203125,"height":35,"id":"health-label"},{"x":189.59375,"y":557,"width":118,"height":3,"id":"health-track"},{"x":98.5,"y":441,"width":122.421875,"height":24,"id":"instrument"},{"x":97,"y":341.1875,"width":144,"height":26,"id":"campaign-limit"},{"x":97,"y":375.1875,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":12,"y":307.21875,"width":106,"height":85.78125,"id":"campaign-threat"},{"x":40.875,"y":258.265625,"width":238.25,"height":33.265625,"id":"reload-status"},{"x":8,"y":160,"width":238,"height":67.59375,"id":"respawn-status"},{"x":98,"y":340,"width":106,"height":155.9375,"id":"announcement"},{"x":198,"y":441.1875,"width":114,"height":64,"id":"campaign-hud-details"},{"x":239.5,"y":68,"width":72,"height":24,"id":"campaign-mode-status"},{"x":9.890625,"y":362,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":8,"y":390,"width":81.296875,"height":44,"id":"game-sound"},{"x":268,"y":102,"width":44,"height":50,"id":"pause"}],"flightData":{"x":97,"y":375.1875,"width":167.046875,"height":27.03125},"threat":{"x":12,"y":307.21875,"width":106,"height":85.78125}},"sight":{"x":122.79999999999997,"y":169.07084915470614,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}};
+test('multiple broad bands in portrait preserve all natural respawn information without inactive controls', () => {
+  const source = structuredClone(respawnInactiveCapture);
+  const before = JSON.stringify(source);
+  const out = assertPacked(source.measurement, source.sight);
+  assert.equal(out.primarySearchChecks, 120_000);
+  assert(out.recoverySearchChecks! > 0 && out.recoverySearchChecks! <= 6_000);
+  assert(out.searchChecks! <= 126_000);
+  assert.equal(JSON.stringify(source), before);
+  assert.deepEqual(layoutCampaignHud(source.measurement, source.sight), out);
+});

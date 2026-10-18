@@ -35,6 +35,8 @@ async function appHarness() {
     const n = Object.assign(new Target(), { id, hidden: true, disabled: false, textContent: '', innerHTML: '', dataset: {} as any,
       style: { removeProperty() {}, width: '', top: '', left: '' },
       attributes: new Map<string, string>(), inert: false,
+      classList: { values: new Set<string>(), contains(value: string) { return this.values.has(value); }, toggle(value: string, on: boolean) { if (on) this.values.add(value); else this.values.delete(value); } },
+      contains(other: unknown) { return other === n; },
       setAttribute(name: string, value: string) { n.attributes.set(name, value); },
       removeAttribute(name: string) { n.attributes.delete(name); },
       getAttribute(name: string) { return n.attributes.get(name) ?? null; }, focus() { if (!n.hidden && !n.disabled) doc.activeElement = n; }, querySelectorAll: () => [] });
@@ -409,3 +411,38 @@ for (const action of ['start-cancel', 'mode', 'home-controls', 'home-rules'] as 
     assert.equal(h.controls.active(), false);
   });
 }
+
+
+test('respawn hides only inactive controls, clears held intent, preserves settings and restores without moving focus', async () => {
+  const h = await selectedPending(); h.signal(); h.frame(); h.frame();
+  const ids = ['fire', 'loop', 'bomb', 'throttle'];
+  const originals = ids.map(id => h.nodes.get(id));
+  originals[2].hidden = true; // A user/mode setting must survive the lifecycle.
+  originals[0].style.width = '137px';
+  originals[0].focus(); assert.equal(h.doc.activeElement, originals[0]);
+  h.controls.climb = -1;
+  for (let n = 0; n < 250 && h.read().phase === 'playing'; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'respawning');
+  assert.equal(h.nodes.get('app').classList.contains('flight-controls-waiting'), true);
+  assert.equal(h.controls.pending, false);
+  assert.equal(h.doc.activeElement, h.nodes.get('pause'));
+  assert.equal(h.nodes.get('pause').hidden, false);
+  assert.equal(h.nodes.get('game-sound').hidden, false);
+  assert.equal(h.nodes.get('respawn-status').hidden, false);
+  h.controls.climb = 0; h.click('pause');
+  const remaining = h.nodes.get('respawn-status').textContent;
+  for (let n = 0; n < 220; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'paused');
+  assert.equal(h.nodes.get('app').classList.contains('flight-controls-waiting'), true);
+  assert.equal(h.nodes.get('respawn-status').textContent, remaining);
+  h.click('resume');
+  const focusAfterResume = h.doc.activeElement;
+  for (let n = 0; n < 210 && h.read().phase === 'respawning'; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'playing');
+  assert.equal(h.nodes.get('app').classList.contains('flight-controls-waiting'), false);
+  assert.equal(h.controls.pending, false);
+  assert.equal(h.doc.activeElement, focusAfterResume);
+  for (let i = 0; i < ids.length; i++) assert.equal(h.nodes.get(ids[i]), originals[i]);
+  assert.equal(originals[2].hidden, true);
+  assert.equal(originals[0].style.width, '137px');
+});

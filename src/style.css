@@ -1566,3 +1566,8 @@ p {
     height: 64px;
   }
 }
+
+/* Respawn freezes flight: keep state information, pause and sound available,
+   but remove only the four inactive flight controls from layout and focus/AT.
+   Individual hidden flags and custom dimensions are untouched on restoration. */
+#app.flight-controls-waiting [data-flight-control] { display: none !important; }

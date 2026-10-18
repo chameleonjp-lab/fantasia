@@ -322,7 +322,21 @@ function positionReloadStatus() {
     const sight = scene.gunSight(player); el('reload-status').style.top = `${sight.y + 52}px`; el('reload-status').style.left = `${sight.x}px`;
   } else { el('reload-status').style.removeProperty('top'); el('reload-status').style.removeProperty('left'); }
 }
+let flightControlsWaiting = false;
+function syncFlightControlAvailability() {
+  const waiting = state.status === 'respawning';
+  if (waiting === flightControlsWaiting) return;
+  // Clear captures, held keys and queued edges before hiding or restoring the
+  // same controls. Their mode/user hidden flags and dimensions remain owned by
+  // ControlSettings; revival must never replay an earlier press.
+  clearInput();
+  const focusedControl = Object.values(buttons).some(button => button.contains(document.activeElement));
+  flightControlsWaiting = waiting;
+  app.classList.toggle('flight-controls-waiting', waiting);
+  if (waiting && screen === 'playing' && focusedControl) el('pause').focus({ preventScroll: true });
+}
 function updateHUD() {
+  syncFlightControlAvailability();
   el('timer').textContent = formatTicks(state.activeTicks + state.respawnPenaltyTicks); el('score').textContent = String(state.resultSnapshot?.score ?? campaignScore(state).total);
   el('enemy-count').textContent = String(state.sites.filter(site => site.owner === 'friendly').length); el('lives-count').textContent = String(state.livesRemaining);
   el('allies-count').textContent = String(state.actors.filter(actor => actor.team === 'friendly' && actor.kind === 'ground' && actor.hp > 0).length);

@@ -38,7 +38,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     selectedMode = mode;
     resetCampaign();
     syncMode();
-    if (alert === 'reachable-reload-loss') {
+    if (alert === 'reachable-reload-loss' || alert === 'reachable-controls-ready') {
       if (mode !== 'normal') throw new Error('Reachable reload-loss requires Normal controls');
       // Actual flight inputs and campaign reducers from a standard new run.
       // No actor/site/ammo/position/status writes and no synthetic announcement.
@@ -53,6 +53,11 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
       };
       while (state.status === 'running' && player.reloadTicksRemaining <= 0 && steps < 1000) step({ fire: true });
       path.push({ action: 'fire', steps, tick: state.simTick, reloadTicksRemaining: player.reloadTicksRemaining });
+      if (alert === 'reachable-controls-ready') {
+        if (state.status !== 'running' || player.reloadTicksRemaining <= 0) throw new Error('Reachable controls preparation failed');
+        setScreen('playing'); updateHUD(); scene.setOverlayVisible(true); scene.render(state, player, state.mode);
+        return { status: state.status, fixtureKind: 'input-equations-reachable-controls', path };
+      }
       const fireSteps = steps;
       while (state.status === 'running' && steps < 1600) step({ climb: -1 });
       path.push({ action: 'descend', steps: steps - fireSteps, tick: state.simTick, reloadTicksRemaining: player.reloadTicksRemaining });
@@ -122,6 +127,27 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status, announcementPriority: fixturePriority, announcementText, fixtureKind: 'synthetic-hud-stress' };
   }
 
+  // Browser-native presses can be held across the real consumeTick loss path.
+  // Held presses are native; descent inputs and elapsed frame time are
+  // adapter-controlled. Campaign state is never injected.
+  function uiOnlyControlLifecycle(action) {
+    if (action === 'lose') {
+      if (screen !== 'playing' || state.status !== 'running') throw new Error('Loss transition requires an active run');
+      const input = { turn: 0, climb: -1, accelerate: false, brake: false, fire: false, bomb: false, loop: false,
+        viewAspect: window.innerWidth / window.innerHeight, steeringRevision: 0 };
+      let steps = 0;
+      while (state.status === 'running' && steps++ < 1000) consumeTick(input);
+      if (state.status !== 'respawning') throw new Error('Descent did not reach a real loss');
+      updateHUD(); uiOnlyPaint();
+    } else if (action === 'elapsed') {
+      // Exercise the production frame's frozen/pause and respawn/resume wiring.
+      lastFrame = performance.now() - 3100; frame();
+    } else if (action !== 'inspect') throw new Error(`Unknown control lifecycle action: ${action}`);
+    return { screen, status: state.status, remaining: respawnRemaining, input: controls.peek(),
+      pendingLoop, pendingBomb, sample: action === 'inspect' ? controls.sample(false) : null,
+      stateOverrides: false, nativeHeldInput: true, controlledDescentInput: true, controlledFrameTime: true };
+  }
+
   function uiOnlyPause() {
     if (screen !== 'playing') throw new Error('UI-only pause requires the fixed playing screen');
     pause('manual');
@@ -173,7 +199,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
 
   Object.defineProperty(window, '__fantasiaUiOnlyTest', {
     value: Object.freeze({ reset: uiOnlyReset, hud: uiOnlyHud, paint: uiOnlyPaint, canvas: uiOnlyCanvas, evidence: uiOnlyLayoutEvidence,
-      pause: uiOnlyPause, result: uiOnlyResult, startupError: uiOnlyStartupError, layout: uiOnlyLayout }),
+      controlLifecycle: uiOnlyControlLifecycle, pause: uiOnlyPause, result: uiOnlyResult, startupError: uiOnlyStartupError, layout: uiOnlyLayout }),
     configurable: false, enumerable: false, writable: false,
   });
 }

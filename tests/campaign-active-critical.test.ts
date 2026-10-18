@@ -274,3 +274,59 @@ test('reachable reload-loss fixture uses real flight steps and actual loss notic
   const normalize = (state: any) => JSON.parse(JSON.stringify({ ...state, runId: undefined }));
   assert.deepEqual(normalize(x.state), normalize(direct.campaign.state));
 });
+
+// Real input controller; DOM events are unit doubles, not browser-native input.
+test('cleared lifecycle input cannot replay late release, cancel or held-key repeat after revival', async () => {
+  const { FlightControls } = await import('../src/input');
+  class ControlElement extends EventTarget {
+    style = { left: '', top: '', setProperty() {}, removeProperty() {} };
+    classList = { add() {}, remove() {}, toggle() {} }; captures = new Set<number>(); attributes = new Map<string, string>();
+    getAttribute(k: string) { return this.attributes.get(k) ?? null; }
+    setAttribute(k: string, v: string) { this.attributes.set(k, v); }
+    getBoundingClientRect() { return { left: 0, top: 100, bottom: 244, width: 72, height: 144 }; }
+    closest(selector: string) { return selector === '#app' || (selector.includes('[role="slider"]') && this.attributes.get('role') === 'slider') ? this : null; }
+    querySelector() { return this; }
+    setPointerCapture(id: number) { this.captures.add(id); }
+    releasePointerCapture(id: number) { this.captures.delete(id); }
+    hasPointerCapture(id: number) { return this.captures.has(id); }
+    focus() {}
+  }
+  const originals = ['window', 'document', 'HTMLElement'].map(k => [k, Object.getOwnPropertyDescriptor(globalThis, k)] as const);
+  const win = Object.assign(new EventTarget(), { visualViewport: new EventTarget() });
+  const doc = Object.assign(new EventTarget(), { hidden: false, getElementById: () => new ControlElement() });
+  for (const [key, value] of [['window', win], ['document', doc], ['HTMLElement', ControlElement]] as const)
+    Object.defineProperty(globalThis, key, { configurable: true, value });
+  const surface = new ControlElement(), buttons = { fire: new ControlElement(), loop: new ControlElement(), bomb: new ControlElement(), throttle: new ControlElement() };
+  buttons.throttle.setAttribute('role', 'slider');
+  let active = true;
+  const controls = new FlightControls(surface as any, buttons as any, () => active);
+  const pointer = (type: string, pointerId: number) => Object.assign(new Event(type, { cancelable: true }),
+    { pointerId, clientX: 100, clientY: 200, pointerType: 'touch', button: 0, buttons: 1, isPrimary: false });
+  const key = (type: string, repeat = false) => Object.assign(new Event(type, { cancelable: true }), { code: 'Space', repeat });
+  try {
+    for (const [i, button] of Object.values(buttons).entries()) button.dispatchEvent(pointer('pointerdown', i + 1));
+    surface.dispatchEvent(pointer('pointerdown', 5)); win.dispatchEvent(key('keydown'));
+    assert.equal(Object.values(controls.peek().heldPointers).flat().length, 3);
+    assert.deepEqual(controls.peek().keys, ['Space']);
+    assert.equal(controls.peek().throttlePointer, 4);
+    assert.notEqual(controls.sample(false).throttle, 0);
+    assert.equal(controls.peek().steerPointer, 5);
+    // Queue fresh edges after the preceding sample consumed any prior ones.
+    buttons.loop.dispatchEvent(pointer('pointerdown', 6)); win.dispatchEvent(pointer('pointerup', 6)); buttons.loop.releasePointerCapture(6);
+    buttons.bomb.dispatchEvent(pointer('pointerdown', 7)); win.dispatchEvent(pointer('pointerup', 7)); buttons.bomb.releasePointerCapture(7);
+    controls.clear(); active = false;
+    assert(Object.values(buttons).every(button => button.captures.size === 0)); assert.equal(surface.captures.size, 0);
+    win.dispatchEvent(pointer('pointerup', 1)); win.dispatchEvent(pointer('pointercancel', 2));
+    active = true;
+    win.dispatchEvent(pointer('pointerup', 3)); win.dispatchEvent(pointer('pointercancel', 4)); win.dispatchEvent(key('keydown', true));
+    const sample = controls.sample();
+    assert.equal(sample.fire, false); assert.equal(sample.loop, false); assert.equal(sample.bomb, false);
+    assert.equal(sample.throttle, 0); assert.equal(controls.peek().throttlePointer, null);
+    assert.equal(sample.turn, 0); assert.equal(sample.climb, 0); assert.deepEqual(controls.peek().keys, []);
+    win.dispatchEvent(key('keyup')); win.dispatchEvent(key('keydown'));
+    assert.equal(controls.sample().fire, true, 'a new deliberate press still works');
+  } finally {
+    controls.dispose();
+    for (const [key, descriptor] of originals) if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key);
+  }
+});

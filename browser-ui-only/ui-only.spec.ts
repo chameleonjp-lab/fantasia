@@ -1973,3 +1973,55 @@ test('Startup error is the real preparation failure UI', async ({ page }, info) 
   await checkGeometry(page, '#home'); await checkBodyPanels(page, '#home'); captureMs += await capture(page, info, 'startup-error.png');
   await record('startup-error', setupMs, started, captureMs);
 });
+
+
+test('Native held input is released across real loss and controls return after paused respawn', async ({ page }, info) => {
+  await page.setViewportSize({ width: 800, height: 700 });
+  await setup(page);
+  await act(page, 'hud', 'normal', 'reachable-controls-ready');
+  const ids = ['fire', 'loop', 'bomb', 'throttle'];
+  await page.evaluate(ids => {
+    (window as any).__controlOriginals = ids.map(id => document.getElementById(id));
+    (window as any).__controlSettings = ids.map(id => { const n = document.getElementById(id)!; return { hidden: n.hidden, width: getComputedStyle(n).width, height: getComputedStyle(n).height }; });
+  }, ids);
+  const fire = page.locator('#fire');
+  await fire.focus();
+  const box = await fire.boundingBox(); expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down(); await page.locator('#flight').focus(); await page.keyboard.down('Space');
+  await fire.focus();
+  const held = await act(page, 'controlLifecycle', 'inspect');
+  expect(held.input.heldPointers.fire.length).toBeGreaterThan(0);
+  expect(held.input.keys.length).toBeGreaterThan(0);
+  const loss = await act(page, 'controlLifecycle', 'lose');
+  expect(loss.status).toBe('respawning'); expect(loss.input.keys).toEqual([]);
+  expect(Object.values(loss.input.heldPointers).flat()).toEqual([]);
+  expect(loss.input.throttlePointer).toBeNull(); expect(loss.input.steerPointer).toBeNull();
+  expect(loss.pendingLoop || loss.pendingBomb).toBe(false);
+  for (const id of ids) await expect(page.locator(`#${id}`)).toBeHidden();
+  await expect(page.locator('#pause')).toBeFocused();
+  await expect(page.locator('#game-sound')).toBeVisible();
+  await expect(page.locator('#respawn-status')).toContainText('戦況と作戦時間は停止中');
+  await page.mouse.up(); // Keep the physical key held through revival.
+  await page.click('#pause');
+  const paused = await act(page, 'controlLifecycle', 'elapsed');
+  expect(paused.screen).toBe('paused'); expect(paused.status).toBe('respawning'); expect(paused.remaining).toBe(loss.remaining);
+  await page.click('#resume');
+  const revived = await act(page, 'controlLifecycle', 'elapsed');
+  expect(revived.status).toBe('running');
+  await page.keyboard.down('Space'); // Native repeated keydown must not re-arm a cleared hold.
+  const released = await act(page, 'controlLifecycle', 'inspect');
+  await page.keyboard.up('Space');
+  expect(released.sample.fire || released.sample.loop || released.sample.bomb).toBe(false);
+  expect(released.sample.throttle).toBe(0);
+  const restored = await page.evaluate(ids => ids.map((id, index) => {
+    const n = document.getElementById(id)!; const original = (window as any).__controlSettings[index];
+    return { identity: n === (window as any).__controlOriginals[index], hidden: n.hidden === original.hidden,
+      width: getComputedStyle(n).width === original.width, height: getComputedStyle(n).height === original.height,
+      visible: getComputedStyle(n).display !== 'none', captures: n.hasPointerCapture(1) };
+  }), ids);
+  expect(restored.every(r => r.identity && r.hidden && r.width && r.height && r.visible && !r.captures)).toBe(true);
+  await checkGeometry(page, '#hud');
+  await capture(page, info, 'native-input-controls-restored.png');
+  await info.attach('native-input-lifecycle.json', { body: Buffer.from(JSON.stringify({ held, loss, paused, revived, released, restored }, null, 2)), contentType: 'application/json' });
+});
