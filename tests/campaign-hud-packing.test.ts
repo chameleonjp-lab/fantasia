@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CampaignHudLayout, layoutCampaignHud, layoutCompactCampaignSites, intersects, type HudMeasurement, type HudRect } from '../src/campaign-hud-layout';
+import { CampaignHudLayout, packSemanticRegions, layoutCampaignHud, layoutCompactCampaignSites, intersects, type HudMeasurement, type HudRect } from '../src/campaign-hud-layout';
 
 // Raw CI 37566989885 compact measurements. These are regression inputs, not a
 // claim that this revision has run in a native browser.
@@ -195,4 +195,82 @@ test('two tall leading items retain actual full-ammunition portrait HUD and canv
  const updated=host.diagnostics();
  for(const rect of [updated.radar!.rect,...updated.panels!.map(p=>p.rect),...updated.obstacles!])assert(!intersects(label.rect,rect,4));
  assert.equal(JSON.stringify(c),before);assert.deepEqual(layoutCampaignHud(c.measurement,c.sight),out);
+});
+
+// Exact 53549294 run39218607354 real-DOM reflow measurements; unchanged full text and controls.
+const semanticRegionCaptures = [{"name":"easy-deadline-clear-text-200-narrow-alert-column","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":8,"y":140,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":180,"width":110,"height":3,"id":"health-track"},{"x":8,"y":190,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":131.28125,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":450,"y":150,"width":106,"height":108,"id":"campaign-threat"},{"x":161.875,"y":221.1875,"width":244.25,"height":39.265625,"id":"reload-status"},{"x":450,"y":84,"width":106,"height":82,"id":"announcement"},{"x":8,"y":220,"width":114,"height":64,"id":"campaign-hud-details"},{"x":8,"y":140,"width":72,"height":24,"id":"campaign-mode-status"},{"x":8,"y":140,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":356,"y":266,"width":81.296875,"height":44,"id":"game-sound"},{"x":310,"y":266,"width":44,"height":50,"id":"pause"},{"x":185.25,"y":255.046875,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":428.3359375,"y":160.9921875,"width":86.203125,"height":100.390625,"id":"loop"}],"flightData":{"x":252,"y":188,"width":167.046875,"height":27.03125},"threat":{"x":450,"y":150,"width":106,"height":108}},"sight":{"x":230.8,"y":106.8,"width":106.4,"height":106.4,"id":"aim-and-reload-ring"}},{"name":"easy-deadline-low-text-200-narrow-alert-column","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":8,"y":140,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":180,"width":110,"height":3,"id":"health-track"},{"x":8,"y":190,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":131.28125,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":450,"y":150,"width":106,"height":108,"id":"campaign-threat"},{"x":161.875,"y":221.1875,"width":244.25,"height":39.265625,"id":"reload-status"},{"x":171.4609375,"y":182,"width":225.078125,"height":32,"id":"warning"},{"x":450,"y":84,"width":106,"height":82,"id":"announcement"},{"x":8,"y":220,"width":114,"height":64,"id":"campaign-hud-details"},{"x":8,"y":140,"width":72,"height":24,"id":"campaign-mode-status"},{"x":8,"y":140,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":356,"y":266,"width":81.296875,"height":44,"id":"game-sound"},{"x":310,"y":266,"width":44,"height":50,"id":"pause"},{"x":185.25,"y":255.046875,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":428.3359375,"y":160.9921875,"width":86.203125,"height":100.390625,"id":"loop"}],"flightData":{"x":252,"y":188,"width":167.046875,"height":27.03125},"threat":{"x":450,"y":150,"width":106,"height":108}},"sight":{"x":230.8,"y":106.8,"width":106.4,"height":106.4,"id":"aim-and-reload-ring"}},{"name":"normal-deadline-low-text-200-content-box-padding-one","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":112,"y":160,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":199,"width":110,"height":3,"id":"health-track"},{"x":420,"y":118,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":131.28125,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":418,"y":150,"width":138,"height":80,"id":"campaign-threat"},{"x":215,"y":168.203125,"width":138,"height":70.53125,"id":"reload-status"},{"x":8,"y":226,"width":223.078125,"height":30,"id":"warning"},{"x":325,"y":60,"width":232,"height":28,"id":"announcement"},{"x":112,"y":60,"width":114,"height":64,"id":"campaign-hud-details"},{"x":296,"y":270,"width":72,"height":24,"id":"campaign-mode-status"},{"x":372,"y":278,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":296,"y":222,"width":81.296875,"height":44,"id":"game-sound"},{"x":509,"y":60,"width":44,"height":50,"id":"pause"},{"x":475,"y":172,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":330,"y":118,"width":86.203125,"height":100.390625,"id":"loop"},{"x":475,"y":239,"width":62,"height":51.1875,"id":"fire"},{"x":420,"y":172,"width":51.1875,"height":102.390625,"id":"throttle"}],"flightData":{"x":252,"y":188,"width":167.046875,"height":27.03125},"threat":{"x":418,"y":150,"width":138,"height":80}},"sight":{"x":246.79999999999995,"y":79.0089291012429,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}}];
+for (const capture of semanticRegionCaptures) test(`bounded semantic recovery fits measured ${capture.name}`, () => {
+  const source = structuredClone(capture), before = JSON.stringify(source);
+  const out = assertPacked(source.measurement, source.sight);
+  assert.equal(out.primarySearchChecks, 120_000);
+  assert(out.recoverySearchChecks! > 0 && out.recoverySearchChecks! <= 6_000);
+  assert(out.searchChecks! <= 126_000);
+  assert.equal(out.searchChecks, out.primarySearchChecks! + out.recoverySearchChecks!);
+  assert.deepEqual(layoutCampaignHud(source.measurement, source.sight), out);
+  assert.equal(JSON.stringify(source), before);
+});
+
+test('critical announcement reflow is limited to visible active short-landscape notices', () => {
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const marker = '/* Active critical-announcement regions:';
+  assert.ok(css.includes(marker));
+  const block = css.slice(css.indexOf(marker));
+  assert.ok(block.includes('(orientation: landscape) and (max-width: 600px) and (max-height: 360px)'));
+  assert.ok(block.includes(':not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden]))'));
+  assert.ok(block.includes('[data-mode="easy"]'));
+  assert.ok(block.includes('[data-mode="normal"]'));
+  assert.ok(block.includes('padding: 1px'));
+  assert.ok(!/font-size|line-height|display:\s*none|visibility:\s*hidden|#fire|#loop|#bomb|#throttle/.test(block));
+});
+
+function semanticTemplateInput() {
+  const capture = structuredClone(semanticRegionCaptures[2]), m = capture.measurement;
+  return { bounds: m.bounds, items: [...m.panels, ...m.movableControls, { id: 'radar', x: 0, y: 0, width: 100, height: 116 }],
+    obstacles: [...m.obstacles, { id: 'central-flight-lane', x: m.canvas.width / 2 - 42, y: m.canvas.height / 2 - 42, width: 84, height: 84 }, capture.sight] };
+}
+
+test('semantic regions fail closed on invalid roles, dimensions, fixed anchors and exhausted work', () => {
+  const original = semanticTemplateInput(), before = JSON.stringify(original);
+  const run = (input = original, remaining = 6_000) => {
+    const work = { remaining }, result = packSemanticRegions(input.bounds, input.obstacles, input.items, work);
+    assert(work.remaining >= 0 || !Number.isFinite(remaining) || remaining < 0);
+    return { result, used: remaining - work.remaining };
+  };
+  const validResult = run(); assert.ok(validResult.result); assert.equal(validResult.used, 562);
+  assert.equal(run(original, 561).result, null);
+  for (const remaining of [-1, 0, 0.5, Infinity, NaN, 6_001]) assert.equal(run(original, remaining).result, null);
+  for (const value of [NaN, Infinity, -1, 0]) {
+    const c = structuredClone(original); c.items[0].width = value; assert.equal(run(c).result, null);
+  }
+  for (const kind of ['missing', 'duplicate', 'extra', 'fixed-missing', 'fixed-extra', 'fixed-duplicate', 'site-missing', 'site-extra'] as const) {
+    const c = structuredClone(original);
+    if (kind === 'missing') c.items.pop();
+    if (kind === 'duplicate') c.items[1].id = c.items[0].id;
+    if (kind === 'extra') c.items.push({ ...c.items[0], id: 'extra' });
+    if (kind === 'fixed-missing') c.obstacles.pop();
+    if (kind === 'fixed-extra') c.obstacles.push({ ...c.obstacles.at(-1)!, id: 'extra' });
+    if (kind === 'fixed-duplicate') c.obstacles[c.obstacles.length - 1].id = 'central-flight-lane';
+    if (kind === 'site-missing') c.obstacles.shift();
+    if (kind === 'site-extra') c.obstacles.unshift({ ...c.obstacles[0] });
+    assert.equal(run(c).result, null, kind);
+  }
+  assert.equal(JSON.stringify(original), before);
+});
+
+test('semantic region zero-slack boundaries reject unsafe growth and remain deterministic', () => {
+  const original = semanticTemplateInput();
+  for (const delta of [-0.01, 0, 0.01]) {
+    const c = structuredClone(original); for (const p of c.items) { p.width += delta; p.height += delta; }
+    const a = packSemanticRegions(c.bounds, c.obstacles, c.items, { remaining: 6000 });
+    const b = packSemanticRegions(c.bounds, c.obstacles, c.items, { remaining: 6000 });
+    assert.deepEqual(a, b);
+    if (delta > 0) { assert.equal(a, null); continue; }
+    assert.ok(a);
+    const rects = [...a.values()];
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      assert(r.x >= c.bounds.x && r.y >= c.bounds.y && r.x + r.width <= c.bounds.x + c.bounds.width && r.y + r.height <= c.bounds.y + c.bounds.height);
+      for (const q of [...c.obstacles, ...rects.slice(i + 1)]) assert(!intersects(r, q, 4));
+    }
+  }
 });

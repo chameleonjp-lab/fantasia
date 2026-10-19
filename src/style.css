@@ -1571,3 +1571,29 @@ p {
    but remove only the four inactive flight controls from layout and focus/AT.
    Individual hidden flags and custom dimensions are untouched on restoration. */
 #app.flight-controls-waiting [data-flight-control] { display: none !important; }
+
+/* Active critical-announcement regions: keep every readout and its type size.
+   Narrow Easy columns and Normal's content-preserving one-pixel padding leave
+   room for independent hazards. Hidden notices and frozen flight use their
+   established lifecycle layouts; saved control dimensions are untouched. */
+@media (orientation: landscape) and (max-width: 600px) and (max-height: 360px) {
+  #app[data-campaign-hud="compact"][data-mode="easy"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud :is(#campaign-threat, #announcement) {
+    width: 106px !important; max-width: 106px !important;
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  #app[data-campaign-hud="compact"][data-mode="easy"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #campaign-hud-details {
+    height: 64px;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud :is(#campaign-threat, #reload-status, #warning, #announcement) {
+    padding: 1px; white-space: normal; overflow-wrap: anywhere;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud :is(#campaign-threat, #reload-status) {
+    width: 138px !important; max-width: 138px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud #announcement {
+    width: 232px !important; max-width: 232px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud #warning {
+    width: max-content;
+  }
+}

@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 
 type Timings = { name: string; setupMs: number; tourMs: number; captureMs: number };
-type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss' | 'reachable-protection' | 'deadline-clear' | 'deadline-low' | 'deadline-outside'; priority: 0 | 4 | 5 };
+type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss' | 'reachable-protection' | 'deadline-clear' | 'deadline-low' | 'deadline-outside'; priority: 0 | 4 | 5; measureReflow?: boolean };
 type HudProvenance = 'fresh-page' | 'rotation-stress';
 type HudFailureRecord = { case: string; provenance: HudProvenance | 'aggregate'; stage: string; message: string; stack?: string };
 type HudCaseCoverage = { case: string; attempted: boolean; evidenceCompleted: boolean; imageSaved: boolean; jsonSaved: boolean; exceptionMessage?: string; notRunReason?: string };
@@ -1568,6 +1568,14 @@ test('Storage failure offers session-only settings and expires after reload', as
 
 // Test-only bounded shape measurements. These never replace the original
 // case result, nor certify a product fix from hypothetical dimensions.
+function pairedSyntheticHudCase(original: HudCase): HudCase {
+  const alert = original.alert.replace(/^deadline-/, '');
+  if (!original.alert.startsWith('deadline-') || !['clear', 'outside', 'low'].includes(alert))
+    throw new Error('Unsupported deadline shape pair');
+  return { ...original, alert: alert as 'clear' | 'outside' | 'low', measureReflow: true,
+    name: original.name.replace('-deadline-', '-synthetic-shape-') };
+}
+
 function hudReflowProbePlans(boundsWidth: number, sideWidth: number) {
   const side = Math.max(44, Math.min(boundsWidth, Math.floor(sideWidth)));
   return [
@@ -1622,6 +1630,10 @@ async function captureHudReflowProbes(page: Page, info: TestInfo, hudCase: HudCa
         for (const [id, targetWidth] of [['campaign-threat', plan.threatWidth], ['announcement', plan.announcementWidth],
           ['reload-status', plan.reloadWidth], ['warning', undefined]] as const) {
           const node = document.getElementById(id)!;
+          const source = shape(node);
+          if (source.width !== 0 && source.height !== 0 && source.padding.some(value => value !== '1px' && value !== '2px'))
+            throw new Error(`Padding probe requires known padding baseline: ${id}`);
+          node.style.setProperty('padding', '2px', 'important');
           const width = targetWidth ?? node.getBoundingClientRect().width;
           // Preserve a content box already measured by the earlier width probes.
           node.style.setProperty('width', `${width}px`, 'important');
@@ -1639,7 +1651,7 @@ async function captureHudReflowProbes(page: Page, info: TestInfo, hudCase: HudCa
           const preserved = before.text === after.text && before.font === after.font && before.fontSize === after.fontSize && before.lineHeight === after.lineHeight
             && JSON.stringify(before.borders) === JSON.stringify(after.borders)
             && before.contentWidth === after.contentWidth && before.contentHeight === after.contentHeight;
-          evidence.push({ id, before, after, preserved });
+          evidence.push({ id, source, before, after, preserved });
         }
         return evidence;
       }, { originals, plan });
@@ -1723,7 +1735,7 @@ async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCas
       measuredArea = { status: inspection.areaBound.status, areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
         layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, searchLimit: inspection.searchLimit, blockedReasons: inspection.blockedReasons };
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
-      if (hudCase.alert.startsWith('deadline-')) await captureHudReflowProbes(freshPage, info, hudCase, fixture, fontScale,
+      if (hudCase.alert.startsWith('deadline-') || hudCase.measureReflow) await captureHudReflowProbes(freshPage, info, hudCase, fixture, fontScale,
         freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, originalSecondaryNodesHandle, originalSecondaryText);
     } catch (error) {
       caseCaptureMs += await captureHudFailureEvidence(freshPage, info, coverage, caseFailures, 'fresh-page', hudCase.name, 'case-exception', error,
@@ -2210,6 +2222,14 @@ for (const condition of [
   const result = await runFreshHudCase(browser, info, hudCase, coverage);
   await info.attach('deadline-branch-coverage.json', { body: Buffer.from(JSON.stringify({ coverage, ...result,
     scope: 'Actual frame crosses the deadline threshold from explicit synthetic world preconditions; full-run reachability is not established.' }, null, 2)), contentType: 'application/json' });
+  // Keep the historical synthetic notice as an additional shape dimension.
+  // A separate fresh context avoids contaminating the production-wording case.
+  const pairedCase = pairedSyntheticHudCase(hudCase);
+  const pairedCoverage: HudCaseCoverage = { case: pairedCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+  const pairedResult = await runFreshHudCase(browser, info, pairedCase, pairedCoverage);
+  await info.attach('paired-synthetic-shape-coverage.json', { body: Buffer.from(JSON.stringify({ coverage: pairedCoverage, ...pairedResult,
+    scope: 'Original synthetic priority-4 turret notice; separate from the real deadline branch and not a full-run reachability claim.' }, null, 2)), contentType: 'application/json' });
+  expect(pairedCoverage.evidenceCompleted, 'paired original synthetic notice PNG and JSON were both captured').toBe(true);
   expect(coverage.evidenceCompleted, 'state-controlled deadline branch PNG and JSON were both captured').toBe(true);
-  expect(result.failures, 'deadline branch keeps the unchanged full HUD geometry/text/control contract').toEqual([]);
+  expect([...result.failures, ...pairedResult.failures], 'deadline and original synthetic notices keep the unchanged full HUD geometry/text/control contract').toEqual([]);
 });

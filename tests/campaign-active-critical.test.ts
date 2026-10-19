@@ -500,7 +500,7 @@ test('padding probe executes content-box checks and records altered typography a
       const pad = `${node.values.get('padding') ?? initialPadding}px`.replace('pxpx', 'px');
       return { paddingTop: pad, paddingRight: pad, paddingBottom: pad, paddingLeft: pad,
         borderTopWidth: `${node.border}px`, borderRightWidth: `${node.border}px`, borderBottomWidth: `${node.border}px`, borderLeftWidth: `${node.border}px`,
-        font: '20px sans-serif', fontSize: changeFont && node.values.has('padding') ? '19px' : '20px', lineHeight: '26px', boxSizing: 'border-box', overflowX: 'visible', overflowY: 'visible' };
+        font: '20px sans-serif', fontSize: changeFont && node.values.get('padding') === '1px' ? '19px' : '20px', lineHeight: '26px', boxSizing: 'border-box', overflowX: 'visible', overflowY: 'visible' };
     } };
     runInNewContext(callback + '\nthis.probe = probe;', context);
     return context.probe({ originals: [], plan: { padding: 1, detailHeight: 64, threatWidth: 140, announcementWidth: 234, reloadWidth: 140 } });
@@ -510,5 +510,26 @@ test('padding probe executes content-box checks and records altered typography a
   assert.ok(good.every((row: any) => row.preserved));
   assert.deepEqual(Array.from(good, (row: any) => [row.after.width, row.after.height]), [[138, 80], [232, 28], [138, 70.53125], [223.078125, 30]]);
   assert.ok(execute(true).every((row: any) => !row.preserved));
-  assert.throws(() => execute(false, 3), /requires measured 2px border-box/);
+  assert.throws(() => execute(false, 3), /requires known padding baseline/);
+});
+
+test('deadline shape diagnostics retain a distinct original synthetic notice pair', () => {
+  const source = readFileSync(new URL('../browser-ui-only/ui-only.spec.ts', import.meta.url), 'utf8');
+  assert.ok(source.includes('function pairedSyntheticHudCase('));
+  const block = source.slice(source.indexOf('function pairedSyntheticHudCase('), source.indexOf('function hudReflowProbePlans('));
+  const context: any = {}; runInNewContext(transpileModule(block, {}).outputText, context);
+  for (const condition of ['clear', 'outside', 'low']) {
+    const original = { name: `hud-easy-deadline-${condition}-text-200.png`, mode: 'easy', alert: `deadline-${condition}`, priority: 4, width: 568, height: 320 };
+    const saved = JSON.stringify(original), paired = context.pairedSyntheticHudCase(original);
+    assert.equal(paired.alert, condition);
+    assert.equal(paired.priority, 4);
+    assert.equal(paired.mode, original.mode);
+    assert.equal(paired.width, original.width);
+    assert.equal(paired.height, original.height);
+    assert.equal(paired.measureReflow, true);
+    assert.ok(paired.name.includes('synthetic-shape-'));
+    assert.notEqual(paired.name, original.name);
+    assert.equal(JSON.stringify(original), saved);
+  }
+  assert.throws(() => context.pairedSyntheticHudCase({ alert: 'respawn' }), /deadline shape pair/);
 });
