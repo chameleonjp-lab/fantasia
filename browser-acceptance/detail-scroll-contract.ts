@@ -113,10 +113,13 @@ export function planDetailKeys(e:{top:number;max:number;delta:number;window:numb
 }
 
 /** A trusted touch stroke stays inside the measured scroll clip, not its border box. */
-export function planDetailTouch(clip:{x:number;y:number;width:number;height:number},delta:number,slop:number) {
- if(![clip.x,clip.y,clip.width,clip.height,delta,slop].every(Number.isFinite)||clip.width<=8||clip.height<=28||slop<0)
+export function planDetailTouch(clip:{x:number;y:number;width:number;height:number},delta:number,slop:number,window=0) {
+ if(![clip.x,clip.y,clip.width,clip.height,delta,slop,window].every(Number.isFinite)||clip.width<=8||clip.height<=28||slop<0||window<0)
   throw new Error('Invalid native touch clip');
- const direction=delta<0?-1:1,travel=direction*Math.min(clip.height-8,Math.max(20,Math.abs(delta)+slop));
+ // Aim near the far edge of the interval where the entire fragment fits.
+ // Keep 2px interior margin; observed full text, never this prediction, proves coverage.
+ const direction=delta<0?-1:1,advance=Math.abs(delta)+Math.max(0,window/2-2);
+ const travel=direction*Math.min(clip.height-8,Math.max(20,advance+slop));
  const x=clip.x+clip.width/2,y=direction>0?clip.y+clip.height-4:clip.y+4;
  return {x,y,endY:y-travel,travel,direction};
 }

@@ -216,7 +216,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
       for(let i=0;i<maxMoves&&!complete('touch');i++){
         const target=unreadDetailFragments(lastAtomic.geometry,seen('touch'))[0];expect(target).toBeTruthy();
         const clip=lastAtomic.geometry.styles.find((s:any)=>s.key.startsWith('style:campaign-hud-details:'))?.clipRect;
-        expect(clip).toBeTruthy();const {x,y,endY,travel,direction}=planDetailTouch(clip,target.delta,slop);
+        expect(clip).toBeTruthy();const {x,y,endY,travel,direction}=planDetailTouch(clip,target.delta,slop,target.window);
         const hit=await viewport.evaluate((v,{clip,x,y,endY})=>{
           const r=v.getBoundingClientRect(),actual={x:r.x+v.clientLeft,y:r.y+v.clientTop,width:v.clientWidth,height:v.clientHeight};
           const unchanged=Object.keys(actual).every(k=>Math.abs(actual[k as keyof typeof actual]-clip[k as keyof typeof actual])<.01);
@@ -227,7 +227,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
         d.evidence.push({label:'detail-scroll-touch-hit-plan',clip,...hit});
         expect(hit.unchanged,'Measured touch clip must still match the live scroll client area').toBe(true);
         expect(hit.points.every(p=>p.insideScreen&&p.hit),'Both native touch endpoints must hit this scroll viewport').toBe(true);
-        d.evidence.push({label:'detail-scroll-navigation-plan',method:'touch',targetFragment:target.id,targetRect:target.rect,delta:target.delta,travel,remaining:unreadDetailFragments(lastAtomic.geometry,seen('touch')).length});
+        d.evidence.push({label:'detail-scroll-navigation-plan',method:'touch',targetFragment:target.id,targetRect:target.rect,delta:target.delta,window:target.window,travel,remaining:unreadDetailFragments(lastAtomic.geometry,seen('touch')).length});
         const operation=await beginOperation('touch',direction);await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
         if(i===0)await consumedNeutral();
         for(let j=1;j<=4;j++){await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-travel*j/4,id:1}]});await d.page.waitForTimeout(20);}

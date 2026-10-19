@@ -232,3 +232,13 @@ test('touch planning uses the measured clip with four-pixel interior endpoints i
  for(const c of [{...clip,height:8},{...clip,width:0},{...clip,y:NaN}])assert.throws(()=>plan(c,20,15));
  assert.throws(()=>plan(clip,NaN,15));assert.throws(()=>plan(clip,20,-1));
 });
+
+test('touch plan targets the far interior of the full-fragment interval without extending its clip endpoints',async()=>{
+ const {planDetailTouch}=await import('../browser-acceptance/detail-scroll-contract');const clip={x:113,y:68.796875,width:112,height:62};
+ const plan=planDetailTouch as any;
+ assert.equal(plan(clip,26,15,24).travel,51,'use ten extra safe pixels inside the 24px full-text interval');
+ assert.equal(plan(clip,-26,15,24).travel,-51);
+ assert.equal(plan(clip,26,15,2).travel,41,'narrow intervals keep their center');
+ assert.equal(plan(clip,50,15,24).travel,54,'never extend the four-pixel clip endpoints');
+ assert.throws(()=>plan(clip,20,15,-1));assert.throws(()=>plan(clip,20,15,NaN));
+});
