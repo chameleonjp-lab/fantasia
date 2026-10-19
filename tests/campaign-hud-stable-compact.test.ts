@@ -239,3 +239,64 @@ test('announcement visibility gate accepts only a fully validated canonical proj
   assert.throws(() => check(false, false, projection));
   assert.throws(() => check(false, true, 'original announcement'));
 });
+
+// DOM-contract mock only: these tests do not prove browser geometry or glyph visibility.
+const wholeFlowHarnessSource = `/** Deterministic DOM-contract harness only. No glyph, CSS layout, or browser claim. */
+const runFlowProbeHarness=function(install,{throwOnAppend=false,hideAfterInstall=false}={}) {
+ const globals=['document','getComputedStyle','Node'].map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)]);
+ class NodeMock {
+  constructor(id=''){Object.assign(this,{id,className:id,children:[],dataset:{},attrs:{},hidden:false,textContent:'原文 '+id,clientWidth:100,scrollWidth:100});this.style={setProperty:(k,v)=>{this.attrs.style=(this.attrs.style||'')+\`\${k}:\${v};\`}};}
+  get parentNode(){return this.parentElement}get nextSibling(){if(!this.parentElement)return null;return this.parentElement.children[this.parentElement.children.indexOf(this)+1]??null}
+  get isConnected(){for(let n=this;n;n=n.parentElement)if(n.id==='app')return true;return false}get childNodes(){return this.children}
+  querySelectorAll(s){return s==='*'?this.children.flatMap(n=>[n,...n.querySelectorAll('*')]):[]}
+  contains(n){for(;n;n=n.parentElement)if(n===this)return true;return false}getBoundingClientRect(){return {x:8,y:10,width:100,height:30}}getClientRects(){return [this.getBoundingClientRect()]}
+  closest(){return null}
+  getAttribute(k){return this.attrs[k]??null}setAttribute(k,v){this.attrs[k]=v}removeAttribute(k){delete this.attrs[k]}
+  before(a){a.parentElement=this.parentElement;this.parentElement.children.splice(this.parentElement.children.indexOf(this),0,a)}
+  append(...ns){for(const n of ns){n.remove();n.parentElement=this;this.children.push(n)}}
+  remove(){if(this.parentElement)this.parentElement.children=this.parentElement.children.filter(n=>n!==this);this.parentElement=null}
+  replaceWith(n){const p=this.parentElement;n.remove();const i=p.children.indexOf(this);p.children.splice(i,1,n);n.parentElement=p;this.parentElement=null}
+  matches(s){return this.id==='pause'&&s.includes('button')}
+ }
+ const app=new NodeMock('app'),hud=new NodeMock('hud'),flight=new NodeMock('flight-data');app.append(hud);hud.append(flight);
+ const names=['health-label','health-track','campaign-limit','ammo','campaign-mode-status','instrument'],nodes=names.map(n=>new NodeMock(n));flight.append(...nodes);
+ const control=new NodeMock('pause');hud.append(control);const roots=[...nodes,control],originalOrder=[...flight.children];
+ app.querySelector=()=>hud;app.querySelectorAll=s=>s.startsWith('.flight-data > *')?roots:nodes.filter(n=>n.id===s.slice(1));
+ const append=hud.append.bind(hud);hud.append=(n)=>{if(throwOnAppend&&n.dataset.wholeFlowProbe==='numeric')throw Error('injected append failure');append(n)};
+ globalThis.document={querySelector:()=>app,createComment:()=>new NodeMock('anchor'),createElement:()=>new NodeMock('new')};
+ globalThis.getComputedStyle=n=>({display:'block',visibility:n.hidden?'hidden':'visible',opacity:'1',getPropertyValue:()=> '16px'});globalThis.Node={TEXT_NODE:3};
+ let error,reading,restoreResult;
+ try {
+  let probe;try{probe=install({bounds:{x:8,y:8,width:304,height:552},fixed:Array.from({length:7},()=>({id:'campaign-site',x:8,y:8,width:50,height:40})),portrait:true});if(hideAfterInstall)nodes[0].hidden=true;reading=probe.read();}catch(e){error=String(e)}finally{if(probe){nodes[0].hidden=false;restoreResult=probe.restore()}}
+  return {error,reading,restoreResult,parentsRestored:nodes.every(n=>n.parentElement===flight),orderRestored:flight.children.length===originalOrder.length&&flight.children.every((n,i)=>n===originalOrder[i]),inlineRestored:roots.every(n=>n.getAttribute('style')===null),anchorsRemaining:flight.children.filter(n=>n.id==='anchor').length};
+ } finally {for(const [key,descriptor] of globals){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}}
+};
+`;
+function inspectWholeFlowProbe(options: { throwOnAppend?: boolean; hideAfterInstall?: boolean } = {}) {
+  const spec = readFileSync(new URL('../browser-ui-only/ui-only.spec.ts', import.meta.url), 'utf8');
+  const fn = spec.slice(spec.indexOf('function installHudWholeFlowProbe('), spec.indexOf('async function captureHudWholeFlowProbe('));
+  assert.ok(fn.includes('return {initial:read(),read,restore}'));
+  const source = transpileModule(`${fn}\n${wholeFlowHarnessSource}\nrunFlowProbeHarness(installHudWholeFlowProbe, ${JSON.stringify(options)});`, {
+    compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.None },
+  }).outputText;
+  return JSON.parse(JSON.stringify(runInNewContext(source)));
+}
+test('whole-flow diagnostic restores original parent, sibling order and styles after installation exception', () => {
+  const result = inspectWholeFlowProbe({ throwOnAppend: true });
+  assert.match(result.error, /injected append failure/);
+  assert.equal(result.parentsRestored, true); assert.equal(result.orderRestored, true); assert.equal(result.inlineRestored, true);
+  assert.equal(result.anchorsRemaining, 0);
+});
+test('whole-flow diagnostic retains original semantic leaves after grouping and restores them', () => {
+  const result = inspectWholeFlowProbe();
+  assert.equal(result.error, undefined); assert.equal(result.reading.originalLeafCount, 7); assert.equal(result.reading.retainedLeafCount, 7);
+  assert.deepEqual(result.reading.invariants, []);
+  assert.deepEqual(result.reading.leaves.map((item: {id:string}) => item.id), ['health-label', 'health-track', 'campaign-limit', 'ammo', 'campaign-mode-status', 'instrument', 'pause']);
+  assert.equal(result.restoreResult, true); assert.equal(result.orderRestored, true); assert.equal(result.inlineRestored, true);
+});
+test('whole-flow diagnostic rejects original leaf visibility changes after grouping', () => {
+  const result = inspectWholeFlowProbe({ hideAfterInstall: true });
+  assert.equal(result.error, undefined);
+  assert.ok(result.reading.invariants.some((item: {id:string;issue:string}) => item.id === 'health-label' && item.issue === 'visibility-changed'));
+  assert.equal(result.restoreResult, true);
+});

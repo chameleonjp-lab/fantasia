@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 
 type Timings = { name: string; setupMs: number; tourMs: number; captureMs: number };
@@ -1576,6 +1577,121 @@ function pairedSyntheticHudCase(original: HudCase): HudCase {
     name: original.name.replace('-deadline-', '-synthetic-shape-') };
 }
 
+/** Throwaway simultaneous DOM dimension probe, never a product placement receipt. */
+function installHudWholeFlowProbe(input: { bounds: { x: number; y: number; width: number; height: number }; fixed: Array<{id: string; x:number; y:number; width:number; height:number}>; portrait:boolean }) {
+  if (![input.bounds,...input.fixed].every(r=>[r.x,r.y,r.width,r.height].every(Number.isFinite)&&r.width>0&&r.height>0) || input.fixed.filter(r=>r.id==='campaign-site').length!==7) throw new Error('flow probe requires finite bounds and seven sites');
+  const app = document.querySelector<HTMLElement>('#app')!;
+  const hud = app.querySelector<HTMLElement>('#hud')!;
+  const roots = [...new Set(app.querySelectorAll<HTMLElement>('.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip, #throttle-layout-note, #campaign-hud-details, #campaign-mode-status, .target-tally, #hud button, #hud [role="slider"]'))];
+  const selected = ['.health-label', '.health-track', '.campaign-limit', '.ammo', '#campaign-mode-status', '.instrument'].map(selector => {
+    const found = app.querySelectorAll<HTMLElement>(selector);
+    if (found.length !== 1) throw new Error(`flow probe requires one original ${selector}`);
+    return found[0];
+  });
+  const [health, track, limit, ammo, mode, instrument] = selected;
+  const rect = (node: Element) => { const r=node.getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}; };
+  const visible = (node: HTMLElement) => {if(!node.isConnected||!node.getClientRects().length)return false;for(let p:HTMLElement|null=node;p;p=p.parentElement){const s=getComputedStyle(p);if(p.hidden||s.display==='none'||s.visibility==='hidden'||s.visibility==='collapse'||Number(s.opacity)===0)return false;}return true;};
+  const style = (node: HTMLElement, key: string, value: string) => node.style.setProperty(key,value,'important');
+  const names = ['font-size','line-height','letter-spacing','font-family','font-weight'];
+  const tracked = [...new Set(roots.flatMap(node => [node, ...node.querySelectorAll<HTMLElement>('*')]))];
+  const before = tracked.map(node => ({ node, text:node.textContent, inline:node.getAttribute('style'), font:names.map(key=>getComputedStyle(node).getPropertyValue(key)), r:rect(node) }));
+  const originalRoots = roots.map(node=>({node, parent:node.parentNode, visible:visible(node), id:node.id||node.className, r:rect(node)}));
+  const originalPositions=selected.map(node=>({node,parent:node.parentNode,next:node.nextSibling}));
+  const anchors:Array<{node:HTMLElement;anchor:Comment}>=[];
+  let wrapper:HTMLDivElement|null=null;
+  const restore=()=>{for(const {node,anchor} of anchors){if(anchor.parentNode)anchor.replaceWith(node);}for(const item of before){if(item.inline===null)item.node.removeAttribute('style');else item.node.setAttribute('style',item.inline);}wrapper?.remove();return originalPositions.every(item=>item.node.isConnected&&item.node.parentNode===item.parent&&item.node.nextSibling===item.next)&&before.every(item=>item.node.getAttribute('style')===item.inline);};
+  try {
+  for(const node of selected){const anchor=document.createComment('throwaway whole-flow original');node.before(anchor);anchors.push({node,anchor});}
+  wrapper = document.createElement('div'); wrapper.dataset.wholeFlowProbe='numeric';
+  wrapper.style.cssText='position:absolute!important;display:flex!important;flex-direction:column!important;gap:4px!important;padding:0!important;margin:0!important;border:0!important;pointer-events:none!important;';
+  const siteBottom=Math.max(...input.fixed.filter(r=>r.id==='campaign-site').map(r=>r.y+r.height));
+  style(wrapper,'left',`${input.bounds.x}px`);style(wrapper,'top',`${siteBottom+4}px`);style(wrapper,'width',`${input.bounds.width}px`);
+  const group=document.createElement('div');group.dataset.wholeFlowProbe='health';group.style.cssText='display:flex!important;flex-direction:column!important;gap:0!important;padding:0!important;margin:0!important;border:0!important;';
+  const row=()=>{const el=document.createElement('div');el.style.cssText='display:flex!important;flex-wrap:nowrap!important;align-items:flex-start!important;gap:4px!important;padding:0!important;margin:0!important;border:0!important;';wrapper!.append(el);return el;};
+  for(const item of before) if(selected.some(node=>node===item.node||node.contains(item.node))) names.forEach((key,i)=>style(item.node,key,item.font[i]));
+  for(const node of selected){const r=rect(node);for(const [key,value] of Object.entries({position:'static',transform:'none',translate:'none',inset:'auto',margin:'0',flex:'0 0 auto',width:`${r.width}px`,'max-width':'none'}))style(node,key,value);}
+  group.append(health,track);
+  if(input.portrait){row().append(group,limit);row().append(ammo,mode);row().append(instrument);}
+  else{row().append(group,limit,ammo,mode);hud.append(instrument);style(instrument,'position','absolute');style(instrument,'left',`${input.bounds.x}px`);}
+  style(instrument,'display','flex');style(instrument,'flex-direction','row');style(instrument,'flex-wrap','nowrap');style(instrument,'white-space','nowrap');style(instrument,'width','max-content');
+  hud.append(wrapper);
+  if(!input.portrait)style(instrument,'top',`${input.bounds.y+input.bounds.height-rect(instrument).height}px`);
+  const expectedParents = selected.map(node=>({node,parent:node.parentNode}));
+  const read=()=>{
+    const visibilityIssues=originalRoots.flatMap(item=>visible(item.node)===item.visible?[]:[{id:item.id,issue:'visibility-changed'}]);
+    const structureIssues=expectedParents.flatMap(item=>item.node.parentNode===item.parent?[]:[{id:item.node.id||item.node.className,issue:'candidate-parent-changed-after-install'}]);
+    const invariants=before.flatMap(item=>{
+      const issues:string[]=[];
+      if(!item.node.isConnected)issues.push('disconnected');
+      if(item.text!==item.node.textContent)issues.push('text-changed');
+      if(names.some((key,i)=>getComputedStyle(item.node).getPropertyValue(key)!==item.font[i]))issues.push('typography-changed');
+      if(item.node.matches('button,[role="slider"]')){const r=rect(item.node);if(r.width!==item.r.width||r.height!==item.r.height)issues.push('control-dimensions-changed');}
+      return issues.map(issue=>({id:item.node.id||item.node.className,issue}));
+    });
+    const leaves=originalRoots.map(item=>({id:item.id,stillPresent:item.node.isConnected,visible:visible(item.node),before:item.r,after:rect(item.node),text:item.node.textContent,parent:item.node.parentElement?.dataset.wholeFlowProbe??item.node.parentElement?.id??item.node.parentElement?.className,scrollWidth:item.node.scrollWidth,clientWidth:item.node.clientWidth}));
+    const glyphs=before.flatMap(item=>{
+      const result:Array<{id:string;text:string;x:number;y:number;width:number;height:number}>=[];
+      for(const child of item.node.childNodes){if(child.nodeType!==Node.TEXT_NODE||!child.textContent?.trim())continue;const range=document.createRange();range.selectNodeContents(child);for(const r of range.getClientRects()) result.push({id:item.node.id||item.node.className,text:child.textContent,x:r.x,y:r.y,width:r.width,height:r.height});}
+      return result;
+    });
+    return {purpose:'simultaneous-natural-dimensions-only; no placement success claim',portrait:input.portrait,bounds:input.bounds,fixed:input.fixed,numeric:rect(wrapper!),health:rect(group),instrument:rect(instrument),leaves,glyphs,invariants:[...structureIssues,...visibilityIssues,...invariants],originalLeafCount:originalRoots.length,retainedLeafCount:leaves.filter(x=>x.stillPresent).length};
+  };
+  return {initial:read(),read,restore};
+  } catch(error) {const restored=restore();if(!restored)throw new Error(`flow installation failed and rollback verification failed: ${String(error)}`);throw error;}
+}
+
+async function captureHudWholeFlowProbe(page: Page, info: TestInfo, hudCase: HudCase) {
+  const original = await act(page, 'evidence');
+  const gameBefore = await page.evaluate(() => (window as any).__fantasiaReadState(false));
+  const fixed = original.layout.obstacles.filter((r: any) => r.id === 'campaign-site' || r.id === 'central-flight-lane' || r.id === 'aim-and-reload-ring');
+  const receipt: any = { purpose: 'throwaway simultaneous whole-flow dimension probe; not a product placement or native-input pass', case: hudCase.name,
+    viewport: { width: hudCase.width, height: hudCase.height }, original, gameBefore, attempted: true, installed: false, imageSaved: false, jsonSaved: false,
+    restored: false, failures: [] };
+  let handle: any = null;
+  try {
+    handle = await page.evaluateHandle(installHudWholeFlowProbe, { bounds: original.layout.bounds, fixed, portrait: hudCase.width < hudCase.height });
+    receipt.installed = true;
+    receipt.initial = await handle.evaluate((probe: any) => probe.initial);
+    receipt.first = await handle.evaluate((probe: any) => probe.read());
+    await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    receipt.second = await handle.evaluate((probe: any) => probe.read());
+    receipt.failures.push(...receipt.initial.invariants, ...receipt.first.invariants, ...receipt.second.invariants);
+    if (JSON.stringify(receipt.initial) !== JSON.stringify(receipt.first)) receipt.failures.push({ issue: 'candidate-changed-before-first-read' });
+    if (JSON.stringify(receipt.first) !== JSON.stringify(receipt.second)) receipt.failures.push({ issue: 'candidate-not-stable-across-two-animation-frames' });
+    const png = await page.screenshot();
+    receipt.image = {bytes:png.length, sha256:createHash('sha256').update(png).digest('hex')};
+    await info.attach(`${hudCase.name}.whole-flow-dimensions.png`, { body: png, contentType: 'image/png' });
+    receipt.imageSaved = true;
+    receipt.afterImage = await handle.evaluate((probe: any) => probe.read());
+    if (JSON.stringify(receipt.second) !== JSON.stringify(receipt.afterImage)) receipt.failures.push({ issue: 'candidate-changed-during-image' });
+  } catch (error) { receipt.failures.push({ issue: 'probe-exception', message: String(error) }); }
+  finally {
+    if (handle) {
+      try { receipt.restored = await handle.evaluate((probe: any) => probe.restore()); }
+      catch (error) { receipt.failures.push({ issue: 'restore-exception', message: String(error) }); }
+      try { await handle.dispose(); } catch(error) {receipt.failures.push({issue:'dispose-exception',message:String(error)});}
+      if (!receipt.restored) receipt.failures.push({ issue: 'original-parent-order-and-inline-not-restored' });
+    }
+    try {
+      await repaintFixedFixture(page);
+      receipt.restoredEvidence = await act(page, 'evidence');
+      receipt.gameAfter = await page.evaluate(() => (window as any).__fantasiaReadState(false));
+      // render is an observation receipt: the mandatory restoration repaint
+      // increments its measurement/draw generation. Keep both full raw values,
+      // but compare every other state field without omitting game/input data.
+      const withoutRender = ({ render: _render, ...state }: any) => state;
+      receipt.stateComparisonExcludedFields = ['render'];
+      if(JSON.stringify(withoutRender(receipt.gameBefore))!==JSON.stringify(withoutRender(receipt.gameAfter)))receipt.failures.push({issue:'game-state-changed'});
+      if(JSON.stringify(original.searchInput)!==JSON.stringify(receipt.restoredEvidence.searchInput)||JSON.stringify(original.sight)!==JSON.stringify(receipt.restoredEvidence.sight))receipt.failures.push({issue:'original-measurement-not-restored'});
+    } catch(error) {receipt.failures.push({issue:'restoration-remeasurement-exception',message:String(error)});}
+    receipt.jsonSaved = true;
+    await info.attach(`${hudCase.name}.whole-flow-dimensions.json`, { body: Buffer.from(JSON.stringify(receipt)), contentType: 'application/json' });
+  }
+  // Do not turn a dimension probe into a passing product test. The caller keeps
+  // the original placement/text/geometry results, including every old failure.
+  return receipt;
+}
+
 function hudReflowProbePlans(boundsWidth: number, sideWidth: number) {
   const side = Math.max(44, Math.min(boundsWidth, Math.floor(sideWidth)));
   return [
@@ -1737,6 +1853,13 @@ async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCas
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
       if (hudCase.alert.startsWith('deadline-') || hudCase.measureReflow) await captureHudReflowProbes(freshPage, info, hudCase, fixture, fontScale,
         freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, originalSecondaryNodesHandle, originalSecondaryText);
+      const wholeFlowTarget = (hudCase.alert.startsWith('deadline-') || hudCase.measureReflow)
+        && (hudCase.mode === 'easy' && ['outside', 'deadline-outside'].includes(hudCase.alert)
+          || hudCase.mode === 'normal' && ['low', 'deadline-low'].includes(hudCase.alert));
+      if (wholeFlowTarget) {
+        const flowProbe = await captureHudWholeFlowProbe(freshPage, info, hudCase);
+        for (const failure of flowProbe.failures) recordHudFailure(caseFailures, 'fresh-page', hudCase.name, 'whole-flow-dimension-probe', JSON.stringify(failure));
+      }
     } catch (error) {
       caseCaptureMs += await captureHudFailureEvidence(freshPage, info, coverage, caseFailures, 'fresh-page', hudCase.name, 'case-exception', error,
         { viewport: { width: hudCase.width, height: hudCase.height }, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority, measuredArea });
