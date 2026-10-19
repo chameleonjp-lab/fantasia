@@ -456,11 +456,17 @@ test('bounded reflow diagnostics preserve the original result and vary only text
   const context: any = {}; runInNewContext(transpileModule(block, {}).outputText, context);
   for (const [bounds, side] of [[304, 106.2], [552, 218.8]]) {
     const plans = context.hudReflowProbePlans(bounds, side);
-    assert.equal(plans.length, 6);
-    assert.deepEqual(Array.from(plans.slice(4), (p: any) => p.alertWidth), [140, 160]);
-    assert.equal(new Set(plans.map((p: any) => p.name)).size, 6);
+    assert.equal(plans.length, 7);
+    assert.deepEqual(Array.from(plans.slice(4, 6), (p: any) => p.alertWidth), [140, 160]);
+    assert.equal(new Set(plans.map((p: any) => p.name)).size, 7);
     assert.ok(plans.every((p: any) => p.alertWidth >= 44 && p.alertWidth <= bounds && p.detailHeight === 64));
     assert.equal(plans.filter((p: any) => p.wrapBands).length, 3);
+    const compact = plans[6];
+    assert.equal(compact.name, 'content-box-padding-one');
+    assert.equal(compact.padding, 1);
+    assert.equal(compact.threatWidth, Math.min(140, bounds));
+    assert.equal(compact.announcementWidth, side < 44 ? 44 : Math.floor(side));
+    assert.equal(compact.reloadWidth, Math.min(140, bounds));
   }
   const implementation = source.slice(source.indexOf('async function captureHudReflowProbes('), source.indexOf('async function runFreshHudCase('));
   assert.ok(implementation.includes('finally {'));
@@ -468,4 +474,41 @@ test('bounded reflow diagnostics preserve the original result and vary only text
   assert.ok(!implementation.includes("setProperty('font"));
   assert.ok(!implementation.includes('textContent ='));
   assert.ok(!implementation.includes('innerHTML ='));
+});
+
+test('padding probe executes content-box checks and records altered typography as a failure', () => {
+  const source = readFileSync(new URL('../browser-ui-only/ui-only.spec.ts', import.meta.url), 'utf8');
+  const start = source.indexOf('const shapeEvidence = await page.evaluate(') + 'const shapeEvidence = await page.evaluate('.length;
+  const end = source.indexOf('}, { originals, plan });', start) + 1;
+  const callback = transpileModule(`const probe = ${source.slice(start, end)};`, {}).outputText;
+  function execute(changeFont = false, initialPadding = 2) {
+    const nodes = new Map<string, any>();
+    for (const [id, width, contentHeight, border] of [
+      ['campaign-threat', 140, 78, 0], ['announcement', 234, 26, 0],
+      ['reload-status', 140, 66.53125, 1], ['warning', 225.078125, 26, 1], ['campaign-hud-details', 114, 62, 1],
+    ] as const) {
+      const values = new Map<string, string>();
+      const node = { id, textContent: `full ${id}`, values, border, contentHeight,
+        style: { setProperty(name: string, value: string) { values.set(name, value); } },
+        getBoundingClientRect() {
+          const pad = Number.parseFloat(values.get('padding') ?? String(initialPadding));
+          return { width: Number.parseFloat(values.get('width') ?? String(width)), height: contentHeight + 2 * pad + 2 * border };
+        } };
+      nodes.set(id, node);
+    }
+    const context: any = { document: { getElementById: (id: string) => nodes.get(id) }, getComputedStyle(node: any) {
+      const pad = `${node.values.get('padding') ?? initialPadding}px`.replace('pxpx', 'px');
+      return { paddingTop: pad, paddingRight: pad, paddingBottom: pad, paddingLeft: pad,
+        borderTopWidth: `${node.border}px`, borderRightWidth: `${node.border}px`, borderBottomWidth: `${node.border}px`, borderLeftWidth: `${node.border}px`,
+        font: '20px sans-serif', fontSize: changeFont && node.values.has('padding') ? '19px' : '20px', lineHeight: '26px', boxSizing: 'border-box', overflowX: 'visible', overflowY: 'visible' };
+    } };
+    runInNewContext(callback + '\nthis.probe = probe;', context);
+    return context.probe({ originals: [], plan: { padding: 1, detailHeight: 64, threatWidth: 140, announcementWidth: 234, reloadWidth: 140 } });
+  }
+  const good = execute();
+  assert.equal(good.length, 4);
+  assert.ok(good.every((row: any) => row.preserved));
+  assert.deepEqual(Array.from(good, (row: any) => [row.after.width, row.after.height]), [[138, 80], [232, 28], [138, 70.53125], [223.078125, 30]]);
+  assert.ok(execute(true).every((row: any) => !row.preserved));
+  assert.throws(() => execute(false, 3), /requires measured 2px border-box/);
 });

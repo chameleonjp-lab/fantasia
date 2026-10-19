@@ -1577,6 +1577,8 @@ function hudReflowProbePlans(boundsWidth: number, sideWidth: number) {
     { name: 'side-readout-columns', alertWidth: side, detailHeight: 64, wrapBands: true },
     { name: 'medium-readout-columns', alertWidth: Math.min(140, boundsWidth), detailHeight: 64, wrapBands: true },
     { name: 'broad-readout-columns', alertWidth: Math.min(160, boundsWidth), detailHeight: 64, wrapBands: true },
+    { name: 'content-box-padding-one', alertWidth: side, detailHeight: 64, wrapBands: false, padding: 1,
+      threatWidth: Math.min(140, boundsWidth), announcementWidth: side, reloadWidth: Math.min(140, boundsWidth) },
   ];
 }
 
@@ -1591,12 +1593,12 @@ async function captureHudReflowProbes(page: Page, info: TestInfo, hudCase: HudCa
   const results = [];
   try {
     for (const plan of plans) {
-      await page.evaluate(({ originals, plan }) => {
+      const shapeEvidence = await page.evaluate(({ originals, plan }) => {
         for (const original of originals) {
           const node = document.getElementById(original.id)!;
           if (original.style === null) node.removeAttribute('style'); else node.setAttribute('style', original.style);
         }
-        for (const id of ['announcement', 'campaign-threat', ...(plan.wrapBands ? ['reload-status', 'warning'] : [])]) {
+        for (const id of plan.padding === undefined ? ['announcement', 'campaign-threat', ...(plan.wrapBands ? ['reload-status', 'warning'] : [])] : []) {
           const node = document.getElementById(id)!;
           node.style.setProperty('width', `${plan.alertWidth}px`, 'important');
           node.style.setProperty('max-width', `${plan.alertWidth}px`, 'important');
@@ -1604,6 +1606,42 @@ async function captureHudReflowProbes(page: Page, info: TestInfo, hudCase: HudCa
           node.style.setProperty('overflow-wrap', 'anywhere', 'important');
         }
         document.getElementById('campaign-hud-details')!.style.setProperty('height', `${plan.detailHeight}px`, 'important');
+        if (plan.padding === undefined) return null;
+        const shape = (node: HTMLElement) => {
+          const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+          const px = (value: string) => Number.parseFloat(value) || 0;
+          return { id: node.id, text: node.textContent, width: rect.width, height: rect.height,
+            contentWidth: rect.width - px(style.paddingLeft) - px(style.paddingRight) - px(style.borderLeftWidth) - px(style.borderRightWidth),
+            contentHeight: rect.height - px(style.paddingTop) - px(style.paddingBottom) - px(style.borderTopWidth) - px(style.borderBottomWidth),
+            padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+            borders: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
+            font: style.font, fontSize: style.fontSize, lineHeight: style.lineHeight, boxSizing: style.boxSizing,
+            overflowX: style.overflowX, overflowY: style.overflowY };
+        };
+        const evidence = [];
+        for (const [id, targetWidth] of [['campaign-threat', plan.threatWidth], ['announcement', plan.announcementWidth],
+          ['reload-status', plan.reloadWidth], ['warning', undefined]] as const) {
+          const node = document.getElementById(id)!;
+          const width = targetWidth ?? node.getBoundingClientRect().width;
+          // Preserve a content box already measured by the earlier width probes.
+          node.style.setProperty('width', `${width}px`, 'important');
+          node.style.setProperty('max-width', `${width}px`, 'important');
+          node.style.setProperty('white-space', 'normal', 'important');
+          node.style.setProperty('overflow-wrap', 'anywhere', 'important');
+          const before = shape(node);
+          if (before.width === 0 && before.height === 0) { evidence.push({ id, absent: true }); continue; }
+          if (before.boxSizing !== 'border-box' || before.padding.some(value => value !== '2px'))
+            throw new Error(`Padding probe requires measured 2px border-box baseline: ${id}`);
+          node.style.setProperty('padding', `${plan.padding}px`, 'important');
+          node.style.setProperty('width', `${width - 2}px`, 'important');
+          node.style.setProperty('max-width', `${width - 2}px`, 'important');
+          const after = shape(node);
+          const preserved = before.text === after.text && before.font === after.font && before.fontSize === after.fontSize && before.lineHeight === after.lineHeight
+            && JSON.stringify(before.borders) === JSON.stringify(after.borders)
+            && before.contentWidth === after.contentWidth && before.contentHeight === after.contentHeight;
+          evidence.push({ id, before, after, preserved });
+        }
+        return evidence;
       }, { originals, plan });
       const probeCase = { ...hudCase, name: hudCase.name.replace('.png', `-${plan.name}.png`) };
       const coverage: HudCaseCoverage = { case: probeCase.name, attempted: true, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
@@ -1612,7 +1650,9 @@ async function captureHudReflowProbes(page: Page, info: TestInfo, hudCase: HudCa
       const measured = await inspectAndCaptureHudCase(page, info, probeCase, painted, fixture, fontScale,
         freshBaseline, lives, announcement, nodes, text, 'fresh-page', failures, coverage);
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
-      results.push({ plan, measured, failures, coverage });
+      if (shapeEvidence?.some(item => 'preserved' in item && !item.preserved))
+        failures.push({ case: probeCase.name, provenance: 'fresh-page', stage: 'content-box-invariance', message: 'Padding-only probe changed content, typography, border or content-box dimensions' });
+      results.push({ plan, shapeEvidence, measured, failures, coverage });
     }
   } finally {
     await page.evaluate(originals => {
