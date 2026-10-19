@@ -320,3 +320,31 @@ test('test-only canvas placement restores exact methods and original blocked sta
 test('test-only canvas placement rolls back painter failure and rejects changed radar size',()=>{const h=canvasPlacementHarness(true);assert.throws(()=>h.ctx.uiOnlyPlacementBegin({x:200,y:100,width:100,height:116}));assert.equal(h.owner.update,h.update);assert.equal(h.owner.diagnostics,h.diagnostics);assert(h.ctx.uiOnlyPlacementEnd());assert.throws(()=>h.ctx.uiOnlyPlacementBegin({x:200,y:100,width:101,height:116}));});
 
 test('placement tokens explicitly include health, site and remaining-aircraft label pairs',()=>{for(const text of ['機体 100%','陣地1','残機3','残り0発','機銃 288','機関砲 96','19:30.00']){const r=placementTextHarness('none',text);assert.equal(r.result.tokens[0].text,text);assert.equal(r.result.tokens[0].sameLine,true);}});
+
+function nativeFixedNeutralChecker() {
+ const source=readFileSync(new URL('../browser-ui-only/ui-only.spec.ts',import.meta.url),'utf8');
+ const body=source.slice(source.indexOf('function fixedDetailNeutralIssues('),source.indexOf('async function captureNativeProductDetails('));
+ return runInNewContext(transpileModule(`${body}\nfixedDetailNeutralIssues;`,{compilerOptions:{target:ScriptTarget.ES2022,module:ModuleKind.None}}).outputText);
+}
+const fixedNeutralRecord=()=>({purpose:'fixed fixture real-control sampling; no campaign tick',
+ before:{tick:240,activeTicks:240,input:{turn:0,climb:0,throttle:0,steerPointer:null,heldPointers:{fire:[],loop:[],bomb:[],throttle:[]}}},
+ after:{tick:240,activeTicks:240,input:{turn:0,climb:0,throttle:0,steerPointer:null,heldPointers:{fire:[],loop:[],bomb:[],throttle:[]}}},
+ sample:{turn:0,climb:0,throttle:0,accelerate:false,brake:false,fire:false,bomb:false,loop:false},pendingLoop:false,pendingBomb:false,focusSame:true});
+test('fixed-fixture native proof keeps real sample and excludes only renderer observations',()=>{
+ const check=nativeFixedNeutralChecker(),before={tick:240,settings:{size:64},render:{measurements:1}},after={...before,render:{measurements:2}};
+ assert.equal(check(before,fixedNeutralRecord(),after).length,0);
+ for(const altered of [{...after,tick:241},{...after,settings:{size:63}}])assert.ok(check(before,fixedNeutralRecord(),altered).length);
+ for(const key of Object.keys(fixedNeutralRecord().sample)){
+  const bad:any=fixedNeutralRecord();bad.sample[key]=typeof bad.sample[key]==='number'?1:true;assert.ok(check(before,bad,after).length,key);
+  delete bad.sample[key];assert.ok(check(before,bad,after).length,`missing ${key}`);
+ }
+});
+test('fixed-fixture native proof rejects capture, focus, pending edge and synthetic labels',()=>{
+ const check=nativeFixedNeutralChecker(),state={tick:240};
+ for(const mutate of [(r:any)=>r.before.input.heldPointers.fire.push(1),(r:any)=>r.after.input.steerPointer=3,
+ (r:any)=>r.focusSame=false,(r:any)=>r.pendingBomb=true,(r:any)=>r.pendingLoop=true,(r:any)=>r.after.tick++,
+ (r:any)=>r.purpose='fake tick',(r:any)=>delete r.after.input.heldPointers]){
+  const bad=fixedNeutralRecord();mutate(bad);assert.ok(check(state,bad,state).length);
+ }
+ assert.ok(check(state,null,state).length);
+});

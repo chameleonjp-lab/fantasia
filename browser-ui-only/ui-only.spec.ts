@@ -1,9 +1,12 @@
 import { createHash } from 'node:crypto';
+import { writeFile, readFile } from 'node:fs/promises';
+import { RealRendererDriver } from '../browser-acceptance/real-driver';
+import { verifyDetailScrollWithPort } from '../browser-acceptance/detail-scroll';
 import { intersects } from '../src/campaign-hud-layout';
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 
 type Timings = { name: string; setupMs: number; tourMs: number; captureMs: number };
-type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss' | 'reachable-protection' | 'deadline-clear' | 'deadline-low' | 'deadline-outside'; priority: 0 | 4 | 5; measureReflow?: boolean };
+type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss' | 'reachable-protection' | 'deadline-clear' | 'deadline-low' | 'deadline-outside'; priority: 0 | 4 | 5; measureReflow?: boolean; nativeDetails?: boolean };
 type HudProvenance = 'fresh-page' | 'rotation-stress';
 type HudFailureRecord = { case: string; provenance: HudProvenance | 'aggregate'; stage: string; message: string; stack?: string };
 type HudCaseCoverage = { case: string; attempted: boolean; evidenceCompleted: boolean; imageSaved: boolean; jsonSaved: boolean; exceptionMessage?: string; notRunReason?: string };
@@ -1762,6 +1765,23 @@ async function captureMeasuredShapeCatalogue(page:Page,info:TestInfo,hudCase:Hud
       const role:any=catalogue.get(id);role.shapes=[];
       for(const w of widths){const measured=await handle.evaluate((p:any,v:any)=>p.measure({[v.id]:v.width}),{id,width:w});const shape=measured.leaves.find((r:any)=>r.id===id);receipt.candidates.push({id,requestedWidth:w,measured});if(!measured.shapeIssues.some((issue:any)=>issue.id===id)&&!role.shapes.some((s:any)=>s.width===shape.width&&s.height===shape.height))role.shapes.push({width:shape.width,height:shape.height,text:shape.text,requestedWidth:w});}
     }
+    // Two bounded, test-only intermediate widths omitted by reservation-edge
+    // sampling. Their sum plus the existing gap is 304px; no fit is inferred.
+    if(hudCase.mode==='easy'&&['outside','deadline-outside'].includes(hudCase.alert)){
+      const selection={'campaign-threat':160,announcement:140};
+      const measured=await handle.evaluate((p:any,s:any)=>p.measure(s,true),selection);
+      const inspected=await handle.evaluate((p:any)=>p.inspectPlacement());
+      await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+      const second=await handle.evaluate((p:any)=>p.read());
+      const png=await page.screenshot();await info.attach(`${hudCase.name}.mid-column-shapes.png`,{body:png,contentType:'image/png'});
+      const afterImage=await handle.evaluate((p:any)=>p.read());
+      receipt.midColumnProbe={purpose:'same-state simultaneous dimension/token measurement only; no placement or fit claim',
+        selection,measured,second,afterImage,tokens:inspected.tokens.filter((t:any)=>t.id in selection),
+        rejectionIssues:inspected.issues.filter((x:any)=>x.id in selection),
+        image:{bytes:png.length,sha256:createHash('sha256').update(png).digest('hex')}};
+      if(JSON.stringify(measured)!==JSON.stringify(second)||JSON.stringify(second)!==JSON.stringify(afterImage))receipt.failures.push({issue:'mid-column-measurement-not-stable'});
+      if(!await handle.evaluate((p:any)=>p.restore()))throw Error('mid-column-restore-failed');
+    }
     receipt.catalogue=[...catalogue.values()];
     receipt.search=searchMeasuredShapes(input.bounds,fixed,[...catalogue.values()],6000);
     // A deterministic mixed measurement is retained even when no placement was
@@ -1835,6 +1855,65 @@ async function captureMeasuredPlacement(page:Page,info:TestInfo,hudCase:HudCase)
   }return receipt;
 }
 
+function fixedDetailNeutralIssues(before:any,result:any,after:any) {
+  const issues:string[]=[];
+  const stable=(value:any)=>{const {render,...rest}=value??{};return rest;};
+  if(!before||!after||JSON.stringify(stable(before))!==JSON.stringify(stable(after)))issues.push('campaign-or-settings-state-changed');
+  if(!result||result.purpose!=='fixed fixture real-control sampling; no campaign tick')return [...issues,'missing-real-control-sample'];
+  if(result.before?.tick!==result.after?.tick||result.before?.activeTicks!==result.after?.activeTicks)issues.push('fixed-campaign-tick-changed');
+  if(result.focusSame!==true)issues.push('original-focus-node-changed');
+  if(result.pendingLoop!==false||result.pendingBomb!==false)issues.push('pending-flight-edge');
+  for(const key of ['turn','climb','throttle'])if(result.sample?.[key]!==0)issues.push(`sample:${key}`);
+  for(const key of ['accelerate','brake','fire','bomb','loop'])if(result.sample?.[key]!==false)issues.push(`sample:${key}`);
+  for(const [phase,input]of [['before',result.before?.input],['after',result.after?.input]] as const){
+    for(const key of ['turn','climb','throttle'])if(input?.[key]!==0)issues.push(`${phase}:${key}`);
+    if(input?.steerPointer!==null)issues.push(`${phase}:steerPointer`);
+    if(!input?.heldPointers||Object.values(input.heldPointers).some((held:any)=>!Array.isArray(held)||held.length!==0))issues.push(`${phase}:heldPointers`);
+  }
+  return issues;
+}
+
+async function captureNativeProductDetails(page:Page,info:TestInfo,hudCase:HudCase) {
+  const driver=new RealRendererDriver(page);
+  const receipt:any={purpose:'native keyboard/touch full text on fixed product layout; real control sampling without campaign tick',
+    case:hudCase.name,failures:[],evidence:driver.evidence};
+  const state=()=>page.evaluate(()=>(window as any).__fantasiaReadState(false));
+  const stableState=(value:any)=>{const {render,...rest}=value;return rest;};
+  try {
+    receipt.before=await state();receipt.layoutBefore=await act(page,'evidence');
+    expect(receipt.layoutBefore.layout.status).toBe('placed');
+    expect(receipt.layoutBefore.searchInput.panels.find((p:any)=>p.id==='instrument').height).toBe(24);
+    expect(await page.locator('#announcement').getAttribute('data-campaign-critical')).toBe('true');
+    const verifyConsumedNeutralAndRefresh=async()=>{
+      const before=await state(),result=await act(page,'sampleDetailInput'),after=await state();
+      driver.evidence.push({label:'fixed-fixture-native-detail-neutral',before,result,after,stateComparisonExcludedFields:['render']});
+      expect(fixedDetailNeutralIssues(before,result,after),'Real sampled channels, focus and fixed campaign must remain neutral').toEqual([]);
+    };
+    await verifyDetailScrollWithPort({page,budget:driver.budget,evidence:driver.evidence,
+      call:driver.call.bind(driver),point:driver.point.bind(driver),verifyConsumedNeutralAndRefresh},[]);
+    receipt.after=await state();expect(stableState(receipt.after)).toEqual(stableState(receipt.before));
+    receipt.layoutAfter=await act(page,'evidence');
+    expect(receipt.layoutAfter.searchInput).toEqual(receipt.layoutBefore.searchInput);
+    expect(receipt.layoutAfter.sight).toEqual(receipt.layoutBefore.sight);
+    expect(driver.pageErrors).toEqual([]);
+  }catch(error){receipt.failures.push(String(error));}
+  finally {
+    try{receipt.imageStateBefore=await state();const png=await page.screenshot();receipt.imageStateAfter=await state();
+      expect(stableState(receipt.imageStateAfter)).toEqual(stableState(receipt.imageStateBefore));
+      expect(receipt.imageStateAfter.render.hudLayout.measurements).toBe(receipt.imageStateBefore.render.hudLayout.measurements);
+      const file=info.outputPath(`${hudCase.name}.native-detail.png`);
+      await writeFile(file,png,{flag:'wx'});expect(await readFile(file)).toEqual(png);
+      receipt.image={bytes:png.length,sha256:createHash('sha256').update(png).digest('hex')};
+      await info.attach(`${hudCase.name}.native-detail.png`,{path:file,contentType:'image/png'});
+    }catch(error){receipt.failures.push(`image: ${String(error)}`);}
+    receipt.deadline=driver.budget.deadline;receipt.completedAt=Date.now();
+    const payload=Buffer.from(JSON.stringify(receipt)),file=info.outputPath(`${hudCase.name}.native-detail.json`);
+    await writeFile(file,payload,{flag:'wx'});expect(await readFile(file)).toEqual(payload);
+    await info.attach(`${hudCase.name}.native-detail.json`,{path:file,contentType:'application/json'});
+  }
+  return receipt;
+}
+
 async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCase, coverage: HudCaseCoverage) {
     // Every fixed state gets its own document with its viewport set before UI setup.
     // This prevents a previous mode/priority/rotation from becoming its baseline.
@@ -1846,7 +1925,7 @@ async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCas
     let originalSecondaryText: Record<string, string | null> = {};
     let measuredArea: any = null;
     try {
-      freshPage = await browser.newPage({ viewport: { width: hudCase.width, height: hudCase.height } });
+      freshPage = await browser.newPage({ viewport: { width: hudCase.width, height: hudCase.height }, ...(hudCase.nativeDetails?{hasTouch:true}:{}) });
       const viewportBeforeSetup = freshPage.viewportSize();
       if (viewportBeforeSetup?.width !== hudCase.width || viewportBeforeSetup.height !== hudCase.height)
         recordHudFailure(caseFailures, 'fresh-page', hudCase.name, 'viewport-before-setup', `${hudCase.name}: fresh-page viewport before setup was ${JSON.stringify(viewportBeforeSetup)}`);
@@ -1890,11 +1969,13 @@ async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCas
       measuredArea = { status: inspection.areaBound.status, areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
         layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, searchLimit: inspection.searchLimit, blockedReasons: inspection.blockedReasons };
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
-      if ((hudCase.alert.startsWith('deadline-') || hudCase.measureReflow) && (hudCase.mode === 'easy' && ['outside','deadline-outside'].includes(hudCase.alert) || hudCase.mode === 'normal' && ['low','deadline-low'].includes(hudCase.alert))) {
+      if (!hudCase.nativeDetails && (hudCase.alert.startsWith('deadline-') || hudCase.measureReflow) && (hudCase.mode === 'easy' && ['outside','deadline-outside'].includes(hudCase.alert) || hudCase.mode === 'normal' && ['low','deadline-low'].includes(hudCase.alert))) {
         const catalogue = await captureMeasuredShapeCatalogue(freshPage, info, hudCase);
         if(hudCase.name === measuredLongAnnouncementWitness.case){const joint=await captureMeasuredPlacement(freshPage,info,hudCase);for(const failure of joint.failures)recordHudFailure(caseFailures,'joint-placement',hudCase.name,'measured-placement',JSON.stringify(failure));}
         for (const failure of catalogue.failures) recordHudFailure(caseFailures, 'fresh-page', hudCase.name, 'measured-shape-catalogue', JSON.stringify(failure));
+
       }
+      if(hudCase.nativeDetails){const native=await captureNativeProductDetails(freshPage,info,hudCase);for(const failure of native.failures)recordHudFailure(caseFailures,'fresh-page',hudCase.name,'native-product-detail',failure);}
 
     } catch (error) {
       caseCaptureMs += await captureHudFailureEvidence(freshPage, info, coverage, caseFailures, 'fresh-page', hudCase.name, 'case-exception', error,
@@ -2391,4 +2472,17 @@ for (const condition of [
   expect(pairedCoverage.evidenceCompleted, 'paired original synthetic notice PNG and JSON were both captured').toBe(true);
   expect(coverage.evidenceCompleted, 'state-controlled deadline branch PNG and JSON were both captured').toBe(true);
   expect([...result.failures, ...pairedResult.failures], 'deadline and original synthetic notices keep the unchanged full HUD geometry/text/control contract').toEqual([]);
+});
+
+// A separate, explicitly bounded input test. The original 15 short UI tests
+// retain their 12-second limits; this proof uses the existing native 45s budget.
+test('[native-critical-details] Normal long announcement preserves keyboard and touch full-text access',async({browser},info)=>{
+  test.setTimeout(45000);
+  const hudCase:HudCase={mode:'normal',alert:'low',priority:4,width:568,height:320,
+    name:'hud-normal-long-critical-native-text-200.png',nativeDetails:true};
+  const coverage:HudCaseCoverage={case:hudCase.name,attempted:false,evidenceCompleted:false,imageSaved:false,jsonSaved:false};
+  const result=await runFreshHudCase(browser,info,hudCase,coverage);
+  await info.attach('native-product-detail-coverage.json',{body:Buffer.from(JSON.stringify({coverage,...result})),contentType:'application/json'});
+  expect(coverage.evidenceCompleted).toBe(true);
+  expect(result.failures,'Unchanged product geometry plus both native full-text routes').toEqual([]);
 });

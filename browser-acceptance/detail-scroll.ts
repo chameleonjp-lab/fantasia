@@ -9,7 +9,38 @@ import {detailAccessIssues,activeFixedStatusIds,detailItemPolicy,detailLifecycle
 
 /** Native navigation only: never assign scrollTop, dispatch synthetic events,
  * shrink text, alter layout, or replace the runtime input/renderer. */
+export type DetailScrollPort = Pick<RealRendererDriver,'page'|'call'|'point'|'budget'|'evidence'> & {
+  verifyConsumedNeutralAndRefresh: () => Promise<void>;
+};
+
+// The original real-renderer path still advances real ticks and checks its audit.
 export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextRegion[],phase:'playing'|'respawning'='playing') {
+  return verifyDetailScrollWithPort({page:d.page,budget:d.budget,evidence:d.evidence,
+    call:d.call.bind(d),point:d.point.bind(d),
+    verifyConsumedNeutralAndRefresh:async()=>{
+    if(phase==='respawning'){
+      const before=await d.requireState('respawn-before-native-detail-input');
+      expect(before.phase).toBe('respawning');await d.step();
+      const after=await d.requireState('respawn-after-native-detail-input');
+      expect(after.phase).toBe('respawning');expect(after.tick).toBe(before.tick);expect(after.activeTicks).toBe(before.activeTicks);
+      const input=(await d.full()).controlsInput;
+      // A countdown frame consumes no campaign input. Check actual neutral flight
+      // channels while native detail keys/pointers belong to the detail viewport.
+      expect(input.turn).toBe(0);expect(input.climb).toBe(0);expect(input.throttle).toBe(0);expect(input.steerPointer).toBeNull();
+      for(const held of Object.values(input.heldPointers))expect(held).toEqual([]);
+      d.evidence.push({label:'respawn-detail-frozen-campaign',before,after,input});return;
+    }
+    const state=await d.nextTick(),audit=await d.audit();expect(audit.dropped).toBe(0);
+    const item=audit.entries.filter((x:any)=>x.tick<=state.tick-1).at(-1);expect(item).toBeTruthy();
+    const input=item.input;expect(input.turn).toBe(0);expect(input.climb).toBe(0);expect(input.throttle).toBe(0);
+    for(const key of ['accelerate','brake','fire','bomb','loop'])expect(input[key],`Detail scroll leaked ${key}`).toBe(false);
+    d.evidence.push({label:'detail-scroll-consumed-neutral-input',input,tick:state.tick});
+    }},reservations,phase);
+}
+
+// Shares all native navigation, full-text, settling and wall-time gates. A fixed
+// fixture supplies real control sampling, explicitly not a simulated tick audit.
+export async function verifyDetailScrollWithPort(d:DetailScrollPort,reservations:TextRegion[],phase:'playing'|'respawning'='playing') {
   const traversalStarted=performance.now();let stage='setup',currentOperation:any,lastAtomic:any;
   const viewport=d.page.locator('#campaign-hud-details');
   await expect(viewport).toHaveAttribute('role','region');await expect(viewport).toHaveAttribute('tabindex','0');
@@ -149,25 +180,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     expect(geometryIssues,'Every reached fragment and every persistent label must be complete and unobscured').toEqual([]);
     return observed.scrollTop;
   };
-  const consumedNeutral=async()=>{
-    if(phase==='respawning'){
-      const before=await d.requireState('respawn-before-native-detail-input');
-      expect(before.phase).toBe('respawning');await d.step();
-      const after=await d.requireState('respawn-after-native-detail-input');
-      expect(after.phase).toBe('respawning');expect(after.tick).toBe(before.tick);expect(after.activeTicks).toBe(before.activeTicks);
-      const input=(await d.full()).controlsInput;
-      // A countdown frame consumes no campaign input. Check actual neutral flight
-      // channels while native detail keys/pointers belong to the detail viewport.
-      expect(input.turn).toBe(0);expect(input.climb).toBe(0);expect(input.throttle).toBe(0);expect(input.steerPointer).toBeNull();
-      for(const held of Object.values(input.heldPointers))expect(held).toEqual([]);
-      d.evidence.push({label:'respawn-detail-frozen-campaign',before,after,input});return;
-    }
-    const state=await d.nextTick(),audit=await d.audit();expect(audit.dropped).toBe(0);
-    const item=audit.entries.filter((x:any)=>x.tick<=state.tick-1).at(-1);expect(item).toBeTruthy();
-    const input=item.input;expect(input.turn).toBe(0);expect(input.climb).toBe(0);expect(input.throttle).toBe(0);
-    for(const key of ['accelerate','brake','fire','bomb','loop'])expect(input[key],`Detail scroll leaked ${key}`).toBe(false);
-    d.evidence.push({label:'detail-scroll-consumed-neutral-input',input,tick:state.tick});
-  };
+  const consumedNeutral=()=>d.verifyConsumedNeutralAndRefresh();
   try {
     await d.point('#campaign-hud-details');await viewport.focus();const home=await beginOperation('home');await d.page.keyboard.press('Home');
     // Native scroll animations settle on browser compositor time without advancing

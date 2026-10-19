@@ -204,6 +204,18 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
       stateOverrides: false, nativeHeldInput: true, controlledDescentInput: true, controlledFrameTime: true };
   }
 
+  function uiOnlySampleDetailInput() {
+    if (screen !== 'playing' || state.status !== 'running' || uiOnlyPlacementRestore)
+      throw new Error('Native detail sampling requires the original running product layout');
+    const focus = document.activeElement;
+    const before = { tick: state.simTick, activeTicks: state.activeTicks, screen, status: state.status, input: controls.peek() };
+    const sample = controls.sample(false);
+    updateHUD(); uiOnlyPaint();
+    return { purpose: 'fixed fixture real-control sampling; no campaign tick', before,
+      after: { tick: state.simTick, activeTicks: state.activeTicks, screen, status: state.status, input: controls.peek() },
+      sample, pendingLoop, pendingBomb, focusSame: document.activeElement === focus };
+  }
+
   function uiOnlyPause() {
     if (screen !== 'playing') throw new Error('UI-only pause requires the fixed playing screen');
     pause('manual');
@@ -255,7 +267,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
 
   Object.defineProperty(window, '__fantasiaUiOnlyTest', {
     value: Object.freeze({ reset: uiOnlyReset, hud: uiOnlyHud, paint: uiOnlyPaint, canvas: uiOnlyCanvas, evidence: uiOnlyLayoutEvidence,
-      placementBegin: uiOnlyPlacementBegin, placementEnd: uiOnlyPlacementEnd, controlLifecycle: uiOnlyControlLifecycle, pause: uiOnlyPause, result: uiOnlyResult, startupError: uiOnlyStartupError, layout: uiOnlyLayout }),
+      placementBegin: uiOnlyPlacementBegin, placementEnd: uiOnlyPlacementEnd, controlLifecycle: uiOnlyControlLifecycle, sampleDetailInput: uiOnlySampleDetailInput, pause: uiOnlyPause, result: uiOnlyResult, startupError: uiOnlyStartupError, layout: uiOnlyLayout }),
     configurable: false, enumerable: false, writable: false,
   });
 }
