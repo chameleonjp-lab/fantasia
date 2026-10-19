@@ -274,3 +274,52 @@ test('semantic region zero-slack boundaries reject unsafe growth and remain dete
     }
   }
 });
+
+
+// Exact 522caa37 run39221941265 paired low-altitude measurements share every
+// shape except campaign-limit: 0:30 is 131.28125px; the original 19:56 is 144px.
+// Keep all content/control dimensions; do not substitute the deadline value.
+function easyLowRelativeInput() {
+  const capture = structuredClone(semanticRegionCaptures[1]);
+  capture.measurement.panels.find(p => p.id === 'campaign-limit')!.width = 144;
+  const m = capture.measurement;
+  return { capture, bounds: m.bounds, items: [...m.panels, ...m.movableControls, { id: 'radar', x: 0, y: 0, width: 100, height: 116 }],
+    obstacles: [...m.obstacles, { id: 'central-flight-lane', x: m.canvas.width / 2 - 42, y: m.canvas.height / 2 - 42, width: 84, height: 84 }, capture.sight] };
+}
+
+test('relative Easy regions retain the wider original time value with independent low-altitude warning', () => {
+  const input = easyLowRelativeInput(), before = JSON.stringify(input);
+  const out = assertPacked(input.capture.measurement, input.capture.sight);
+  assert.equal(out.primarySearchChecks, 120000); assert.equal(out.recoverySearchChecks, 563);
+  assert.equal(out.searchChecks, 120563);
+  assert.deepEqual(layoutCampaignHud(input.capture.measurement, input.capture.sight), out);
+  assert.equal(JSON.stringify(input), before);
+});
+
+test('Easy relative regions enforce exact schema, work cap and safe shape boundaries', () => {
+  const original = easyLowRelativeInput(), before = JSON.stringify(original);
+  const run = (c = original, remaining = 6000) => packSemanticRegions(c.bounds, c.obstacles, c.items, { remaining });
+  assert.ok(run()); assert.equal(run(original, 562), null); assert.ok(run(original, 563));
+  for (const value of [NaN, Infinity, 0, -1]) {
+    const c = structuredClone(original); c.items[0].height = value; assert.equal(run(c), null);
+  }
+  for (const kind of ['missing', 'duplicate', 'fixed-missing', 'fixed-duplicate']) {
+    const c = structuredClone(original);
+    if (kind === 'missing') c.items.pop();
+    if (kind === 'duplicate') c.items[1].id = c.items[0].id;
+    if (kind === 'fixed-missing') c.obstacles.pop();
+    if (kind === 'fixed-duplicate') c.obstacles[c.obstacles.length - 1].id = 'central-flight-lane';
+    assert.equal(run(c), null, kind);
+  }
+  for (const delta of [-0.01, 0, 1e-8, 0.01]) {
+    const c = structuredClone(original); for (const p of c.items) { p.width += delta; p.height += delta; }
+    const result = run(c); assert.deepEqual(result, run(c));
+    if (delta === 0.01) { assert.equal(result, null); continue; }
+    assert.ok(result); const rects = [...result.values()];
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i]; assert(r.x >= c.bounds.x && r.y >= c.bounds.y && r.x + r.width <= c.bounds.x + c.bounds.width && r.y + r.height <= c.bounds.y + c.bounds.height);
+      for (const q of [...c.obstacles, ...rects.slice(i + 1)]) assert(!intersects(r, q, 4));
+    }
+  }
+  assert.equal(JSON.stringify(original), before);
+});
