@@ -227,3 +227,80 @@ test('independent browser workflow evidence depends on preparation rather than p
  }
  assert(!yaml.includes('continue-on-error:'),'No failed suite may be turned into a success');
 });
+
+test('case evidence is saved losslessly as a path attachment and never overwritten',async()=>{
+ const helpers=await import('../browser-acceptance/acceptance-helpers');
+ const save=(helpers as any).attachAcceptanceBytes;assert.equal(typeof save,'function');
+ const {mkdtemp,readFile}=await import('node:fs/promises');const {join}=await import('node:path');
+ const root=await mkdtemp('/tmp/fantasia-evidence-');const attachments:any[]=[];
+ const info={outputPath:(name:string)=>join(root,name),attach:async(name:string,options:any)=>attachments.push({name,...options})};
+ const bytes=Buffer.from(JSON.stringify({unicode:'全文保持',payload:'abc'.repeat(1000000)}));
+ const reference=await save(info,'case.json','application/json',bytes);
+ assert((await readFile(reference.path)).equals(bytes));assert.equal(reference.bytes,bytes.length);
+ assert.equal(attachments.length,1);assert.equal(attachments[0].body,undefined);assert.equal(attachments[0].path,reference.path);
+ await assert.rejects(save(info,'case.json','application/json',Buffer.from('replacement')),/EEXIST/);
+ assert((await readFile(reference.path)).equals(bytes));
+ await assert.rejects(save({...info,attach:async()=>{throw new Error('attachment failed');}},'attach-fails.json','application/json',bytes),/attachment failed/);
+});
+
+test('all 34 file-backed cases survive artifact relocation with exact byte/hash validation and missing files fail closed',async()=>{
+ const {mkdtemp,mkdir,writeFile}=await import('node:fs/promises');const {join}=await import('node:path');
+ const {readSourceAttachment,createReportStorage,byteReference,readVerifiedReference}=await import('../scripts/acceptance-report-storage');
+ const root=await mkdtemp('/tmp/fantasia-report-paths-');await mkdir(join(root,'cases'));
+ const raw=fixture(),expected=new Map<string,Buffer>();
+ for(const [i,spec] of raw.suites[0].specs.entries())for(const a of spec.tests[0].results[0].attachments){
+  const bytes=Buffer.from(a.body,'base64'),path=`/home/runner/work/fantasia/fantasia/test-results/cases/${i}.json`;
+  await writeFile(join(root,'cases',`${i}.json`),bytes,{flag:'wx'});expected.set(path,bytes);delete (a as any).body;(a as any).path=path;
+ }
+ const source=join(root,'clean-browser-acceptance-results.json');await writeFile(source,JSON.stringify(raw),{flag:'wx'});
+ const storage=await createReportStorage(root),original=await storage.preserveRaw(source);
+ const report=await buildAcceptanceReport(raw,path=>readSourceAttachment(source,path),async(bytes,context)=>{
+  const {resolveSourceAttachment}=await import('../scripts/acceptance-report-storage');
+  return storage.indexAttachment(bytes,{...context,sourcePath:await resolveSourceAttachment(source,context.sourcePath!)},original);
+ });
+ assert.equal(report.counts.validated,34);assert.equal(report.browserAcceptance,'passed');
+ for(const c of report.cases){const a=c.attempts[0].attachments[0],bytes=expected.get(a.sourcePath)!;
+  assert.equal(a.sha256,byteReference(bytes).sha256);assert.equal(a.bytes,bytes.length);assert((await readVerifiedReference(root,c.evidence)).equals(bytes));
+ }
+ const missing=await buildAcceptanceReport(raw,async path=>{if(path.endsWith('/7.json'))throw new Error('missing artifact');return readSourceAttachment(source,path);});
+ assert.equal(missing.browserAcceptance,'not-passed');assert.equal(missing.counts.validated,33);
+});
+
+test('saved stage image rejects clock or geometry changes without dropping the image bytes',async()=>{
+ const {attachAcceptanceImage}=await import('../browser-acceptance/acceptance-helpers');
+ const {mkdtemp,readFile}=await import('node:fs/promises');const {join}=await import('node:path');
+ const root=await mkdtemp('/tmp/fantasia-image-'),attached:any[]=[];
+ const info:any={outputPath:(name:string)=>join(root,name),attach:async(name:string,a:any)=>attached.push(a)};
+ const baseline={tick:12,phase:'playing',screen:'playing',status:'running',render:{hudLayout:{measurements:7}}};
+ for(const [index,change] of [{},{tick:13},{render:{hudLayout:{measurements:8}}}].entries()){
+  let calls=0;const driver:any={evidence:[],read:async()=>{throw new Error('Driver wall-clock budget exceeded');},page:{evaluate:async()=>calls++?{...baseline,...change}:baseline,screenshot:async()=>Buffer.from('complete PNG bytes')}};
+  const work=attachAcceptanceImage(driver,info,`stage-${index}.png`,true);
+  if(index)await assert.rejects(work);else await work;
+  assert.equal((await readFile(join(root,`stage-${index}.png`))).toString(),'complete PNG bytes');assert.equal(driver.evidence[0].label,'preserved-case-image');
+ }
+ assert.equal(attached.length,3);assert(attached.every(a=>a.path&&a.body===undefined));
+});
+
+test('runCase retains original failure and complete JSON when final image attachment fails',async()=>{
+ const {runCase}=await import('../browser-acceptance/acceptance-helpers');
+ const {mkdtemp,readFile}=await import('node:fs/promises');const {join}=await import('node:path');
+ const root=await mkdtemp('/tmp/fantasia-case-failure-');const attached:any[]=[];
+ const info:any={outputPath:(name:string)=>join(root,name),attach:async(name:string,a:any)=>{if(a.contentType==='image/png')throw new Error('image sink failed');attached.push({name,...a});}};
+ const driver:any={boot:async()=>{},backend:async()=>({webgl2:true}),evidence:[],pageErrors:[],releasedFences:0,createdFences:0,budget:{steps:0},read:async()=>{throw new Error('Driver wall-clock budget exceeded');},page:{evaluate:async()=>null,screenshot:async()=>Buffer.from('PNG')}};
+ await assert.rejects(runCase(driver,info,String(CASES[0][0]),async()=>{throw new Error('original body failure');}),/image sink failed/);
+ const payload=JSON.parse(await readFile(join(root,'clean-acceptance-evidence.json'),'utf8'));
+ assert.equal(payload.outcome,'failed');assert(payload.observations.some((x:any)=>x.label==='case-body-error'&&x.message.includes('original body failure')));
+ assert(payload.observations.some((x:any)=>x.label==='case-image-error'&&x.message.includes('image sink failed')));
+ assert.equal(attached.length,1);assert.equal(attached[0].body,undefined);
+});
+
+test('all acceptance entry points use complete file-backed evidence without inline JSON or PNG bodies',()=>{
+ const source=readFileSync('browser-acceptance/acceptance.spec.ts','utf8');
+ const preserved=source.slice(0,source.indexOf('// Separate from the preserved 34-case'));
+ assert(!/info\.attach\(/.test(preserved),'all 34 cases must use the common file attachment helpers');
+ assert(preserved.includes("attachAcceptanceBytes(info,'clean-acceptance-evidence.json'"));
+ assert(preserved.includes("attachAcceptanceImage(d,info,'native-case-final.png')"));
+ assert(preserved.includes("attachAcceptanceImage(d,info,'explicit-live-hud.png',true)"));
+ assert(preserved.includes("label:'case-body-error'"));
+ assert(preserved.includes("label:'case-image-error'"));
+});

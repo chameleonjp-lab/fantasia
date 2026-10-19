@@ -1,3 +1,5 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { expect, type TestInfo } from '@playwright/test';
 import { RealRendererDriver } from './real-driver';
 import { assertFreshGeometry, createVisibilityPredicate } from './geometry-contract';
@@ -8,22 +10,60 @@ import { detailGeometrySnapshot } from './text-geometry';
 import { meetsMinimumTarget } from './geometry-contract';
 import { CASES } from './acceptance-cases';
 
+/** Preserve complete per-case bytes outside the aggregate JSON reporter. */
+export async function attachAcceptanceBytes(info:Pick<TestInfo,'outputPath'|'attach'>,name:string,contentType:string,bytes:Buffer) {
+  const path=info.outputPath(name);
+  await writeFile(path,bytes,{flag:'wx'});
+  const saved=await readFile(path);
+  if(!saved.equals(bytes))throw new Error(`Acceptance evidence readback mismatch: ${name}`);
+  const reference={path,bytes:saved.length,sha256:createHash('sha256').update(saved).digest('hex')};
+  await info.attach(name.endsWith('.json')?'clean-acceptance-evidence':name,{path,contentType});
+  return reference;
+}
+const caseImages=new WeakMap<RealRendererDriver,{info:TestInfo;sequence:number}>();
+export async function attachAcceptanceImage(driver:RealRendererDriver,info:TestInfo,name:string,stationary=false,expected?:{tick:number;measurements:number}) {
+  // Evidence capture must still run after the driver's operation budget expires.
+  // Read the existing observer directly; do not reset its budget or advance time.
+  const read=()=>driver.page.evaluate(()=>{
+    const observer=(window as any).__fantasiaReadState;if(typeof observer!=='function')return null;
+    const state=observer(false);return {tick:state.tick,phase:state.phase,screen:state.screen,status:state.status,render:{hudLayout:{measurements:state.render?.hudLayout?.measurements}}};
+  });
+  const before=await read();
+  if(expected){expect(before?.tick).toBe(expected.tick);expect(before?.render.hudLayout.measurements).toBe(expected.measurements);}
+  const bytes=await driver.page.screenshot();
+  const after=await read();
+  const reference=await attachAcceptanceBytes(info,name,'image/png',bytes);
+  driver.evidence.push({label:'preserved-case-image',name,...reference,before,after,stationary});
+  if(stationary){
+    expect(before).toBeTruthy();expect(after).toBeTruthy();
+    expect({tick:after!.tick,phase:after!.phase,screen:after!.screen,status:after!.status,measurements:after!.render.hudLayout.measurements})
+      .toEqual({tick:before!.tick,phase:before!.phase,screen:before!.screen,status:before!.status,measurements:before!.render.hudLayout.measurements});
+  }
+  return reference;
+}
 export async function runCase(driver: RealRendererDriver, info: TestInfo, id: string, body: () => Promise<void>) {
   const row = CASES.find(row => row[0] === id)!;
   let outcome = 'failed', backend: unknown;
+  caseImages.set(driver,{info,sequence:0});
   try {
     await driver.boot(); backend = await driver.backend(); await body();
     expect(driver.pageErrors).toEqual([]); expect(driver.releasedFences).toBe(driver.createdFences);
     driver.evidence.push({ label: 'case-assertions-completed', id }); outcome = 'passed';
+  } catch(error) {
+    driver.evidence.push({label:'case-body-error',message:String(error)});throw error;
   } finally {
-    await info.attach('clean-acceptance-evidence', { contentType: 'application/json', body: JSON.stringify({
+    try { await attachAcceptanceImage(driver,info,'case-final.png'); }
+    catch(error){outcome='failed';driver.evidence.push({label:'case-image-error',message:String(error)});throw error;}
+    finally { try {
+    await attachAcceptanceBytes(info,'clean-acceptance-evidence.json','application/json',Buffer.from(JSON.stringify({
       schemaVersion: 1, id, category: row[1], classification: 'controlled-clock-functional', outcome,
       runtimeMocked: false, rendererMocked: false, applicationQueueModified: false,
       faultInjection: id === 'render-fault' ? 'Canvas2D.clearRect throws once' : id === 'frame-gap' ? 'Playwright clock fastForward(400)' : ['storage-failure','storage-session','storage-future-rollback'].includes(String(id)) ? 'Storage.setItem throws' : null,
       physicalDeviceAcceptance: 'unverified', performanceAcceptance: 'not-measured', releaseReady: false,
       backend, steps: driver.budget.steps, ownedFencesCreated: driver.createdFences,
       ownedFencesReleased: driver.releasedFences, pageErrors: driver.pageErrors, observations: driver.evidence,
-    }, null, 2) });
+    }, null, 2)));
+    } finally {caseImages.delete(driver);} }
   }
 }
 export async function inputAt(driver: RealRendererDriver, tick: number) {
@@ -78,6 +118,8 @@ export async function liveGeometry(driver: RealRendererDriver) {
   const detailSnapshot=dom.compact?detailGeometrySnapshot(textGeometry):null;
   const textIssues=[...textGeometryIssues(detailSnapshot?.projected??textGeometry,reservations),...(detailSnapshot?.completenessIssues??[])];
   driver.evidence.push({label:'full-text-geometry-before-assertions',textGeometry,reservations,issues:textIssues});
+  const images=caseImages.get(driver);
+  if(images)await attachAcceptanceImage(driver,images.info,`live-hud-${images.sequence++}.png`,true,{tick:state.tick,measurements:layout.measurements});
   expect(layout.status).toBe('placed'); expect(layout.measurements).toBeGreaterThan(0);
   expect(full.render.sites).toBe(7); expect(full.render.calls).toBeGreaterThan(0); expect(full.render.triangles).toBeGreaterThan(0);
   // 0.75 CSS-pixel tolerance covers subpixel CSS rounding, never clipping or stale-size reuse.
