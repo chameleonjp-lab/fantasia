@@ -182,12 +182,22 @@ const isFixedControl = (id: string) => ['game-sound', 'pause', 'bomb', 'loop', '
 /** Relative semantic regions; no stored screen coordinates or item sizes.
  * This optional schema is not a complete rectangle packer. Every proposal
  * remains subject to the same exact gaps, bounds and shared recovery budget. */
-export function packSemanticRegions(bounds: HudRect, obstacles: readonly HudObstacle[], items: readonly HudObstacle[], work: { remaining: number }): Map<string, HudRect> | null {
+export function packSemanticRegions(bounds: HudRect, obstacles: readonly HudObstacle[], items: readonly HudObstacle[], work: { remaining: number }, inlineInstrument = false): Map<string, HudRect> | null {
   if (!Number.isSafeInteger(work.remaining) || work.remaining < 0 || work.remaining > 6_000) return null;
   const roles: string[] = items.length === 17 ? ["health-label", "health-track", "instrument", "campaign-limit", "ammo", "campaign-threat", "reload-status", "warning", "announcement", "campaign-hud-details", "campaign-mode-status", "target-tally", "game-sound", "pause", "bomb", "loop", "radar"] : ["health-label", "health-track", "instrument", "campaign-limit", "ammo", "campaign-threat", "reload-status", "warning", "announcement", "campaign-hud-details", "campaign-mode-status", "target-tally", "game-sound", "pause", "bomb", "loop", "fire", "throttle", "radar"];
   const fixedRoles: string[] = ["central-flight-lane", "aim-and-reload-ring"];
   const horizontal: [string, string][] = items.length === 17 ? [["aim-and-reload-ring", "announcement"], ["aim-and-reload-ring", "campaign-hud-details"], ["aim-and-reload-ring", "game-sound"], ["ammo", "pause"], ["announcement", "loop"], ["campaign-hud-details", "bomb"], ["campaign-hud-details", "loop"], ["campaign-limit", "aim-and-reload-ring"], ["campaign-limit", "central-flight-lane"], ["campaign-limit", "instrument"], ["campaign-threat", "pause"], ["campaign-threat", "radar"], ["central-flight-lane", "announcement"], ["central-flight-lane", "campaign-hud-details"], ["central-flight-lane", "game-sound"], ["game-sound", "bomb"], ["game-sound", "campaign-mode-status"], ["health-label", "announcement"], ["health-label", "bomb"], ["health-track", "pause"], ["instrument", "campaign-hud-details"], ["instrument", "game-sound"], ["pause", "aim-and-reload-ring"], ["pause", "central-flight-lane"], ["pause", "instrument"], ["pause", "reload-status"], ["radar", "aim-and-reload-ring"], ["radar", "central-flight-lane"], ["radar", "health-label"], ["target-tally", "campaign-limit"], ["target-tally", "pause"], ["target-tally", "radar"], ["warning", "campaign-hud-details"], ["warning", "game-sound"], ["warning", "reload-status"]] : [["health-label", "radar"], ["instrument", "announcement"], ["instrument", "game-sound"], ["campaign-limit", "bomb"], ["reload-status", "pause"], ["reload-status", "loop"], ["warning", "throttle"], ["announcement", "campaign-mode-status"], ["game-sound", "warning"], ["pause", "campaign-limit"], ["bomb", "target-tally"], ["loop", "health-track"], ["fire", "instrument"], ["central-flight-lane", "campaign-hud-details"], ["aim-and-reload-ring", "health-label"]];
   const vertical: [string, string][] = items.length === 17 ? [["aim-and-reload-ring", "instrument"], ["ammo", "warning"], ["announcement", "bomb"], ["announcement", "campaign-hud-details"], ["announcement", "instrument"], ["bomb", "campaign-mode-status"], ["campaign-hud-details", "campaign-mode-status"], ["campaign-hud-details", "game-sound"], ["campaign-limit", "ammo"], ["campaign-limit", "pause"], ["campaign-limit", "reload-status"], ["campaign-mode-status", "reload-status"], ["campaign-threat", "campaign-limit"], ["campaign-threat", "target-tally"], ["central-flight-lane", "instrument"], ["game-sound", "reload-status"], ["health-label", "aim-and-reload-ring"], ["health-label", "campaign-hud-details"], ["health-label", "campaign-limit"], ["health-label", "central-flight-lane"], ["instrument", "reload-status"], ["instrument", "warning"], ["loop", "bomb"], ["loop", "game-sound"], ["pause", "warning"], ["radar", "campaign-limit"], ["radar", "instrument"], ["target-tally", "ammo"], ["warning", "health-track"]] : [["health-label", "campaign-hud-details"], ["health-track", "health-label"], ["campaign-limit", "game-sound"], ["ammo", "instrument"], ["ammo", "fire"], ["campaign-threat", "reload-status"], ["reload-status", "ammo"], ["warning", "campaign-mode-status"], ["campaign-hud-details", "bomb"], ["target-tally", "warning"], ["game-sound", "announcement"], ["loop", "pause"], ["radar", "target-tally"], ["radar", "throttle"], ["central-flight-lane", "campaign-limit"]];
+  if (inlineInstrument) {
+    const instrument = items.find(item => item.id === 'instrument'), mode = items.find(item => item.id === 'campaign-mode-status');
+    if (items.length !== 19 || !instrument || !mode || instrument.height > mode.height) return null;
+    for (const pair of [['announcement','campaign-mode-status'],['instrument','game-sound']]) {
+      const index = horizontal.findIndex(edge => edge[0] === pair[0] && edge[1] === pair[1]); if (index >= 0) horizontal.splice(index, 1);
+    }
+    const index = vertical.findIndex(edge => edge[0] === 'warning' && edge[1] === 'campaign-mode-status'); if (index >= 0) vertical.splice(index, 1);
+    horizontal.push(['fire','campaign-mode-status'], ['ammo','game-sound'], ['target-tally','throttle']);
+    vertical.push(['ammo','campaign-mode-status'], ['campaign-mode-status','instrument']);
+  }
   if (bounds.width <= bounds.height || items.length !== roles.length || obstacles.length !== 9) return null;
   const movable = new Map(items.map(item => [item.id, { ...item }]));
   const fixedItems = obstacles.filter(item => item.id !== 'campaign-site');
@@ -256,6 +266,8 @@ export function packSemanticRegions(bounds: HudRect, obstacles: readonly HudObst
 function packFreeSpace(bounds: HudRect, obstacles: readonly HudRect[], items: readonly HudObstacle[], work: { remaining: number }): Map<string, HudRect> | null {
   const semantic = packSemanticRegions(bounds, obstacles as readonly HudObstacle[], items, work);
   if (semantic) return semantic;
+  const inline = packSemanticRegions(bounds, obstacles as readonly HudObstacle[], items, work, true);
+  if (inline) return inline;
   const floor = Math.max(0, work.remaining - 6_000);
   const spend = () => work.remaining > floor && (--work.remaining, true);
   const expand = (r: HudRect): HudRect => ({ x: r.x - 2, y: r.y - 2, width: r.width + 4, height: r.height + 4 });

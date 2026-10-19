@@ -1590,8 +1590,11 @@ p {
   #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud :is(#campaign-threat, #reload-status) {
     width: 138px !important; max-width: 138px !important;
   }
-  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud #announcement {
-    width: 232px !important; max-width: 232px !important;
+  /* Natural-width text can use one line when it fits the measured viewport.
+     The layout solver measures this shared shape before proposing regions. */
+  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud :is(.instrument, #announcement) {
+    width: max-content !important; max-width: calc(100vw - 16px) !important;
+    white-space: normal; overflow-wrap: normal; word-break: normal;
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud #warning {
     width: max-content;
