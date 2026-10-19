@@ -224,13 +224,18 @@ function packFreeSpace(bounds: HudRect, obstacles: readonly HudRect[], items: re
   // packing. The deterministic area tie uses the same ID ordering as packing.
   // This heuristic can be discontinuous at shape ties; blocked still means
   // unresolved, never an impossibility proof.
-  const largest = [...items].sort((a, b) => b.width * b.height - a.width * a.height || a.id.localeCompare(b.id))[0];
+  const areaOrder = [...items].sort((a, b) => b.width * b.height - a.width * a.height || a.id.localeCompare(b.id));
+  const largest = areaOrder[0];
+  // Two tall leading blocks in portrait need upper slots before smaller bands
+  // divide the height. Pack by the lowest candidate bottom edge in that case.
+  // This shape-based branch shares the same bounded recovery budget.
+  const tallLeaders = areaOrder.length >= 2 && areaOrder.slice(0, 2).every(item => item.width <= item.height);
   const passes = bounds.width > bounds.height
     ? largest && largest.height > largest.width ? [4, 2] : [2, 0]
-    : broadBands >= 2 ? [3, 0] : [0, 1];
+    : broadBands >= 2 ? [3, 0] : tallLeaders ? [5, 0] : [0, 1];
   for (const pass of passes) {
     const order = [...items].sort((a, b) => (pass === 3 ? b.width - a.width : pass === 2 ? b.width * b.width * b.height - a.width * a.width * a.height
-      : (pass === 0 || pass === 4) ? b.width * b.height - a.width * a.height : b.width + b.height - a.width - a.height) || a.id.localeCompare(b.id));
+      : (pass === 0 || pass === 4 || pass === 5) ? b.width * b.height - a.width * a.height : b.width + b.height - a.width - a.height) || a.id.localeCompare(b.id));
     let free = [...reserved]; const placed = new Map<string, HudRect>();
     for (const item of order) {
       const width = item.width + 4, height = item.height + 4;
@@ -238,9 +243,9 @@ function packFreeSpace(bounds: HudRect, obstacles: readonly HudRect[], items: re
       for (const f of free) {
         if (!spend()) return null;
         if (width > f.width || height > f.height) continue;
-        const candidate = { x: pass === 2 ? f.x + f.width - width : f.x, y: (pass === 1 || pass === 4) ? f.y : f.y + f.height - height,
-          short: Math.round((pass === 2 ? f.x + f.width : Math.min(f.width - width, f.height - height)) * 1e7) / 1e7,
-          long: Math.round((pass === 2 ? f.y + f.height - height : Math.max(f.width - width, f.height - height)) * 1e7) / 1e7 };
+        const candidate = { x: pass === 2 ? f.x + f.width - width : f.x, y: (pass === 1 || pass === 4 || pass === 5) ? f.y : f.y + f.height - height,
+          short: Math.round((pass === 5 ? f.y + height : pass === 2 ? f.x + f.width : Math.min(f.width - width, f.height - height)) * 1e7) / 1e7,
+          long: Math.round((pass === 5 ? f.x : pass === 2 ? f.y + f.height - height : Math.max(f.width - width, f.height - height)) * 1e7) / 1e7 };
         if (!best || candidate.short < best.short || candidate.short === best.short && (candidate.long < best.long
           || candidate.long === best.long && (candidate.y < best.y || candidate.y === best.y && candidate.x < best.x))) best = candidate;
       }

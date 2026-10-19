@@ -85,3 +85,29 @@ export function detailLifecycleIssues(e:Pick<FixedStatusEvidence,'screen'|'statu
   }
   return issues;
 }
+
+/** A bounded prediction of native keys, never evidence of visibility. Step sizes
+ * are measured from completed trusted operations; every planned key is remeasured. */
+export function planDetailKeys(e:{top:number;max:number;delta:number;window:number;steps:Partial<Record<'arrow'|'page',number>>}) {
+  type Action={kind:'arrow'|'page';direction:number};
+  const empty=(reason:string,visited=0)=>({actions:[] as Action[],visited,reason,calibration:false});
+  if(![e.top,e.max,e.delta,e.window].every(Number.isFinite)||e.max<0)return empty('invalid-geometry');
+  if(e.window<0)return empty('fragment-taller-than-viewport');
+  const target=e.top+e.delta,lo=target-e.window/2,hi=target+e.window/2;
+  if(e.top>=lo&&e.top<=hi)return empty('already-in-interval');
+  const kinds=['arrow','page'] as const;
+  for(const kind of kinds)if(!(Number.isFinite(e.steps[kind])&&e.steps[kind]!>0))return {actions:[{kind,direction:e.delta<0?-1:1}],visited:0,reason:'measure-native-step',calibration:true};
+  const queue:Array<{top:number;actions:Action[]}>=[{top:e.top,actions:[]}],seen=new Set([e.top.toFixed(4)]);
+  for(let index=0;index<queue.length&&index<512;index++){
+    const node=queue[index];if(node.actions.length>=12)continue;
+    for(const kind of kinds)for(const direction of [1,-1]){
+      const next=Math.max(0,Math.min(e.max,node.top+direction*e.steps[kind]!)),key=next.toFixed(4);
+      if(seen.has(key))continue;
+      const actions=[...node.actions,{kind,direction}];
+      if(next>=lo&&next<=hi)return {actions,visited:seen.size,reason:'predicted-native-path',calibration:false};
+      if(seen.size>=512)return empty('bounded-search-exhausted',seen.size);
+      seen.add(key);queue.push({top:next,actions});
+    }
+  }
+  return empty('bounded-search-exhausted',seen.size);
+}

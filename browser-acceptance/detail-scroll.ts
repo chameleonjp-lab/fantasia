@@ -5,7 +5,7 @@ import {RealRendererDriver} from './real-driver';
 import {collectHudTextGeometry,detailGeometrySnapshot,textGeometryIssues,type TextRegion} from './text-geometry';
 import {activeSampleIssues} from './active-critical-contract';
 import {createVisibilityPredicate} from './geometry-contract';
-import {detailAccessIssues,activeFixedStatusIds,detailItemPolicy,detailLifecycleIssues,type FixedStatusEvidence,type DetailAccessEvidence} from './detail-scroll-contract';
+import {detailAccessIssues,activeFixedStatusIds,detailItemPolicy,detailLifecycleIssues,planDetailKeys,type FixedStatusEvidence,type DetailAccessEvidence} from './detail-scroll-contract';
 
 /** Native navigation only: never assign scrollTop, dispatch synthetic events,
  * shrink text, alter layout, or replace the runtime input/renderer. */
@@ -172,22 +172,28 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     const seen=(method:'keyboard'|'touch')=>new Set(evidence.samples.filter(s=>s.method===method).flatMap(s=>s.fullyVisibleFragments));
     const complete=(method:'keyboard'|'touch')=>evidence.expectedFragments.every(id=>seen(method).has(id));
     // Preserve a native held-arrow/consumed-input check, including any live reflow.
+    const nativeSteps:Partial<Record<'arrow'|'page',number>>={};
+    const rememberStep=(kind:'arrow'|'page',before:number,after:number)=>{
+      const max=lastAtomic.scrollHeight-lastAtomic.clientHeight;
+      if(after>0&&after<max&&Math.abs(after-before)>0)nativeSteps[kind]=Math.abs(after-before);
+    };
     const heldArrow=await beginOperation('arrow');await d.page.keyboard.down('ArrowDown');await consumedNeutral();await d.page.keyboard.up('ArrowDown');
-    top=await sample('keyboard',heldArrow);
+    top=await sample('keyboard',heldArrow);rememberStep('arrow',heldArrow.before.scrollTop,top);
     const restart=await beginOperation('home');await d.page.keyboard.press('Home');top=await sample('keyboard',restart);
     // Native Tab scrolls the real focusable entry into view. DOM focus is used
     // only for the viewport setup above, never to substitute for this traversal.
     for(const [entryIndex,entryId] of contract.navigable.entries()){
       if(entryIndex>0&&complete('keyboard'))break;
       const operation=await beginOperation('tab',1,entryId);await d.page.keyboard.press('Tab');top=await sample('keyboard',operation);
-      const visited=new Set<string>();
       const fragmentLimit=unreadDetailFragments(lastAtomic.geometry,new Set(),entryId).length*4+4;
       for(let i=0;i<fragmentLimit;i++){
         const pending=unreadDetailFragments(lastAtomic.geometry,seen('keyboard'),entryId);if(!pending.length)break;
-        const target=pending[0],direction=target.delta<0?-1:1,key=`${top}:${target.id}`;
-        const phaseShift=visited.has(key);visited.add(key);
-        const kind=phaseShift?'page':'arrow',button=phaseShift?(direction>0?'PageDown':'PageUp'):(direction>0?'ArrowDown':'ArrowUp');
+        const target=pending[0],plan=planDetailKeys({top,max:lastAtomic.scrollHeight-lastAtomic.clientHeight,delta:target.delta,window:target.window,steps:nativeSteps});
+        d.evidence.push({label:'detail-scroll-key-plan',targetFragment:target.id,top,delta:target.delta,window:target.window,steps:{...nativeSteps},...plan});
+        expect(plan.actions.length,'A bounded native key path must exist; predictions never substitute for observed full text').toBeGreaterThan(0);
+        const {kind,direction}=plan.actions[0],button=kind==='page'?(direction>0?'PageDown':'PageUp'):(direction>0?'ArrowDown':'ArrowUp');
         const adjustment=await beginOperation(kind,direction);await d.page.keyboard.press(button);top=await sample('keyboard',adjustment);
+        rememberStep(kind,adjustment.before.scrollTop,top);
       }
       expect(unreadDetailFragments(lastAtomic.geometry,seen('keyboard'),entryId),`Native keyboard must read every fragment in ${entryId}`).toEqual([]);
     }

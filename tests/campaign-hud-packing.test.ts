@@ -183,3 +183,16 @@ for (const capture of protectionCaptures) test(`tall leading rectangle recovery 
   assert.deepEqual(layoutCampaignHud(source.measurement, source.sight), out);
   assert.equal(JSON.stringify(source), before);
 });
+
+// Exact 558245c full run39182532375 initial Normal portrait 200% measurement.
+const initialPortraitCapture={"measurement":{"canvas":{"x":0,"y":0,"width":320,"height":568},"bounds":{"x":8,"y":8,"width":304,"height":552},"obstacles":[{"x":8,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":237.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":8,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"}],"panels":[{"x":8,"y":238,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":263,"width":118,"height":3,"id":"health-track"},{"x":8,"y":276,"width":94,"height":50,"id":"instrument"},{"x":97,"y":341.1875,"width":144,"height":26,"id":"campaign-limit"},{"x":97,"y":375.1875,"width":210.453125,"height":27.03125,"id":"ammo"},{"x":8,"y":220,"width":114,"height":72,"id":"campaign-hud-details"},{"x":8,"y":140,"width":72,"height":24,"id":"campaign-mode-status"},{"x":8,"y":140,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":87,"y":430,"width":81.296875,"height":44,"id":"game-sound"},{"x":268,"y":430,"width":44,"height":50,"id":"pause"},{"x":88.53125,"y":497.3125,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":221.8984375,"y":190.703125,"width":86.203125,"height":118.59375,"id":"loop"},{"x":172,"y":452,"width":96,"height":96,"id":"fire"},{"x":22.390625,"y":362,"width":64,"height":128,"id":"throttle"}],"flightData":null,"threat":null},"sight":{"x":122.79999999999994,"y":169.07084915470614,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"},"label":{"x":84,"y":145.07084915470614,"width":120.4765625,"height":20}};
+test('two tall leading items retain actual full-ammunition portrait HUD and canvas guide',()=>{
+ const c=structuredClone(initialPortraitCapture),before=JSON.stringify(c),out=assertPacked(c.measurement,c.sight);
+ assert.equal(out.primarySearchChecks,120000);assert(out.recoverySearchChecks!<=6000);assert(out.searchChecks!<=126000);
+ const host=new CampaignHudLayout({measure:()=>c.measurement,observe:()=>()=>{},applyThreat:()=>{},applyPanels:()=>{}});
+ assert.equal(host.update(c.sight)!.status,'placed');
+ const label=host.placeCanvasLabel('bomb-guide',c.label);assert.equal(label.status,'placed');
+ const updated=host.diagnostics();
+ for(const rect of [updated.radar!.rect,...updated.panels!.map(p=>p.rect),...updated.obstacles!])assert(!intersects(label.rect,rect,4));
+ assert.equal(JSON.stringify(c),before);assert.deepEqual(layoutCampaignHud(c.measurement,c.sight),out);
+});

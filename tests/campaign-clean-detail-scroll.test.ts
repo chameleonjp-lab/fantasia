@@ -178,3 +178,19 @@ test('browser setup creates a callable policy handle without invoking it with mi
  assert.equal(typeof policy,'function');
  assert.equal(policy({...statusFixture(),status:'respawning'},{id:'fire',hidden:false,critical:false,text:'射撃',lifecycle:''}),'inactive-control');
 });
+
+test('bounded native plan finds narrow visible intervals instead of repeating arrow/page cycles',()=>{
+ const plan=(detailContract as any).planDetailKeys;assert.equal(typeof plan,'function');
+ for(const [top,delta,window] of [[0,25.5,11],[27,49.5,11],[49,-23.5,11]]){
+  const r=plan({top,max:1000,delta,window,steps:{arrow:40,page:49}});
+  assert(r.actions.length>0);assert(r.visited<=512);let position=top;
+  for(const a of r.actions)position=Math.max(0,Math.min(1000,position+a.direction*({arrow:40,page:49} as any)[a.kind]));
+  assert(Math.abs(position-(top+delta))<=window/2,JSON.stringify(r));
+ }
+ const unknown=plan({top:0,max:1000,delta:25.5,window:11,steps:{arrow:40}});
+ assert.equal(unknown.actions[0].kind,'page');assert.equal(unknown.calibration,true);
+ const impossible=plan({top:0,max:1000,delta:25.5,window:-1,steps:{arrow:40,page:49}});
+ assert.deepEqual(impossible.actions,[]);assert.equal(impossible.reason,'fragment-taller-than-viewport');
+ const unreachable=plan({top:0,max:1000,delta:25,window:2,steps:{arrow:40,page:80}});
+ assert.deepEqual(unreachable.actions,[]);assert(unreachable.visited<=512);
+});
