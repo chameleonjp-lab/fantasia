@@ -3,8 +3,9 @@ import {expect} from '@playwright/test';
 import {detailScrollMeasurement,detailSettlingIssues,detailOperationIssues} from './detail-scroll-observation';
 import {RealRendererDriver} from './real-driver';
 import {collectHudTextGeometry,detailGeometrySnapshot,textGeometryIssues,type TextRegion} from './text-geometry';
+import {activeSampleIssues} from './active-critical-contract';
 import {createVisibilityPredicate} from './geometry-contract';
-import {detailAccessIssues,activeFixedStatusIds,type FixedStatusEvidence,type DetailAccessEvidence} from './detail-scroll-contract';
+import {detailAccessIssues,activeFixedStatusIds,detailItemPolicy,detailLifecycleIssues,type FixedStatusEvidence,type DetailAccessEvidence} from './detail-scroll-contract';
 
 /** Native navigation only: never assign scrollTop, dispatch synthetic events,
  * shrink text, alter layout, or replace the runtime input/renderer. */
@@ -22,6 +23,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
   expect(contract.max,'Fallback must actually provide a scrollable detail region').toBeGreaterThan(0);
   const evidence:DetailAccessEvidence={active:true,...(phase==='respawning'?{phase}:{}),viewportId:'campaign-hud-details',expectedEntryIds:contract.expected,actualEntryIds:contract.actual,expectedFragments:[],persistentIds:[],samples:[]};
   const visibility=await d.page.evaluateHandle(createVisibilityPredicate);
+  const itemPolicy=await d.page.evaluateHandle(`(${detailItemPolicy.toString()})`);
   const collector=await d.page.evaluateHandle(`(${collectHudTextGeometry.toString()})`);
   await viewport.evaluate(node=>{
     const events:any[]=[];
@@ -45,23 +47,27 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
   });
   // One synchronous browser task reads geometry, scroll offsets, viewport,
   // critical status, renderer reservations and raw application input together.
-  const capture=(cap:number)=>d.call('atomic detail scroll observation',()=>d.page.evaluate(({collector,visibility})=>{
+  const capture=(cap:number)=>d.call('atomic detail scroll observation',()=>d.page.evaluate(({collector,visibility,itemPolicy})=>{
     const scrollTopBefore=document.querySelector<HTMLElement>('#campaign-hud-details')!.scrollTop;
     const data=collector(visibility),state=(window as any).__fantasiaReadState(false),input=state.controlsInput;
     const v=document.querySelector<HTMLElement>('#campaign-hud-details')!,app=document.querySelector<HTMLElement>('#app')!,hud=document.querySelector<HTMLElement>('#hud')!;
     const rect=document.querySelector<HTMLElement>('#flight')!.getBoundingClientRect(),layout=state.render.hudLayout;
     const statusEvidence={screen:state.screen,status:state.status,position:state.player.position,protectionTicks:state.campaignPlayer.protectionTicks,reloadTicksRemaining:state.player.reloadTicksRemaining,
       text:Object.fromEntries(['campaign-threat','reload-status','payload-status'].map(id=>[id,document.getElementById(id)?.textContent??'']))};
-    const required=[...document.querySelectorAll<HTMLElement>('#campaign-sites [data-site], #campaign-sites .campaign-site-number, #campaign-sites .campaign-site-owner, #campaign-sites .campaign-site-state, #hud button, #hud [role="slider"], #campaign-mode-status, #lives-count, [data-campaign-critical="true"]')].filter(n=>n.matches('[data-campaign-critical="true"]')?!!n.textContent?.trim():!n.closest('[hidden]'));
+    const items=[...document.querySelectorAll<HTMLElement>('#campaign-sites [data-site], #campaign-sites .campaign-site-number, #campaign-sites .campaign-site-owner, #campaign-sites .campaign-site-state, #hud button, #hud [role="slider"], #campaign-mode-status, #lives-count, [data-campaign-critical="true"]')];
+    const policy=(n:HTMLElement)=>itemPolicy(statusEvidence,{id:n.id,hidden:!!n.closest('[hidden]'),critical:n.matches('[data-campaign-critical="true"]'),text:n.textContent??'',lifecycle:n.dataset.lifecycle??''});
+    const required=items.filter(n=>policy(n)==='required');
+    const inactiveControls=['fire','loop','bomb','throttle'].map(id=>{const nodes=[...document.querySelectorAll<HTMLElement>(`#${id}`)];return {id,count:nodes.length,rendered:nodes.some(n=>{const r=n.getBoundingClientRect(),s=getComputedStyle(n);return !n.closest('[hidden]')&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0;})};});
+    const protectionDuplicates=items.filter(n=>policy(n)==='duplicate-protection').map(n=>({hidden:n.hidden,inert:n.inert,ariaHidden:n.getAttribute('aria-hidden')}));
     const candidates=[...new Set([...required,...['campaign-threat','reload-status','payload-status','warning','respawn-status'].map(id=>document.getElementById(id)).filter((n):n is HTMLElement=>!!n)])];
     const visible=candidates.filter(n=>{const r=n.getBoundingClientRect(),s=getComputedStyle(n);return !n.closest('[hidden]')&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0&&r.left>=-.75&&r.top>=-.75&&r.right<=innerWidth+.75&&r.bottom<=innerHeight+.75;});
     const ids={of(n:HTMLElement){return n.id||(n.dataset.site?`site-${n.dataset.site}`:`${n.className}-${n.closest<HTMLElement>('[data-site]')?.dataset.site}`);}};
-    return {geometry:data,statusEvidence,layout,focusEntry:(document.activeElement as HTMLElement)?.closest<HTMLElement>('[data-campaign-detail]')?.dataset.campaignDetail??null,canvas:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},input,
+    return {geometry:data,statusEvidence,layout,inactiveControls,protectionDuplicates,focusEntry:(document.activeElement as HTMLElement)?.closest<HTMLElement>('[data-campaign-detail]')?.dataset.campaignDetail??null,canvas:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},input,
       scrollTopBefore,motion:{...(window as any).__detailScrollEvents.motion},scrollHeight:v.scrollHeight,clientHeight:v.clientHeight,
       scrollTop:v.scrollTop,phase:state.phase,neutralInput:input.keys.length===0&&input.steerPointer===null&&input.throttlePointer===null&&input.throttle===0&&input.turn===0&&input.climb===0&&Object.values(input.heldPointers).every((ids:any)=>ids.length===0),
       fullHudScroll:{windowX:scrollX,windowY:scrollY,appLeft:app.scrollLeft,appTop:app.scrollTop,hudLeft:hud.scrollLeft,hudTop:hud.scrollTop},
       requiredIds:required.map(ids.of),visibleIds:visible.map(ids.of)};
-  },{collector,visibility} as any),cap);
+  },{collector,visibility,itemPolicy} as any),cap);
   // No full text walk or runtime-state serialization while waiting for native
   // completion. Reads never advance the page clock or bypass a reflowing runtime.
   const light=(cap:number,readRuntime=false)=>d.call('lightweight native scroll observation',()=>viewport.evaluate((v,readRuntime)=>{
@@ -111,7 +117,13 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
       d.evidence.push({label:'detail-scroll-observation-attempt',method,operation:operationEvidence,outcome:settling?'settled':'failed',
         stage,cumulativeWallMs:performance.now()-traversalStarted,totalWallMs:performance.now()-started,candidates,fullCaptures,history,ticks,...(failure?{failure}:{})});
     }
-    expect(detailSettlingIssues({...atomic,settling})).toEqual([]);lastAtomic=atomic;stage='validate-geometry';
+    // Persist the complete atomic observation before any contract assertion.
+    d.evidence.push({label:'detail-scroll-atomic-before-validation',method,...atomic,settling});
+    lastAtomic=atomic;stage='validate-geometry';
+    expect(detailSettlingIssues({...atomic,settling})).toEqual([]);
+    expect(detailLifecycleIssues(atomic.statusEvidence,atomic.inactiveControls,atomic.protectionDuplicates)).toEqual([]);
+    if(atomic.statusEvidence.screen==='playing'&&atomic.statusEvidence.status==='running'&&atomic.statusEvidence.protectionTicks>0)
+      expect(activeSampleIssues('protection',atomic)).toEqual([]);
     const data=atomic.geometry,snapshot=detailGeometrySnapshot(data),layout=atomic.layout,canvas=atomic.canvas;
     expect(canvas.width).toBeGreaterThan(0);expect(canvas.height).toBeGreaterThan(0);expect(layout.status).toBe('placed');
     const currentReservations:TextRegion[]=[{key:'canvas:radar',kind:'radar',rect:layout.radar.rect},
@@ -216,5 +228,5 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
   }finally{
     const events=await d.page.evaluate(()=>{const o=(window as any).__detailScrollEvents;const events=o.events;o.remove();delete (window as any).__detailScrollEvents;return events;});
     d.evidence.push({label:'detail-scroll-native-events',events});
-    await collector.dispose();await visibility.dispose();d.evidence.push({label:'authorized-detail-scroll-proof',...evidence,issues:detailAccessIssues(evidence,phase)});}
+    await itemPolicy.dispose();await collector.dispose();await visibility.dispose();d.evidence.push({label:'authorized-detail-scroll-proof',...evidence,issues:detailAccessIssues(evidence,phase)});}
 }

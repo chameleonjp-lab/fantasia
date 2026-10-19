@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {detailAccessIssues,type DetailAccessEvidence} from '../browser-acceptance/detail-scroll-contract';
-function fixture():DetailAccessEvidence{return {active:true,viewportId:'campaign-hud-details',expectedEntryIds:['timer','site-1'],actualEntryIds:['timer','site-1'],expectedFragments:['timer:0:0','site-1:0:0'],persistentIds:['site-1','site-2','site-3','site-4','site-5','site-6','site-7','campaign-mode-status','lives-count',...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`),'pause','bomb','loop'],samples:['keyboard','touch'].flatMap(method=>[0,100].map((scrollTop,i)=>({method:method as 'keyboard'|'touch',scrollTop,phase:'playing',neutralInput:true,fullHudScroll:{windowX:0,windowY:0,appLeft:0,appTop:0,hudLeft:0,hudTop:0},persistentIds:['site-1','site-2','site-3','site-4','site-5','site-6','site-7','campaign-mode-status','lives-count',...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`),'pause','bomb','loop'],fullyVisibleFragments:[i?'site-1:0:0':'timer:0:0']}))) };}
+function fixture():DetailAccessEvidence{return {active:true,viewportId:'campaign-hud-details',expectedEntryIds:['timer','site-1'],actualEntryIds:['timer','site-1'],expectedFragments:['timer:0:0','site-1:0:0'],persistentIds:['site-1','site-2','site-3','site-4','site-5','site-6','site-7','campaign-mode-status','lives-count',...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`),'pause','game-sound','bomb','loop'],samples:['keyboard','touch'].flatMap(method=>[0,100].map((scrollTop,i)=>({method:method as 'keyboard'|'touch',scrollTop,phase:'playing',neutralInput:true,fullHudScroll:{windowX:0,windowY:0,appLeft:0,appTop:0,hudLeft:0,hudTop:0},persistentIds:['site-1','site-2','site-3','site-4','site-5','site-6','site-7','campaign-mode-status','lives-count',...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`),'pause','game-sound','bomb','loop'],fullyVisibleFragments:[i?'site-1:0:0':'timer:0:0']}))) };}
 test('every detail fragment is reached by native keyboard and touch while critical HUD stays fixed',()=>assert.deepEqual(detailAccessIssues(fixture()),[]));
 test('missing details, fake nonmoving samples, unread fragments and whole-HUD scroll fail',()=>{
  for(const change of [(e:DetailAccessEvidence)=>e.actualEntryIds.pop(),(e:DetailAccessEvidence)=>{for(const s of e.samples)s.scrollTop=0;},(e:DetailAccessEvidence)=>{e.samples[3].fullyVisibleFragments=[];},(e:DetailAccessEvidence)=>{e.samples[0].fullHudScroll.hudTop=5;},(e:DetailAccessEvidence)=>{e.samples[0].persistentIds=[];},(e:DetailAccessEvidence)=>{e.samples[1].neutralInput=false;},(e:DetailAccessEvidence)=>{e.samples[0].phase='paused';}]){const e=fixture();change(e);assert.ok(detailAccessIssues(e).length>0);}
@@ -25,7 +25,7 @@ import {activeFixedStatusIds,type FixedStatusEvidence} from '../browser-acceptan
 const statusFixture=():FixedStatusEvidence=>({screen:'playing',status:'running',position:{x:0,y:400,z:0},protectionTicks:0,reloadTicksRemaining:0,text:{'campaign-threat':'','reload-status':'','payload-status':''}});
 test('active warnings derive from state while dormant nonempty warning and respawn text do not force visibility',()=>{
  const e=statusFixture();e.text.warning='低空注意';e.text['respawn-status']='復活まで1秒';assert.deepEqual(activeFixedStatusIds(e),[]);
- for(const mutate of [(e:FixedStatusEvidence)=>{e.position.y=20;},(e:FixedStatusEvidence)=>{e.position.x=2200;},(e:FixedStatusEvidence)=>{e.protectionTicks=60;}]){const active=statusFixture();mutate(active);assert.ok(activeFixedStatusIds(active).includes('warning'));}
+ for(const mutate of [(e:FixedStatusEvidence)=>{e.position.y=20;},(e:FixedStatusEvidence)=>{e.position.x=2200;}]){const active=statusFixture();mutate(active);assert.ok(activeFixedStatusIds(active).includes('warning'));}
  e.status='respawning';assert.ok(activeFixedStatusIds(e).includes('respawn-status'));
 });
 test('nonempty threat/reload/payload and actual reload stay required regardless of hidden or missing text',()=>{
@@ -116,4 +116,65 @@ test('late notification evidence must match every retained native log coordinate
  const tab={motion:{sequence:0,endedSequence:0,tabCount:1},settling:{operation:{kind:'tab'}}};
  assert.ok(nativeDetailEventIssues(tab,[]).length);
  assert.deepEqual(nativeDetailEventIssues(tab,[{type:'keydown',key:'Tab',isTrusted:true}]),[]);
+});
+
+test('protection requires its canonical status without inventing a second warning',()=>{
+ const e=statusFixture();e.protectionTicks=120;
+ assert.deepEqual(activeFixedStatusIds(e),['campaign-threat']);
+ for(const mutate of [(s:FixedStatusEvidence)=>{s.position.y=20;},(s:FixedStatusEvidence)=>{s.position.x=2200;}]){
+  const s=statusFixture();s.protectionTicks=120;mutate(s);
+  assert(activeFixedStatusIds(s).includes('warning'));assert(activeFixedStatusIds(s).includes('campaign-threat'));
+ }
+});
+test('pause and sound cannot disappear during either detail traversal phase',()=>{
+ for(const phase of ['playing','respawning'] as const)for(const id of ['pause','game-sound']){
+  const e=fixture();e.phase=phase;for(const sample of e.samples)sample.phase=phase;
+  e.persistentIds=e.persistentIds.filter(x=>x!==id);
+  assert(detailAccessIssues(e,phase).some(issue=>issue.includes(id)),`${phase}: ${id}`);
+ }
+});
+
+import * as detailContract from '../browser-acceptance/detail-scroll-contract';
+test('persistent policy exempts only state-authorized inactive controls and tagged protection duplicate',()=>{
+ const policy=(detailContract as any).detailItemPolicy;assert.equal(typeof policy,'function');
+ const node=(id:string)=>({id,hidden:false,critical:false,text:'text',lifecycle:''});
+ const running=statusFixture(),waiting={...running,status:'respawning'},protectedState={...running,protectionTicks:120};
+ for(const id of ['fire','loop','bomb','throttle']){
+  assert.equal(policy(waiting,node(id)),'inactive-control');assert.equal(policy(running,node(id)),'required');
+ }
+ for(const id of ['pause','game-sound','campaign-threat'])assert.equal(policy(waiting,{...node(id),hidden:true,critical:true}),'required');
+ assert.equal(policy(protectedState,{...node('announcement'),critical:true,lifecycle:'protection'}),'duplicate-protection');
+ assert.equal(policy(running,{...node('announcement'),critical:true,lifecycle:'protection'}),'required');
+ assert.equal(policy(protectedState,{...node('announcement'),critical:true}),'required');
+ assert.equal(policy(protectedState,{...node('warning'),critical:true,lifecycle:'protection'}),'required');
+});
+test('lifecycle evidence rejects missing or rendered inactive controls and accessible duplicate projection',()=>{
+ const check=(detailContract as any).detailLifecycleIssues;assert.equal(typeof check,'function');
+ const waiting={...statusFixture(),status:'respawning'};
+ const controls=['fire','loop','bomb','throttle'].map(id=>({id,count:1,rendered:false}));
+ assert.deepEqual(check(waiting,controls,[]),[]);
+ assert(check(waiting,controls.slice(1),[]).length);
+ assert(check(waiting,controls.map(c=>({...c,rendered:c.id==='fire'})),[]).length);
+ const p={...statusFixture(),protectionTicks:120};
+ assert.deepEqual(check(p,controls,[{hidden:true,inert:true,ariaHidden:'true'}]),[]);
+ assert(check(p,controls,[{hidden:false,inert:true,ariaHidden:'true'}]).length);
+ assert(check(p,controls,[{hidden:true,inert:false,ariaHidden:'true'}]).length);
+ assert(check(p,controls,[{hidden:true,inert:true,ariaHidden:null}]).length);
+});
+test('state-based browser item policy survives serialization without host dependencies',()=>{
+ const policy=runInNewContext(`(${detailContract.detailItemPolicy.toString()})`);
+ assert.equal(policy({...statusFixture(),status:'respawning'},{id:'fire',hidden:false,critical:false,text:'射撃',lifecycle:''}),'inactive-control');
+ assert.equal(policy(statusFixture(),{id:'pause',hidden:true,critical:false,text:'Ⅱ',lifecycle:''}),'required');
+});
+
+import {readFileSync} from 'node:fs';
+test('browser setup creates a callable policy handle without invoking it with missing arguments',async()=>{
+ const source=readFileSync('browser-acceptance/detail-scroll.ts','utf8');
+ const expression=source.match(/const itemPolicy=await (.+);/)![1];
+ const policy=await runInNewContext(`(async()=>${expression})()`,{
+  detailItemPolicy:detailContract.detailItemPolicy,
+  d:{page:{evaluateHandle:async(value:string|(()=>unknown))=>typeof value==='function'?value():runInNewContext(value)}}
+ });
+ assert.equal(typeof policy,'function');
+ assert.equal(policy({...statusFixture(),status:'respawning'},{id:'fire',hidden:false,critical:false,text:'射撃',lifecycle:''}),'inactive-control');
 });

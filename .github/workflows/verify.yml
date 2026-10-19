@@ -20,18 +20,22 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: npm ci
+      - id: dependencies
+        run: npm ci
       - run: npm test
-      - run: npm run build
-      - run: npx playwright install --with-deps chromium
+      - id: build
+        run: npm run build
+      - id: browserSetup
+        run: npx playwright install --with-deps chromium
       - id: browser
         name: Short UI-only real-DOM acceptance
         run: npm run test:browser
       - name: Short real-rendered camera contract
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.build.outcome == 'success' && steps.browserSetup.outcome == 'success' }}
         run: FANTASIA_CAMERA_CONTRACT=1 npx playwright test --config=playwright.acceptance.config.ts --grep camera-contract --reporter=line --output=/tmp/fantasia-camera-contract
       - id: legacyBrowser
         name: Preserved 34-case gameplay and UI acceptance (optional)
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.full_browser_acceptance }}
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' && steps.build.outcome == 'success' && steps.browserSetup.outcome == 'success' && github.event_name == 'workflow_dispatch' && inputs.full_browser_acceptance }}
         run: npm run test:browser:legacy-acceptance -- --grep-invert camera-contract
       - name: Report clean-sheet acceptance (release remains blocked)
         if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.full_browser_acceptance }}

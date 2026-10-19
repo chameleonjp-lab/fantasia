@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import {detailScrollMeasurement} from '../browser-acceptance/detail-scroll-observation';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -109,7 +110,7 @@ test('compact fallback cannot inherit full-text pass without a complete native d
 function compactFixture(){
   const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{
    e.observations.find((o:any)=>o.label==='actual-live-dom-geometry').dom.compact=true;
-   const persistentIds=['campaign-mode-status','lives-count','pause','bomb','loop',...Array.from({length:7},(_,i)=>`site-${i+1}`),...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`)];
+   const persistentIds=['campaign-mode-status','lives-count','pause','game-sound','bomb','loop',...Array.from({length:7},(_,i)=>`site-${i+1}`),...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`)];
    const geometry={viewport:{width:200,height:200},regions:[{key:'viewport',kind:'detail-viewport',rect:{x:10,y:10,width:100,height:100}},{key:'entry',kind:'detail-entry',rect:{x:11,y:11,width:98,height:150}}],styles:[{key:'style:campaign-hud-details:0',clipRect:{x:11,y:11,width:98,height:98},overflowX:'hidden',overflowY:'auto',scrollWidth:98,clientWidth:98,scrollHeight:200,clientHeight:98,lineClamp:'none',maxLines:'none',contain:'none',unsupported:[]}],runs:[{text:'detail',owner:'entry',ancestorRegions:['entry','viewport'],fragments:[{x:20,y:20,width:40,height:15}],styleKeys:['style:campaign-hud-details:0']}]};
    const fragments=['entry:0:0'],samples=['keyboard','touch'].flatMap(method=>[0,100].map(scrollTop=>({method,scrollTop,phase:'playing',neutralInput:true,persistentIds,fullyVisibleFragments:fragments,fullHudScroll:{windowX:0,windowY:0,appLeft:0,appTop:0,hudLeft:0,hudTop:0}})));
    e.observations.find((o:any)=>o.label==='full-text-geometry-before-assertions').textGeometry=geometry;
@@ -207,4 +208,22 @@ test('Tab settlement cannot claim more trusted native Tab inputs than the retain
   (e:any)=>{e.observations.find((o:any)=>o.label==='detail-scroll-native-events').events.find((event:any)=>event.key==='Tab').isTrusted=false;},
   (e:any)=>{const sample=e.observations.find((o:any)=>o.label==='detail-scroll-snapshot');sample.motion.tabCount=2;sample.settling.first=structuredClone(detailScrollMeasurement(sample));},
  ]){const raw=make();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),edit);assert.equal((await report(raw)).browserAcceptance,'not-passed');}
+});
+
+test('independent browser workflow evidence depends on preparation rather than prior UI success',()=>{
+ const yaml=readFileSync('.github/workflows/verify.yml','utf8');
+ for(const name of ['Short real-rendered camera contract','Preserved 34-case gameplay and UI acceptance (optional)']){
+  const block=yaml.slice(yaml.indexOf(`name: ${name}`)).split('\n      - ')[0];
+  const match=block.match(/if: \$\{\{ (.+) \}\}/);assert.ok(match,`${name}: explicit status condition`);
+  const expression=match[1];
+  for(const id of ['dependencies','build','browserSetup'])assert(expression.includes(`steps.${id}.outcome == 'success'`));
+  assert(expression.includes('!cancelled()'));assert(!expression.includes('steps.browser.'));
+  const run=(cancelled:boolean,failed:string|null,full:boolean)=>Function('cancelled','steps','github','inputs',`return (${expression});`)(()=>cancelled,
+    Object.fromEntries(['dependencies','build','browserSetup','browser'].map(id=>[id,{outcome:id===failed?'failure':'success'}])),{event_name:'workflow_dispatch'},{full_browser_acceptance:full});
+  assert.equal(run(false,'browser',true),true,'UI failure must remain recorded without suppressing independent evidence');
+  for(const id of ['dependencies','build','browserSetup'])assert.equal(run(false,id,true),false);
+  assert.equal(run(true,null,true),false);
+  if(name.startsWith('Preserved'))assert.equal(run(false,null,false),false);
+ }
+ assert(!yaml.includes('continue-on-error:'),'No failed suite may be turned into a success');
 });

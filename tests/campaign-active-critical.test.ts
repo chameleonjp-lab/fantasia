@@ -147,7 +147,7 @@ test('atomic numeric state rejects expired warnings even if text remains', () =>
 });
 
 function respawnAccess(): DetailAccessEvidence {
-  const ids = ['campaign-mode-status', 'lives-count', ...Array.from({ length: 7 }, (_, i) => `site-${i + 1}`), ...Array.from({ length: 7 }, (_, i) => `campaign-site-state-${i + 1}`)];
+  const ids = ['campaign-mode-status', 'lives-count', 'pause', 'game-sound', ...Array.from({ length: 7 }, (_, i) => `site-${i + 1}`), ...Array.from({ length: 7 }, (_, i) => `campaign-site-state-${i + 1}`)];
   return { active: true, phase: 'respawning', viewportId: 'campaign-hud-details', expectedEntryIds: ['timer'], actualEntryIds: ['timer'], expectedFragments: ['a', 'b'], persistentIds: ids,
     samples: (['keyboard', 'touch'] as const).flatMap(method => [0, 100].map((scrollTop, i) => ({ method, scrollTop, phase: 'respawning', neutralInput: true,
       fullHudScroll: { windowX: 0, windowY: 0, appLeft: 0, appTop: 0, hudLeft: 0, hudTop: 0 }, persistentIds: ids, fullyVisibleFragments: [i ? 'b' : 'a'] }))) };
