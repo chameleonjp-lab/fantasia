@@ -1575,6 +1575,8 @@ function hudReflowProbePlans(boundsWidth: number, sideWidth: number) {
     { name: 'side-alert-column', alertWidth: side, detailHeight: 64, wrapBands: false },
     { name: 'wide-alert-band', alertWidth: Math.min(276, boundsWidth), detailHeight: 64, wrapBands: false },
     { name: 'side-readout-columns', alertWidth: side, detailHeight: 64, wrapBands: true },
+    { name: 'medium-readout-columns', alertWidth: Math.min(140, boundsWidth), detailHeight: 64, wrapBands: true },
+    { name: 'broad-readout-columns', alertWidth: Math.min(160, boundsWidth), detailHeight: 64, wrapBands: true },
   ];
 }
 
