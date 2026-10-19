@@ -1,11 +1,11 @@
-import {unreadDetailFragments,nativeTouchTravel} from './detail-navigation';
+import {unreadDetailFragments} from './detail-navigation';
 import {expect} from '@playwright/test';
 import {detailScrollMeasurement,detailSettlingIssues,detailOperationIssues} from './detail-scroll-observation';
 import {RealRendererDriver} from './real-driver';
 import {collectHudTextGeometry,detailGeometrySnapshot,textGeometryIssues,type TextRegion} from './text-geometry';
 import {activeSampleIssues} from './active-critical-contract';
 import {createVisibilityPredicate} from './geometry-contract';
-import {detailAccessIssues,activeFixedStatusIds,detailItemPolicy,detailLifecycleIssues,planDetailKeys,type FixedStatusEvidence,type DetailAccessEvidence} from './detail-scroll-contract';
+import {detailAccessIssues,activeFixedStatusIds,detailItemPolicy,detailLifecycleIssues,planDetailKeys,planDetailTouch,type FixedStatusEvidence,type DetailAccessEvidence} from './detail-scroll-contract';
 
 /** Native navigation only: never assign scrollTop, dispatch synthetic events,
  * shrink text, alter layout, or replace the runtime input/renderer. */
@@ -87,7 +87,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     const history:any[]=[];let candidates=0,fullCaptures=0;
     const record=(stage:string,value:any)=>{candidates++;const entry={stage,elapsedWallMs:performance.now()-started,...value};
       if(history.length===32)history.splice(8,1);history.push(entry);};
-    let first:ReturnType<typeof detailScrollMeasurement>|undefined,firstAt=0,atomic:any,settling:any,lastLight:any,lightAt=0;
+    let first:ReturnType<typeof detailScrollMeasurement>|undefined,firstAt=0,atomic:any,settling:any,lastLight:any;
     let failure:string|undefined;
     try {
       stage='settling-budget';deadline=started+Math.min(1500,d.budget.remaining('native detail scroll settling'));
@@ -95,8 +95,11 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
         stage='native-completion-wait';const probe=await light(Math.max(1,deadline-performance.now()));record('native-wait',probe);
         const operationIssues=detailOperationIssues(operation,probe);
         if(operationIssues.length){first=undefined;lastLight=undefined;}
-        else if(!lastLight||JSON.stringify(lastLight)!==JSON.stringify(probe)){lastLight=probe;lightAt=performance.now();first=undefined;}
-        else if(performance.now()-lightAt>=32){
+        else {
+          // Native completion is already proven. The first full observation is
+          // the stability baseline; a separate preliminary 32ms wait duplicates it.
+          if(!lastLight||JSON.stringify(lastLight)!==JSON.stringify(probe)){lastLight=probe;first=undefined;}
+          if(!first||performance.now()-firstAt>=32){
           fullCaptures++;record('full-capture-start',{fullCaptures});
           stage='full-atomic-capture';atomic=await capture(Math.max(1,deadline-performance.now()));const measurement=detailScrollMeasurement(atomic),now=performance.now();
           record('full-capture-result',{scrollTop:atomic.scrollTop,scrollTopBefore:atomic.scrollTopBefore,motion:atomic.motion,
@@ -107,6 +110,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
           else if(first&&JSON.stringify(first)===JSON.stringify(measurement)&&now-firstAt>=32){
             settling={first,elapsedWallMs:now-firstAt,operation:operationEvidence,totalWallMs:now-started};break;
           }else if(!first||JSON.stringify(first)!==JSON.stringify(measurement)){first=measurement;firstAt=now;}
+          }
         }
         await d.call('native detail scroll poll interval',()=>new Promise<void>(resolve=>setTimeout(resolve,16)),Math.max(1,deadline-performance.now()));
       }
@@ -211,8 +215,18 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
       const maxMoves=evidence.expectedFragments.length*4+20;
       for(let i=0;i<maxMoves&&!complete('touch');i++){
         const target=unreadDetailFragments(lastAtomic.geometry,seen('touch'))[0];expect(target).toBeTruthy();
-        const rect=await viewport.boundingBox();expect(rect).toBeTruthy();const r=rect!,travel=nativeTouchTravel(target.delta,r.height,slop),direction=travel<0?-1:1;
-        const x=r.x+r.width*.5,y=direction>0?r.y+r.height-8:r.y+8;
+        const clip=lastAtomic.geometry.styles.find((s:any)=>s.key.startsWith('style:campaign-hud-details:'))?.clipRect;
+        expect(clip).toBeTruthy();const {x,y,endY,travel,direction}=planDetailTouch(clip,target.delta,slop);
+        const hit=await viewport.evaluate((v,{clip,x,y,endY})=>{
+          const r=v.getBoundingClientRect(),actual={x:r.x+v.clientLeft,y:r.y+v.clientTop,width:v.clientWidth,height:v.clientHeight};
+          const unchanged=Object.keys(actual).every(k=>Math.abs(actual[k as keyof typeof actual]-clip[k as keyof typeof actual])<.01);
+          const points=[{x,y},{x,y:endY}];return {actual,unchanged,points:points.map(p=>{
+            const node=document.elementFromPoint(p.x,p.y);return {...p,insideScreen:p.x>=0&&p.x<innerWidth&&p.y>=0&&p.y<innerHeight,hit:!!node&&(node===v||v.contains(node))};
+          })};
+        },{clip,x,y,endY});
+        d.evidence.push({label:'detail-scroll-touch-hit-plan',clip,...hit});
+        expect(hit.unchanged,'Measured touch clip must still match the live scroll client area').toBe(true);
+        expect(hit.points.every(p=>p.insideScreen&&p.hit),'Both native touch endpoints must hit this scroll viewport').toBe(true);
         d.evidence.push({label:'detail-scroll-navigation-plan',method:'touch',targetFragment:target.id,targetRect:target.rect,delta:target.delta,travel,remaining:unreadDetailFragments(lastAtomic.geometry,seen('touch')).length});
         const operation=await beginOperation('touch',direction);await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
         if(i===0)await consumedNeutral();

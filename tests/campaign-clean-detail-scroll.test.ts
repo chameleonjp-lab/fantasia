@@ -194,3 +194,41 @@ test('bounded native plan finds narrow visible intervals instead of repeating ar
  const unreachable=plan({top:0,max:1000,delta:25,window:2,steps:{arrow:40,page:80}});
  assert.deepEqual(unreachable.actions,[]);assert(unreachable.visited<=512);
 });
+
+test('native completion starts the first full capture immediately and retains a separate 32ms matching capture',async()=>{
+ const {readFileSync}=await import('node:fs');const ts=await import('typescript');
+ const source=readFileSync('browser-acceptance/detail-scroll.ts','utf8');
+ const start=source.indexOf("const sample=async(method:");const end=source.indexOf('// Persist the complete atomic observation',start);
+ const body=source.slice(start,end)+'return {settling,atomic};}; return sample;';
+ const code=ts.transpileModule(body,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText;
+ for(const scenario of ['stable','incomplete','mutation','capture-race'] as const){
+  let now=0,captures=0;const times:number[]=[],evidence:any[]=[];
+  const value=()=>({scrollTop:40,motion:{sequence:now>=16&&scenario==='mutation'?2:1},geometry:{runs:[]},layout:{measurements:1}});
+  const light=async()=>value();
+  const capture=async()=>{times.push(now);captures++;const v=value();if(scenario==='capture-race'&&captures===1)v.motion.sequence=99;return v;};
+  const d={evidence,budget:{remaining:()=>1500},call:async(_name:string,_work:unknown)=>{now+=16;}};
+  const expect=(v:unknown)=>({toBeTruthy:()=>assert(v)});
+  const sample=Function('d','performance','light','capture','detailOperationIssues','detailScrollMeasurement','expect',
+   'let stage="",traversalStarted=0;'+code)(d,{now:()=>now},light,capture,
+   (_op:unknown,_v:unknown)=>scenario==='incomplete'&&now<64?['incomplete']:[],
+   (v:any)=>({scrollTop:v.scrollTop,motion:v.motion,measurements:v.layout.measurements}),expect);
+  const r=await sample('keyboard',{kind:'arrow',before:{},evidenceIndex:0});
+  assert(r.settling.elapsedWallMs>=32);assert(captures>=2);assert.equal(times[0],scenario==='incomplete'?64:0);
+  if(scenario==='mutation')assert(r.settling.first.motion.sequence===2&&now>=48,'changed light observation invalidates the first full baseline');
+  if(scenario==='capture-race')assert(captures>=3,'a raced full capture cannot serve as stable baseline');
+  assert.deepEqual(r.settling.first,{scrollTop:r.atomic.scrollTop,motion:r.atomic.motion,measurements:r.atomic.layout.measurements});
+ }
+});
+
+test('touch planning uses the measured clip with four-pixel interior endpoints in both directions',async()=>{
+ const module=await import('../browser-acceptance/detail-scroll-contract');const plan=(module as any).planDetailTouch;assert.equal(typeof plan,'function');
+ const clip={x:113,y:68.796875,width:112,height:62};
+ for(const delta of [-500,-20,0,20,500]){
+  const p=plan(clip,delta,15);assert.equal(p.x,169);
+  for(const y of [p.y,p.endY])assert(y>=clip.y+4&&y<=clip.y+clip.height-4);
+  assert(Math.abs(p.travel)<=54);assert.equal(p.endY,p.y-p.travel);
+ }
+ assert.equal(plan(clip,500,15).travel,54);assert.equal(plan(clip,-500,15).travel,-54);
+ for(const c of [{...clip,height:8},{...clip,width:0},{...clip,y:NaN}])assert.throws(()=>plan(c,20,15));
+ assert.throws(()=>plan(clip,NaN,15));assert.throws(()=>plan(clip,20,-1));
+});

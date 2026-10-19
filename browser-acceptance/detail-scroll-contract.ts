@@ -111,3 +111,12 @@ export function planDetailKeys(e:{top:number;max:number;delta:number;window:numb
   }
   return empty('bounded-search-exhausted',seen.size);
 }
+
+/** A trusted touch stroke stays inside the measured scroll clip, not its border box. */
+export function planDetailTouch(clip:{x:number;y:number;width:number;height:number},delta:number,slop:number) {
+ if(![clip.x,clip.y,clip.width,clip.height,delta,slop].every(Number.isFinite)||clip.width<=8||clip.height<=28||slop<0)
+  throw new Error('Invalid native touch clip');
+ const direction=delta<0?-1:1,travel=direction*Math.min(clip.height-8,Math.max(20,Math.abs(delta)+slop));
+ const x=clip.x+clip.width/2,y=direction>0?clip.y+clip.height-4:clip.y+4;
+ return {x,y,endY:y-travel,travel,direction};
+}
