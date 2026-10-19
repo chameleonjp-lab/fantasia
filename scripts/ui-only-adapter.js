@@ -73,9 +73,16 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
         announcementPriority, announcementText: el('announcement').textContent, fixtureKind: 'input-equations-reachable-state',
         reachability: { seed: state.seed, nativeInput: false, stateOverrides: false, path, selfLossEvent, controlledRespawnBoundary: alert === 'reachable-protection' } };
     }
+    const deadlineBranch = alert.startsWith('deadline-');
+    if (deadlineBranch) {
+      alert = alert.slice('deadline-'.length);
+      if (!['clear', 'low', 'outside'].includes(alert)) throw new Error('Unknown deadline branch condition');
+    }
     state.status = 'running';
-    state.activeTicks = 240;
-    state.simTick = 240;
+    // Explicit state-controlled branch coverage, not a claim that this whole
+    // world was reached by 70,199 native gameplay ticks.
+    state.activeTicks = deadlineBranch ? CAMPAIGN_LIMIT_TICKS - 1801 : 240;
+    state.simTick = state.activeTicks;
     state.sites.forEach((site, index) => {
       site.owner = ['friendly', 'neutral', 'enemy', 'friendly', 'enemy', 'neutral', 'friendly'][index];
       site.progress = (index + 1) * 5000;
@@ -115,6 +122,22 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     flight.sync(state, true);
     setScreen('playing');
     announcementUntil = 0; announcementPriority = 0; el('announcement').textContent = '';
+    if (deadlineBranch) {
+      const beforeActiveTicks = state.activeTicks;
+      clearInput(); accumulator = 0; lastFrame = performance.now() - CAMPAIGN_DT * 1000;
+      // Execute the actual production deadline branch, rather than injecting
+      // its wording or priority into announce(). UI-only rAF is suppressed.
+      frame();
+      if (state.activeTicks !== beforeActiveTicks + 1 || state.status !== 'running')
+        throw new Error('Deadline branch did not advance exactly one running tick');
+      if (announcementPriority !== 4 || el('announcement').textContent !== '作戦期限まで、あと30秒')
+        throw new Error('Production deadline announcement was not emitted');
+      const rendered = uiOnlyCanvas();
+      return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status,
+        announcementPriority, announcementText: el('announcement').textContent, fixtureKind: 'state-controlled-deadline-branch',
+        reachability: { stateOverrides: true, fullRunReachable: false, nativeInput: false, beforeActiveTicks,
+          afterActiveTicks: state.activeTicks, actualFrameTransition: true, condition: alert } };
+    }
     // Lifecycle notices and threat notices describe this fixture's state.
     // Priority remains an explicit synthetic stress dimension, not a claim
     // that normal gameplay emits this exact combination or priority.

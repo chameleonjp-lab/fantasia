@@ -207,16 +207,21 @@ test('acquisition counts all four native frames, keeps single-event steps, and n
 
 // Exercise the actual fixed-state adapter, with only its renderer/DOM boundary
 // stubbed. Campaign and flight projection are the production implementations.
-function fixedHudFixture(alert: string, width = 320, height = 568) {
+function fixedHudFixture(alert: string, width = 320, height = 568, mode: 'normal' | 'easy' = 'normal') {
   const source = readFileSync(new URL('../scripts/ui-only-adapter.js', import.meta.url), 'utf8')
     .replace('import.meta.env.DEV', 'true');
   const elements = new Map<string, any>();
-  const context: any = { window: { innerWidth: width, innerHeight: height }, Vector3, audio: { event() {}, worldEvent() {}, finishFlight() {}, resetFlight() {} }, location: { pathname: '/__ui-only' }, selectedMode: 'normal',
+  const context: any = { window: { innerWidth: width, innerHeight: height }, Vector3, audio: { event() {}, worldEvent() {}, finishFlight() {}, resetFlight() {}, update() {} }, location: { pathname: '/__ui-only' }, selectedMode: 'normal',
     terrainHeight, screen: 'home', respawnRemaining: 0, announcementUntil: 0, announcementPriority: 0,
-    bombPrediction: null, bombPredictionTick: 0,
+    bombPrediction: null, bombPredictionTick: 0, CAMPAIGN_DT: 1 / 60, CAMPAIGN_LIMIT_TICKS: 72000,
+    performance: { now: () => 1000 }, requestAnimationFrame() { return 0; }, disposed: false,
+    startPreparation: { ownsRendering: false }, contextLost: false, renderStatus: 'ready',
+    lastFrame: 0, lastFrameGap: 0, frameId: 0, accumulator: 0, pendingLoop: false, pendingBomb: false,
+    frameIntervals: [], updateTimes: [], inputAudit: [], inputAuditSignature: '', inputAuditDropped: 0,
+    controls: { sample() { return { ...neutral }; }, sampleThrottle() { return undefined; } },
     clearInput() {}, syncAudio() {}, syncMode() {}, updateHUD() {}, el(id: string) { if (!elements.has(id)) elements.set(id, { textContent: '', dataset: {} }); return elements.get(id); },
     setScreen(value: string) { context.screen = value; },
-    scene: { setUiOnlyThreat() {}, setOverlayVisible() {}, render() { return true; }, diagnostics() { return {}; } },
+    scene: { camera: { aspect: width / height }, pollRender() { return 'ready'; }, setUiOnlyThreat() {}, setOverlayVisible() {}, render() { return true; }, diagnostics() { return { queue: { status: 'ready' } }; } },
     resetCampaign() { context.campaign = new Campaign(context.selectedMode); context.state = context.campaign.state;
       context.flight = new CampaignFlightController(context.state); context.player = context.flight.player; },
   };
@@ -224,8 +229,10 @@ function fixedHudFixture(alert: string, width = 320, height = 568) {
   runInNewContext(transpileModule(main.slice(main.indexOf('function announce('), main.indexOf('function syncAudio(')), {}).outputText, context);
   runInNewContext(transpileModule(main.slice(main.indexOf('function handleEvents('), main.indexOf('function consumeTick(')), {}).outputText, context);
   runInNewContext(transpileModule(main.slice(main.indexOf('function completeRespawn('), main.indexOf('function frame(')), {}).outputText, context);
+  runInNewContext(transpileModule(main.slice(main.indexOf('function consumeTick('), main.indexOf('function updateBombCue(')).replace('import.meta.env.DEV', 'true'), {}).outputText, context);
+  runInNewContext(transpileModule(main.slice(main.indexOf('function frame('), main.indexOf("for (const id of ['start'")), {}).outputText, context);
   runInNewContext(source, context);
-  context.fixture = context.window.__fantasiaUiOnlyTest.hud('normal', alert, 4);
+  context.fixture = context.window.__fantasiaUiOnlyTest.hud(mode, alert, 4);
   context.announcementText = context.el('announcement').textContent;
   return context;
 }
@@ -408,4 +415,37 @@ test('low terrain danger stays independent while revival protection is active', 
   x.state.player.position = { x: 0, y: terrainHeight(0, 0) + 30, z: 0 };
   assert.equal(campaignSafetyReadout(x.state), '低空注意 · 機首を上げて');
   assert.equal(campaignProtectionReadout(x.state), '復活保護 あと2.0秒 · 自機攻撃不可');
+});
+
+for (const mode of ['normal', 'easy'] as const) for (const alert of ['clear', 'low', 'outside']) test(`deadline branch ${mode}/${alert}: real frame crosses 30-second threshold with explicit synthetic preconditions`, () => {
+  const x = fixedHudFixture(`deadline-${alert}`, 568, 320, mode);
+  assert.equal(x.state.activeTicks, 70200);
+  assert.equal(x.state.simTick, 70200);
+  assert.equal(x.announcementText, '作戦期限まで、あと30秒');
+  assert.equal(x.announcementPriority, 4);
+  assert.equal(x.announcementUntil, 70500);
+  assert.equal(x.fixture.fixtureKind, 'state-controlled-deadline-branch');
+  assert.equal(x.fixture.reachability.stateOverrides, true);
+  assert.equal(x.fixture.reachability.fullRunReachable, false);
+  assert.equal(x.fixture.reachability.beforeActiveTicks, 70199);
+  assert.equal(x.player.reloadTicksRemaining, 107);
+  const turret = x.state.actors.find((a: any) => a.team === 'enemy' && a.class === 'turret');
+  assert.equal(turret.phase, 'telegraph'); assert.ok(turret.hp > 0);
+  assert.equal(turret.targetRef.id, x.state.player.id);
+  assert.equal(turret.targetRef.generation, x.state.player.generation);
+  assert.equal(turret.fireAtTick - x.state.simTick, 71);
+  if (alert === 'low') assert.ok(campaignSafetyReadout(x.state).includes('低空'));
+  if (alert === 'outside') assert.equal(x.state.player.boundaryTicks, 89);
+});
+
+test('deadline priority cannot replace an unexpired higher-priority lifecycle notice', () => {
+  const x = fixedHudFixture('deadline-clear');
+  x.announce('自機喪失', 5, 5);
+  x.announce('作戦期限まで、あと30秒', 5, 4);
+  assert.equal(x.el('announcement').textContent, '自機喪失');
+  assert.equal(x.announcementPriority, 5);
+  x.state.activeTicks = x.announcementUntil;
+  x.announce('作戦期限まで、あと30秒', 5, 4);
+  assert.equal(x.el('announcement').textContent, '作戦期限まで、あと30秒');
+  assert.equal(x.announcementPriority, 4);
 });

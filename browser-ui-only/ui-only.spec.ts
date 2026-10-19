@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 
 type Timings = { name: string; setupMs: number; tourMs: number; captureMs: number };
-type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss' | 'reachable-protection'; priority: 0 | 4 | 5 };
+type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss' | 'reachable-protection' | 'deadline-clear' | 'deadline-low' | 'deadline-outside'; priority: 0 | 4 | 5 };
 type HudProvenance = 'fresh-page' | 'rotation-stress';
 type HudFailureRecord = { case: string; provenance: HudProvenance | 'aggregate'; stage: string; message: string; stack?: string };
 type HudCaseCoverage = { case: string; attempted: boolean; evidenceCompleted: boolean; imageSaved: boolean; jsonSaved: boolean; exceptionMessage?: string; notRunReason?: string };
@@ -1058,6 +1058,7 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
 
 async function inspectDirectSafetyHud(page: Page, alert: HudCase['alert']) {
   return page.evaluate(alertValue => {
+    alertValue = alertValue.replace(/^deadline-/, '') as typeof alertValue;
     const details = document.querySelector<HTMLElement>('#campaign-hud-details');
     const protection = alertValue === 'protected' || alertValue === 'reachable-protection';
     const warning = document.querySelector<HTMLElement>(protection ? '#campaign-threat' : '#warning');
@@ -2092,4 +2093,19 @@ test('Reachable Normal revival protection is one full visible status at 568x320 
   await info.attach('reachable-protection-coverage.json', { body: Buffer.from(JSON.stringify({ coverage, ...result }, null, 2)), contentType: 'application/json' });
   expect(coverage.evidenceCompleted).toBe(true);
   expect(result.failures, 'natural flight plus production revival retains protection duration, attack lockout and independent information').toEqual([]);
+});
+
+for (const condition of [
+  { mode: 'easy', alert: 'deadline-clear', width: 568, height: 320 },
+  { mode: 'easy', alert: 'deadline-outside', width: 320, height: 568 },
+  { mode: 'easy', alert: 'deadline-low', width: 568, height: 320 },
+  { mode: 'normal', alert: 'deadline-low', width: 568, height: 320 },
+] as const) test(`Production deadline branch with controlled ${condition.mode}/${condition.alert} preconditions retains the complete 200% HUD`, async ({ browser }, info) => {
+  const hudCase: HudCase = { ...condition, name: `hud-${condition.mode}-${condition.alert}-text-200.png`, priority: 4 };
+  const coverage: HudCaseCoverage = { case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+  const result = await runFreshHudCase(browser, info, hudCase, coverage);
+  await info.attach('deadline-branch-coverage.json', { body: Buffer.from(JSON.stringify({ coverage, ...result,
+    scope: 'Actual frame crosses the deadline threshold from explicit synthetic world preconditions; full-run reachability is not established.' }, null, 2)), contentType: 'application/json' });
+  expect(coverage.evidenceCompleted, 'state-controlled deadline branch PNG and JSON were both captured').toBe(true);
+  expect(result.failures, 'deadline branch keeps the unchanged full HUD geometry/text/control contract').toEqual([]);
 });
