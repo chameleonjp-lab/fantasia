@@ -1696,7 +1696,53 @@ function installMeasuredShapeProbe(input: any) {
   const set=(n:HTMLElement,k:string,v:string)=>n.style.setProperty(k,v,'important');
   const apply=(selection:any)=>{for(const [id,width] of Object.entries(selection)){const row=rows.find((r:any)=>r.id===id);if(!row||!input.variableIds.includes(id))throw Error('invalid shape role '+id);if(width!=='max-content'&&(!Number.isFinite(width)||Number(width)<=0))throw Error('invalid width');set(row.node,'width',width==='max-content'?'max-content':`${width}px`);set(row.node,'max-width','none');set(row.node,'white-space','normal');set(row.node,'overflow-wrap','normal');set(row.node,'word-break','normal');if(id==='instrument')set(row.node,'flex-wrap','wrap');}};
   const measure=(selection:any,keep=false)=>{if(!restore())throw Error('pre-measure restore failed');try{apply(selection);const result=read();if(result.failures.length)throw Error('shape invariant failed '+JSON.stringify(result.failures));if(!keep&&!restore())throw Error('restore failed');return result;}catch(error){if(!restore())throw Error('measurement failure and rollback mismatch');throw error;}};
-  return {measure,read,restore,initial:read()};
+  const place=(rects:any[])=>{
+    if(rects.length!==rows.length||new Set(rects.map(r=>r.id)).size!==rows.length)throw Error('placement role mismatch');
+    try {
+      for(const r of rects){const row=rows.find((x:any)=>x.id===r.id);if(!row||!['x','y','width','height'].every(k=>Number.isFinite(r[k]))||r.width<=0||r.height<=0)throw Error('invalid placement');
+        for(const [k,v] of Object.entries({position:'fixed',left:`${canvasRect.x+r.x}px`,top:`${canvasRect.y+r.y}px`,right:'auto',bottom:'auto',margin:'0px',transform:'none',translate:'none',width:`${r.width}px`,'box-sizing':'border-box'}))set(row.node,k,v);
+      }
+      return read();
+    }catch(error){if(!restore())throw Error('placement rollback failed');throw error;}
+  };
+  const inspectPlacement=()=>{
+    const measurement=read(),issues:any[]=[],tokens:any[]=[],controlHits:any[]=[];
+    const viewport={x:0,y:0,width:innerWidth,height:innerHeight};
+    const inside=(r:any,b:any)=>r.x>=b.x&&r.y>=b.y&&r.x+r.width<=b.x+b.width&&r.y+r.height<=b.y+b.height;
+    const clipFor=(node:HTMLElement)=>{
+      let clip={...viewport};
+      for(let p:HTMLElement|null=node;p;p=p.parentElement){const st=getComputedStyle(p),r=p.getBoundingClientRect();const border=(v:string)=>Number.parseFloat(v)||0;const x=r.x+border(st.borderLeftWidth),y=r.y+border(st.borderTopWidth),right=r.x+r.width-border(st.borderRightWidth),bottom=r.y+r.height-border(st.borderBottomWidth);
+        if(['hidden','clip','scroll','auto'].includes(st.overflowX)){const oldRight=clip.x+clip.width;clip.x=Math.max(clip.x,x);clip.width=Math.min(oldRight,right)-clip.x;}
+        if(['hidden','clip','scroll','auto'].includes(st.overflowY)){const oldBottom=clip.y+clip.height;clip.y=Math.max(clip.y,y);clip.height=Math.min(oldBottom,bottom)-clip.y;}
+      }return clip;
+    };
+    for(const {id,node} of rows){
+      if(node.matches('button,[role="slider"]')){const r=node.getBoundingClientRect(),hit=document.elementFromPoint(r.x+r.width/2,r.y+r.height/2),owned=hit===node||!!(hit&&node.contains(hit));controlHits.push({id,owned,width:r.width,height:r.height});if(!owned||r.width<44||r.height<44)issues.push({id,issue:'control-hit-or-minimum-size'});}
+      if(id==='campaign-hud-details')continue; // Existing native full-scroll contract remains separate.
+      const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let n:Node|null;const parts:any[]=[];let text='';
+      while(n=walker.nextNode()){parts.push({node:n,start:text.length,end:text.length+(n.textContent??'').length});text+=n.textContent??'';}
+      for(const part of parts){if(!part.node.textContent?.trim())continue;const range=document.createRange();range.selectNodeContents(part.node);const rects=[...range.getClientRects()];const parent=part.node.parentElement;
+        if(!parent||!visible(parent)||!rects.length)issues.push({id,issue:'missing-or-invisible-text'});
+        const clip=parent?clipFor(parent):viewport;
+        for(const r of rects)if(!inside(r,viewport)||!inside(r,clip))issues.push({id,issue:'viewport-or-ancestor-clip',rect:{x:r.x,y:r.y,width:r.width,height:r.height},clip});
+      }
+      // Semantic nonbreaking units, including tokens crossing inline node boundaries.
+      const pattern=/機体\s*\d+(?:\.\d+)?\s*%|残機\s*\d+|陣地\s*\d+|残り\s*\d+発|機関砲\s*\d+|機銃\s*\d+|\d+(?::\d+)+(?:\.\d+)?|\d+(?:\.\d+)?\s*(?:km\/h|m|秒|発|%)/gu;
+      for(const match of text.matchAll(pattern)){
+        const start=match.index!,end=start+match[0].length,rects:any[]=[];let characters=0;
+        for(const part of parts){const a=Math.max(start,part.start),b=Math.min(end,part.end);for(let offset=a;offset<b;offset++){
+          if(/\s/u.test(text[offset]))continue;characters++;const range=document.createRange();range.setStart(part.node,offset-part.start);range.setEnd(part.node,offset-part.start+1);
+          const fragments=[...range.getClientRects()].filter(r=>r.width>0&&r.height>0&&[r.x,r.y,r.width,r.height].every(Number.isFinite));
+          if(!fragments.length)issues.push({id,issue:'token-character-unmeasured',token:match[0],offset});
+          rects.push(...fragments.map(r=>({x:r.x,y:r.y,width:r.width,height:r.height})));
+        }}
+        const sameLine=characters>0&&rects.length>=characters&&Math.max(...rects.map(r=>r.y))<Math.min(...rects.map(r=>r.y+r.height));
+        if(!sameLine)issues.push({id,issue:'semantic-token-line-split',token:match[0],rects});tokens.push({id,text:match[0],characters,rects,sameLine});
+      }
+    }
+    return {measurement,tokens,controlHits,issues,viewport};
+  };
+  return {measure,read,restore,place,inspectPlacement,initial:read()};
 }
 
 async function captureMeasuredShapeCatalogue(page:Page,info:TestInfo,hudCase:HudCase) {
@@ -1736,6 +1782,57 @@ async function captureMeasuredShapeCatalogue(page:Page,info:TestInfo,hudCase:Hud
     if(!receipt.restored)receipt.failures.push({issue:'restore-unproven'});await info.attach(`${hudCase.name}.shape-catalogue.json`,{body:Buffer.from(JSON.stringify(receipt)),contentType:'application/json'});
   }
   return receipt;
+}
+
+
+const measuredLongAnnouncementWitness = {"sourceSHA256":"a721d3187961498330d745df698f70ee766d049b6955ae5738014bf8368bec41","case":"hud-normal-synthetic-shape-low-text-200.png","items":[{"id":"health-label","x":325.203125,"y":74.796875,"width":122.375,"height":35,"shapeIndex":0,"source":"catalogue[0].shapes[0]","text":"\n            機体 100%\n          "},{"id":"health-track","x":240.203125,"y":67.796875,"width":110,"height":3,"shapeIndex":0,"source":"catalogue[1].shapes[0]","text":""},{"id":"instrument","x":74,"y":285.375,"width":122.421875,"height":24,"shapeIndex":1,"source":"catalogue[2].shapes[1]","text":"\n            34m396km/h\n          "},{"id":"campaign-limit","x":198,"y":206,"width":144,"height":26,"shapeIndex":0,"source":"catalogue[3].shapes[0]","text":"期限まで 19:56"},{"id":"ammo","x":8,"y":226.328125,"width":167.046875,"height":27.03125,"shapeIndex":0,"source":"catalogue[4].shapes[0]","text":"機銃 0 · 機関砲 0"},{"id":"campaign-threat","x":8,"y":67.796875,"width":138,"height":80,"shapeIndex":0,"source":"catalogue[5].shapes[0]","text":"砲台の魔法 · 自機を照準中 · 陣地1 · 1.2秒"},{"id":"reload-status","x":8,"y":151.796875,"width":138,"height":70.53125,"shapeIndex":0,"source":"catalogue[6].shapes[0]","text":"再装填中 あと1.8秒"},{"id":"warning","x":273.296875,"y":248.984375,"width":223.078125,"height":30,"shapeIndex":0,"source":"catalogue[7].shapes[0]","text":"低空注意 · 機首を上げて"},{"id":"announcement","x":200.421875,"y":284,"width":244.6875,"height":28,"shapeIndex":1,"source":"catalogue[8].shapes[1]","text":"砲台の予告 · 陣地1 · 1.2秒"},{"id":"campaign-hud-details","x":330,"y":113.796875,"width":114,"height":64,"shapeIndex":0,"source":"catalogue[9].shapes[0]","text":"\n            作戦経過 · 00:04.00\n          味方の旗3/ 7陣地味方兵 168 · 予備 168スコア 0ドラッグで操縦すぐ使える投下待機現在機を含む陣地1友24 / 予24 · 補26s陣地2友24 / 予24 · 補26s陣地3友24 / 予24 · 補26s陣地4友24 / 予24 · 補26s陣地5友24 / 予24 · 補26s陣地6友24 / 予24 · 補26s陣地7友24 / 予24 · 補26s"},{"id":"campaign-mode-status","x":74,"y":257.375,"width":72,"height":24,"shapeIndex":0,"source":"catalogue[10].shapes[0]","text":"ノーマル"},{"id":"target-tally","x":422.53125,"y":187.796875,"width":70.625,"height":57.1875,"shapeIndex":0,"source":"catalogue[11].shapes[0]","text":"残機3"},{"id":"game-sound","x":188,"y":236,"width":81.296875,"height":44,"shapeIndex":0,"source":"catalogue[12].shapes[0]","text":"音 OFF"},{"id":"pause","x":150,"y":172.1875,"width":44,"height":50,"shapeIndex":0,"source":"catalogue[13].shapes[0]","text":"Ⅱ"},{"id":"bomb","x":346,"y":181.796875,"width":72.53125,"height":62.6875,"shapeIndex":0,"source":"catalogue[14].shapes[0]","text":"爆弾残り0発"},{"id":"loop","x":150,"y":67.796875,"width":86.203125,"height":100.390625,"shapeIndex":0,"source":"catalogue[15].shapes[0]","text":"\n            ↻宙返り\n          "},{"id":"fire","x":8,"y":257.375,"width":62,"height":51.1875,"shapeIndex":0,"source":"catalogue[16].shapes[0]","text":"射撃"},{"id":"throttle","x":500.375,"y":187.796875,"width":51.1875,"height":102.390625,"shapeIndex":0,"source":"catalogue[17].shapes[0]","text":"\n            加速保持減速\n          "},{"id":"radar","x":451.578125,"y":67.796875,"width":100,"height":116,"shapeIndex":0,"source":"catalogue[18].shapes[0]","text":""}],"fixed":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"},{"id":"central-flight-lane","x":242,"y":118,"width":84,"height":84},{"x":246.79999999999995,"y":79.0089291012429,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}],"bounds":{"x":8,"y":8,"width":552,"height":304}};
+
+async function captureMeasuredPlacement(page:Page,info:TestInfo,hudCase:HudCase) {
+  const witness=measuredLongAnnouncementWitness,original=await act(page,'evidence'),gameBefore=await page.evaluate(()=>(window as any).__fantasiaReadState(false));
+  const fixed=original.layout.obstacles.filter((r:any)=>['campaign-site','central-flight-lane','aim-and-reload-ring'].includes(r.id));
+  const items=[...original.searchInput.panels,...(original.searchInput.movableControls??[]),{id:'radar',...original.layout.radar.rect}];
+  const receipt:any={purpose:'test-only full measured geometry; original product failure retained',case:hudCase.name,witness,original,gameBefore,failures:[],restored:false,canvasRestored:false};let handle:any;
+  try {
+    if(JSON.stringify(fixed)!==JSON.stringify(witness.fixed)||JSON.stringify(original.searchInput.bounds)!==JSON.stringify(witness.bounds))throw Error('witness fixed source changed');
+    if(items.length!==witness.items.length||new Set(items.map(r=>r.id)).size!==items.length||items.some(r=>!witness.items.some(w=>w.id===r.id)))throw Error('witness roles changed');
+    const variableIds=['instrument','ammo','campaign-limit','campaign-threat','reload-status','warning','announcement'];
+    handle=await page.evaluateHandle(installMeasuredShapeProbe,{items,variableIds});
+    receipt.initial=await handle.evaluate((p:any)=>p.initial);
+    const selection=Object.fromEntries(witness.items.filter(r=>variableIds.includes(r.id)).map(r=>[r.id,r.width]));
+    receipt.selection=selection;receipt.mixed=await handle.evaluate((p:any,x:any)=>p.measure(x,true),selection);
+    const expected=witness.items.filter(r=>r.id!=='radar');
+    if(!verifyMixedShapes(expected,receipt.mixed.leaves))throw Error('mixed DOM differs from witness shapes or original text');
+    receipt.positioned=await handle.evaluate((p:any,r:any)=>p.place(r),expected);
+    receipt.canvas=await act(page,'placementBegin',witness.items.find(r=>r.id==='radar'));
+    receipt.first=await handle.evaluate((p:any)=>p.inspectPlacement());
+    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));
+    receipt.second=await handle.evaluate((p:any)=>p.inspectPlacement());
+    const png=await page.screenshot();receipt.image={bytes:png.length,sha256:createHash('sha256').update(png).digest('hex')};await info.attach(`${hudCase.name}.joint-placement.png`,{body:png,contentType:'image/png'});
+    receipt.afterImage=await handle.evaluate((p:any)=>p.inspectPlacement());
+    if(JSON.stringify(receipt.first)!==JSON.stringify(receipt.second)||JSON.stringify(receipt.second)!==JSON.stringify(receipt.afterImage))receipt.failures.push({issue:'placement-not-stable'});
+    for(const phase of ['first','second','afterImage']){
+      const measured=receipt[phase];receipt.failures.push(...measured.issues.map((x:any)=>({phase,...x})),...measured.measurement.failures.map((x:any)=>({phase,...x})),...measured.measurement.shapeIssues.map((x:any)=>({phase,...x})));
+      if(!verifyMixedShapes(expected,measured.measurement.leaves))receipt.failures.push({phase,issue:'actual-shape-mismatch'});
+      const actual=[...measured.measurement.leaves,{id:'radar',...receipt.canvas.radar.rect}];
+      for(const r of actual){const target=witness.items.find(w=>w.id===r.id);if(!target||['x','y','width','height'].some(k=>r[k]!==target[k]))receipt.failures.push({phase,id:r.id,issue:'actual-position-mismatch',actual:r,target});
+        if(r.x<witness.bounds.x||r.y<witness.bounds.y||r.x+r.width>witness.bounds.x+witness.bounds.width||r.y+r.height>witness.bounds.y+witness.bounds.height)receipt.failures.push({phase,id:r.id,issue:'bounds'});
+        for(const obstacle of fixed)if(intersects(r,obstacle,4))receipt.failures.push({phase,id:r.id,other:obstacle.id,issue:'fixed-gap'});
+      }
+      for(let i=0;i<actual.length;i++)for(let j=0;j<i;j++)if(intersects(actual[i],actual[j],4))receipt.failures.push({phase,id:actual[i].id,other:actual[j].id,issue:'leaf-gap'});
+    }
+  }catch(error){receipt.failures.push({issue:'placement-exception',message:String(error)});}
+  finally {
+    try{receipt.canvasRestored=await act(page,'placementEnd');}catch(error){receipt.failures.push({issue:'canvas-restore-exception',message:String(error)});}
+    if(handle){try{receipt.restored=await handle.evaluate((p:any)=>p.restore());}catch(error){receipt.failures.push({issue:'DOM-restore-exception',message:String(error)});}try{await handle.dispose();}catch(error){receipt.failures.push({issue:'dispose-exception',message:String(error)});}}
+    try{await repaintFixedFixture(page);receipt.restoredEvidence=await act(page,'evidence');receipt.gameAfter=await page.evaluate(()=>(window as any).__fantasiaReadState(false));const state=({render:_render,...rest}:any)=>rest;
+      if(JSON.stringify(state(gameBefore))!==JSON.stringify(state(receipt.gameAfter)))receipt.failures.push({issue:'game-state-changed'});
+      if(JSON.stringify(original)!==JSON.stringify(receipt.restoredEvidence)){
+        if(JSON.stringify(original.searchInput)!==JSON.stringify(receipt.restoredEvidence.searchInput)||JSON.stringify(original.sight)!==JSON.stringify(receipt.restoredEvidence.sight))receipt.failures.push({issue:'original-search-or-sight-not-restored'});
+      }
+    }catch(error){receipt.failures.push({issue:'repaint-exception',message:String(error)});}
+    if(!receipt.restored||!receipt.canvasRestored)receipt.failures.push({issue:'rollback-unproven'});
+    await info.attach(`${hudCase.name}.joint-placement.json`,{body:Buffer.from(JSON.stringify(receipt)),contentType:'application/json'});
+  }return receipt;
 }
 
 async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCase, coverage: HudCaseCoverage) {
@@ -1795,6 +1892,7 @@ async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCas
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
       if ((hudCase.alert.startsWith('deadline-') || hudCase.measureReflow) && (hudCase.mode === 'easy' && ['outside','deadline-outside'].includes(hudCase.alert) || hudCase.mode === 'normal' && ['low','deadline-low'].includes(hudCase.alert))) {
         const catalogue = await captureMeasuredShapeCatalogue(freshPage, info, hudCase);
+        if(hudCase.name === measuredLongAnnouncementWitness.case){const joint=await captureMeasuredPlacement(freshPage,info,hudCase);for(const failure of joint.failures)recordHudFailure(caseFailures,'joint-placement',hudCase.name,'measured-placement',JSON.stringify(failure));}
         for (const failure of catalogue.failures) recordHudFailure(caseFailures, 'fresh-page', hudCase.name, 'measured-shape-catalogue', JSON.stringify(failure));
       }
 

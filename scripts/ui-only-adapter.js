@@ -28,6 +28,37 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     return uiOnlyCanvas();
   }
 
+  // Test-only canvas transaction. Never changes the game or product solver.
+  let uiOnlyPlacementRestore = null;
+  function uiOnlyPlacementBegin(radar) {
+    if (uiOnlyPlacementRestore) throw new Error('placement transaction already active');
+    const owner = scene?.hudLayout;
+    if (!owner || screen !== 'playing' || state.status !== 'running') throw new Error('placement requires running fixed fixture');
+    if (!radar || !['x', 'y', 'width', 'height'].every(k => Number.isFinite(radar[k])) || radar.width <= 0 || radar.height <= 0) throw new Error('invalid measured radar');
+    const original = owner.diagnostics();
+    if (original.canvasLabels?.length) throw new Error('canvas label placement is not covered by this diagnostic');
+    if (radar.width !== original.radar.rect.width || radar.height !== original.radar.rect.height) throw new Error('radar size changed');
+    const updateDescriptor = Object.getOwnPropertyDescriptor(owner, 'update');
+    const diagnosticsDescriptor = Object.getOwnPropertyDescriptor(owner, 'diagnostics');
+    const savedLayout = owner.layout;
+    const restoreProperty = (name, descriptor) => descriptor ? Object.defineProperty(owner, name, descriptor) : delete owner[name];
+    const restore = () => {
+      restoreProperty('update', updateDescriptor); restoreProperty('diagnostics', diagnosticsDescriptor);
+      owner.layout = savedLayout; uiOnlyPlacementRestore = null;
+      return owner.layout === savedLayout && Object.getOwnPropertyDescriptor(owner, 'update')?.value === updateDescriptor?.value && Object.getOwnPropertyDescriptor(owner, 'diagnostics')?.value === diagnosticsDescriptor?.value;
+    };
+    uiOnlyPlacementRestore = restore;
+    try {
+      const dx = radar.x - original.radar.rect.x, dy = radar.y - original.radar.rect.y;
+      const measured = { ...original, radar: { ...original.radar, rect: { ...radar }, center: { x: original.radar.center.x + dx, y: original.radar.center.y + dy } } };
+      owner.update = () => measured;
+      owner.diagnostics = () => measured;
+      uiOnlyPaint();
+      return { purpose: 'test-only measured placement; product status unchanged', originalStatus: original.status, radar: uiOnlyCanvas().hudLayout.radar };
+    } catch (error) { restore(); throw error; }
+  }
+  function uiOnlyPlacementEnd() { return uiOnlyPlacementRestore ? uiOnlyPlacementRestore() : true; }
+
   function uiOnlyReset() {
     home();
     return { screen, mode: state.mode };
@@ -224,7 +255,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
 
   Object.defineProperty(window, '__fantasiaUiOnlyTest', {
     value: Object.freeze({ reset: uiOnlyReset, hud: uiOnlyHud, paint: uiOnlyPaint, canvas: uiOnlyCanvas, evidence: uiOnlyLayoutEvidence,
-      controlLifecycle: uiOnlyControlLifecycle, pause: uiOnlyPause, result: uiOnlyResult, startupError: uiOnlyStartupError, layout: uiOnlyLayout }),
+      placementBegin: uiOnlyPlacementBegin, placementEnd: uiOnlyPlacementEnd, controlLifecycle: uiOnlyControlLifecycle, pause: uiOnlyPause, result: uiOnlyResult, startupError: uiOnlyStartupError, layout: uiOnlyLayout }),
     configurable: false, enumerable: false, writable: false,
   });
 }

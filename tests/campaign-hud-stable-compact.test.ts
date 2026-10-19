@@ -287,3 +287,36 @@ for(const fault of ['none','install','hidden','font'] as const)test(`actual DOM 
 });
 
 for(const fault of ['empty-range','overflow'] as const)test(`actual shape catalogue rejects ${fault} text geometry`,()=>{const result=shapeDomHarness(fault);assert(result.issues.length>0);assert.equal(result.restored,true);});
+
+function placementTextHarness(fault: 'none'|'split'|'clip'|'range'|'outside'|'apply'='none', textValue='396km/h') {
+  const c=measuredShapeFunctions(),styles=new Map<string,string>();let writes=0;
+  const node:any={id:'instrument',className:'instrument',isConnected:true,hidden:false,textContent:textValue,parentNode:{},nextSibling:null,parentElement:null,clientWidth:100,clientHeight:30,clientLeft:0,clientTop:0,scrollWidth:100,scrollHeight:30,
+    style:{setProperty(k:string,v:string){styles.set(k,v);if(fault==='apply'&&++writes===3)throw Error('partial place');}},
+    getAttribute:()=>styles.size?JSON.stringify([...styles]):null,setAttribute:(_k:string,v:string)=>{styles.clear();for(const [k,x]of JSON.parse(v))styles.set(k,x);},removeAttribute:()=>styles.clear(),
+    querySelectorAll:()=>[],getClientRects:()=>[{}],getBoundingClientRect:()=>({x:parseFloat(styles.get('left')??'8'),y:parseFloat(styles.get('top')??'8'),width:100,height:30}),matches:()=>false};
+  const parent:any={...node,id:'clip',textContent:'',parentElement:null,clientWidth:20,getBoundingClientRect:()=>({x:8,y:8,width:20,height:30})};if(fault==='clip')node.parentElement=parent;
+  const text:any={textContent:textValue,parentElement:node};const canvas={getBoundingClientRect:()=>({x:0,y:0,width:320,height:320})};
+  c.innerWidth=320;c.innerHeight=320;c.NodeFilter={SHOW_TEXT:4};
+  c.document={querySelector:()=>({querySelector:(s:string)=>s==='canvas'?canvas:null,querySelectorAll:(s:string)=>s.startsWith('#campaign-sites')?[]:[node]}),
+    createTreeWalker:()=>{let done=false;return {nextNode:()=>done?null:(done=true,text)};},
+    createRange:()=>{let offset=-1;return {selectNodeContents:()=>{offset=-1;},setStart:(_n:any,i:number)=>{offset=i;},setEnd:()=>{},getClientRects:()=>fault==='range'?[]:[{x:fault==='outside'?319:8+Math.max(offset,0)*5,y:fault==='split'&&offset>=3?38:8,width:offset<0?35:5,height:20}]};}};
+  c.getComputedStyle=(n:any)=>({display:'block',visibility:'visible',opacity:'1',overflowX:n===parent?'hidden':'visible',overflowY:'visible',getPropertyValue:()=> '16px'});
+  const p=c.installMeasuredShapeProbe({items:[{id:'instrument'}],variableIds:['instrument']});let error:any;
+  if(fault==='apply'){try{p.place([{id:'instrument',x:10,y:10,width:100,height:30}]);}catch(e){error=String(e);}}
+  const result=p.inspectPlacement();return {result,error,restored:p.restore(),inline:node.getAttribute('style')};
+}
+test('actual placement inspector keeps a numeric unit token on one line',()=>{const r=placementTextHarness();assert.equal(r.result.issues.length,0);assert.equal(r.result.tokens[0].text,'396km/h');assert.equal(r.result.tokens[0].sameLine,true);});
+for(const fault of ['split','clip','range','outside'] as const)test(`actual placement inspector rejects ${fault} glyph geometry`,()=>{const r=placementTextHarness(fault);assert(r.result.issues.length>0);assert(r.restored);});
+test('actual placement transaction rolls back partial style writes',()=>{const r=placementTextHarness('apply');assert(r.error);assert(r.restored);assert.equal(r.inline,null);});
+
+function canvasPlacementHarness(failPaint=false) {
+ const source=readFileSync('scripts/ui-only-adapter.js','utf8');const body=source.slice(source.indexOf('  let uiOnlyPlacementRestore = null;'),source.indexOf('  function uiOnlyReset()'));
+ const initial={status:'blocked',radar:{rect:{x:0,y:0,width:100,height:116},center:{x:50,y:50}}};let renders=0;
+ const owner:any={layout:initial,update(){return this.layout;},diagnostics(){return this.layout;}};const update=owner.update,diagnostics=owner.diagnostics;
+ const ctx:any={scene:{hudLayout:owner},screen:'playing',state:{status:'running'},uiOnlyPaint:()=>{renders++;if(failPaint)throw Error('paint failed');},uiOnlyCanvas:()=>({hudLayout:owner.diagnostics()})};
+ runInNewContext(body,ctx);return {ctx,owner,update,diagnostics,renders:()=>renders};
+}
+test('test-only canvas placement restores exact methods and original blocked status',()=>{const h=canvasPlacementHarness(),r=h.ctx.uiOnlyPlacementBegin({x:200,y:100,width:100,height:116});assert.equal(r.originalStatus,'blocked');assert.equal(r.radar.center.x,250);assert.throws(()=>h.ctx.uiOnlyPlacementBegin({x:200,y:100,width:100,height:116}));assert(h.ctx.uiOnlyPlacementEnd());assert.equal(h.owner.update,h.update);assert.equal(h.owner.diagnostics,h.diagnostics);assert.equal(h.owner.diagnostics().status,'blocked');});
+test('test-only canvas placement rolls back painter failure and rejects changed radar size',()=>{const h=canvasPlacementHarness(true);assert.throws(()=>h.ctx.uiOnlyPlacementBegin({x:200,y:100,width:100,height:116}));assert.equal(h.owner.update,h.update);assert.equal(h.owner.diagnostics,h.diagnostics);assert(h.ctx.uiOnlyPlacementEnd());assert.throws(()=>h.ctx.uiOnlyPlacementBegin({x:200,y:100,width:101,height:116}));});
+
+test('placement tokens explicitly include health, site and remaining-aircraft label pairs',()=>{for(const text of ['機体 100%','陣地1','残機3','残り0発','機銃 288','機関砲 96','19:30.00']){const r=placementTextHarness('none',text);assert.equal(r.result.tokens[0].text,text);assert.equal(r.result.tokens[0].sameLine,true);}});
