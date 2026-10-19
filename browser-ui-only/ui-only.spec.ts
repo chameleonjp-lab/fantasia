@@ -1566,6 +1566,66 @@ test('Storage failure offers session-only settings and expires after reload', as
   await record('storage-failure-session-only', setupMs, started, captureMs);
 });
 
+// Test-only bounded shape measurements. These never replace the original
+// case result, nor certify a product fix from hypothetical dimensions.
+function hudReflowProbePlans(boundsWidth: number, sideWidth: number) {
+  const side = Math.max(44, Math.min(boundsWidth, Math.floor(sideWidth)));
+  return [
+    { name: 'narrow-alert-column', alertWidth: Math.min(106, side), detailHeight: 64, wrapBands: false },
+    { name: 'side-alert-column', alertWidth: side, detailHeight: 64, wrapBands: false },
+    { name: 'wide-alert-band', alertWidth: Math.min(276, boundsWidth), detailHeight: 64, wrapBands: false },
+    { name: 'side-readout-columns', alertWidth: side, detailHeight: 64, wrapBands: true },
+  ];
+}
+
+async function captureHudReflowProbes(page: Page, info: TestInfo, hudCase: HudCase, fixture: any, fontScale: any,
+  freshBaseline: any, lives: any, announcement: any, nodes: any, text: Record<string, string | null>) {
+  const base = await act(page, 'evidence');
+  const ring = base.layout.obstacles.find((item: any) => item.id === 'aim-and-reload-ring');
+  if (!ring) throw new Error('Reflow diagnostic requires the actual measured sight reservation');
+  const plans = hudReflowProbePlans(base.layout.bounds.width, ring.x - base.layout.bounds.x - 4);
+  const originals = await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('#announcement, #campaign-threat, #reload-status, #warning, #campaign-hud-details')]
+    .map(node => ({ id: node.id, style: node.getAttribute('style') })));
+  const results = [];
+  try {
+    for (const plan of plans) {
+      await page.evaluate(({ originals, plan }) => {
+        for (const original of originals) {
+          const node = document.getElementById(original.id)!;
+          if (original.style === null) node.removeAttribute('style'); else node.setAttribute('style', original.style);
+        }
+        for (const id of ['announcement', 'campaign-threat', ...(plan.wrapBands ? ['reload-status', 'warning'] : [])]) {
+          const node = document.getElementById(id)!;
+          node.style.setProperty('width', `${plan.alertWidth}px`, 'important');
+          node.style.setProperty('max-width', `${plan.alertWidth}px`, 'important');
+          node.style.setProperty('white-space', 'normal', 'important');
+          node.style.setProperty('overflow-wrap', 'anywhere', 'important');
+        }
+        document.getElementById('campaign-hud-details')!.style.setProperty('height', `${plan.detailHeight}px`, 'important');
+      }, { originals, plan });
+      const probeCase = { ...hudCase, name: hudCase.name.replace('.png', `-${plan.name}.png`) };
+      const coverage: HudCaseCoverage = { case: probeCase.name, attempted: true, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+      const failures: HudFailureRecord[] = [];
+      const painted = await repaintFixedFixture(page);
+      const measured = await inspectAndCaptureHudCase(page, info, probeCase, painted, fixture, fontScale,
+        freshBaseline, lives, announcement, nodes, text, 'fresh-page', failures, coverage);
+      coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
+      results.push({ plan, measured, failures, coverage });
+    }
+  } finally {
+    await page.evaluate(originals => {
+      for (const original of originals) {
+        const node = document.getElementById(original.id)!;
+        if (original.style === null) node.removeAttribute('style'); else node.setAttribute('style', original.style);
+      }
+    }, originals);
+    await repaintFixedFixture(page);
+    await info.attach(`${hudCase.name}.reflow-probes.json`, { body: Buffer.from(JSON.stringify({
+      purpose: 'Test-only shape measurements; original failures retained; no product acceptance claim.', plans, results,
+    }, null, 2)), contentType: 'application/json' });
+  }
+}
+
 async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCase, coverage: HudCaseCoverage) {
     // Every fixed state gets its own document with its viewport set before UI setup.
     // This prevents a previous mode/priority/rotation from becoming its baseline.
@@ -1621,6 +1681,8 @@ async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCas
       measuredArea = { status: inspection.areaBound.status, areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
         layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, searchLimit: inspection.searchLimit, blockedReasons: inspection.blockedReasons };
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
+      if (hudCase.alert.startsWith('deadline-')) await captureHudReflowProbes(freshPage, info, hudCase, fixture, fontScale,
+        freshBaseline, originalLivesNoteHandle, originalAnnouncementHandle, originalSecondaryNodesHandle, originalSecondaryText);
     } catch (error) {
       caseCaptureMs += await captureHudFailureEvidence(freshPage, info, coverage, caseFailures, 'fresh-page', hudCase.name, 'case-exception', error,
         { viewport: { width: hudCase.width, height: hudCase.height }, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority, measuredArea });

@@ -449,3 +449,22 @@ test('deadline priority cannot replace an unexpired higher-priority lifecycle no
   assert.equal(x.el('announcement').textContent, '作戦期限まで、あと30秒');
   assert.equal(x.announcementPriority, 4);
 });
+
+test('bounded reflow diagnostics preserve the original result and vary only text shape', () => {
+  const source = readFileSync(new URL('../browser-ui-only/ui-only.spec.ts', import.meta.url), 'utf8');
+  const block = source.slice(source.indexOf('function hudReflowProbePlans('), source.indexOf('async function captureHudReflowProbes('));
+  const context: any = {}; runInNewContext(transpileModule(block, {}).outputText, context);
+  for (const [bounds, side] of [[304, 106.2], [552, 218.8]]) {
+    const plans = context.hudReflowProbePlans(bounds, side);
+    assert.equal(plans.length, 4);
+    assert.equal(new Set(plans.map((p: any) => p.name)).size, 4);
+    assert.ok(plans.every((p: any) => p.alertWidth >= 44 && p.alertWidth <= bounds && p.detailHeight === 64));
+    assert.equal(plans.filter((p: any) => p.wrapBands).length, 1);
+  }
+  const implementation = source.slice(source.indexOf('async function captureHudReflowProbes('), source.indexOf('async function runFreshHudCase('));
+  assert.ok(implementation.includes('finally {'));
+  assert.ok(implementation.includes('original failures retained'));
+  assert.ok(!implementation.includes("setProperty('font"));
+  assert.ok(!implementation.includes('textContent ='));
+  assert.ok(!implementation.includes('innerHTML ='));
+});
