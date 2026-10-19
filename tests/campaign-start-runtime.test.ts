@@ -10,6 +10,7 @@ import * as combat from '../src/campaign-combat';
 import * as flight from '../src/campaign-flight';
 import * as terrain from '../src/campaign-terrain';
 import * as flightMath from '../src/flight';
+import { campaignProtectionReadout, campaignSafetyReadout } from '../src/campaign-hud';
 import * as start from '../src/campaign-start';
 import { RenderQueue, type RenderQueueContext } from '../src/render-queue';
 
@@ -35,6 +36,8 @@ async function appHarness() {
     const n = Object.assign(new Target(), { id, hidden: true, disabled: false, textContent: '', innerHTML: '', dataset: {} as any,
       style: { removeProperty() {}, width: '', top: '', left: '' },
       attributes: new Map<string, string>(), inert: false,
+      classList: { values: new Set<string>(), contains(value: string) { return this.values.has(value); }, toggle(value: string, on: boolean) { if (on) this.values.add(value); else this.values.delete(value); } },
+      contains(other: unknown) { return other === n; },
       setAttribute(name: string, value: string) { n.attributes.set(name, value); },
       removeAttribute(name: string) { n.attributes.delete(name); },
       getAttribute(name: string) { return n.attributes.get(name) ?? null; }, focus() { if (!n.hidden && !n.disabled) doc.activeElement = n; }, querySelectorAll: () => [] });
@@ -53,7 +56,7 @@ async function appHarness() {
   };
   class Scene {
     queue = new RenderQueue(gl); camera = { aspect: 1 }; prepared = false; disposed = false; resets = 0; resizes = 0; renderAttempts = 0; lastState: any = null; overlayVisible = false; hudMeasured = false; failHud = false;
-    submissions: Array<{ mode: string; tick: number; runId: string; overlay: boolean; hudHidden: boolean; hudInert: boolean; hudAriaHidden: string | null; hint: string; announcement: string; announcementAriaHidden: string | null }> = [];
+    submissions: Array<{ mode: string; tick: number; runId: string; overlay: boolean; hudHidden: boolean; hudInert: boolean; hudAriaHidden: string | null; hint: string; announcement: string; announcementHidden: boolean; announcementAriaHidden: string | null }> = [];
     constructor() { scene = this; }
     async prepare() { this.prepared = true; }
     setOverlayVisible(visible: boolean) { this.overlayVisible = visible; } resize() { this.resizes++; } gunSight() { return { x: 0, y: 0 }; }
@@ -66,7 +69,7 @@ async function appHarness() {
       if (this.overlayVisible && !nodes.get('hud').hidden && !this.failHud) this.hudMeasured = true;
       this.submissions.push({ mode, tick: state.simTick, runId: state.runId, overlay: this.overlayVisible,
         hudHidden: nodes.get('hud').hidden, hudInert: nodes.get('hud').inert, hudAriaHidden: nodes.get('hud').getAttribute('aria-hidden'),
-        hint: nodes.get('bomb-hint').textContent, announcement: nodes.get('announcement').textContent,
+        hint: nodes.get('bomb-hint').textContent, announcement: nodes.get('announcement').textContent, announcementHidden: nodes.get('announcement').hidden,
         announcementAriaHidden: nodes.get('announcement').getAttribute('aria-hidden') });
       signaled = false; this.queue.submit(now); return true;
     }
@@ -93,7 +96,7 @@ async function appHarness() {
   const modules: Record<string, any> = {
     three, './campaign': campaign, './campaign-config': config, './campaign-combat': combat,
     './campaign-flight': flight, './campaign-terrain': terrain, './flight': flightMath,
-    './campaign-start': start, './campaign-scene': { CampaignScene: Scene }, './campaign-hud': { updateCampaignHud() {} },
+    './campaign-start': start, './campaign-scene': { CampaignScene: Scene }, './campaign-hud': { campaignProtectionReadout, campaignSafetyReadout, updateCampaignHud(state: any) { const text = campaignProtectionReadout(state); if (text) nodes.get('campaign-threat').textContent = text; } },
     './campaign-records': { CampaignRecords: class { status = 'ready'; best() { return null; } save() { return 'ineligible'; } } },
     './input': { FlightControls: Controls }, './control-settings': { ControlSettings: Settings },
     './keyboard-settings': { KeyboardSettings: Keys, ControlInputPresentation: Presentation },
@@ -136,6 +139,21 @@ test('real crash and frozen respawn countdown replace self-loss announcement wit
   assert.ok(h.read().campaign.player.protectionTicks > 0);
   assert.equal(h.nodes.get('announcement').textContent, '復活 · 2秒の保護中は自機も攻撃できません');
   assert.equal(h.nodes.get('announcement').dataset.campaignCritical, 'true');
+  assert.equal(h.nodes.get('announcement').hidden, true, 'same protection event has one visible status');
+  assert.equal(h.nodes.get('announcement').getAttribute('aria-hidden'), 'true');
+  assert.equal(h.nodes.get('warning').hidden, true);
+  assert.equal(h.nodes.get('campaign-threat').textContent, '復活保護 あと2.0秒 · 自機攻撃不可');
+  for (let n = 0; n < 150 && h.read().campaign.player.protectionTicks > 0; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().campaign.player.protectionTicks, 0);
+  assert.equal(h.nodes.get('announcement').textContent, '', 'expired protection is not retained as a stale live event');
+  h.controls.climb = -1;
+  for (let n = 0; n < 350 && h.read().phase === 'playing'; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'respawning');
+  assert.match(h.nodes.get('announcement').textContent, /自機喪失/);
+  assert.equal(h.nodes.get('announcement').dataset.lifecycle, '');
+  assert.equal(h.nodes.get('announcement').hidden, false, 'later independent announcement is restored');
+  assert.equal(h.nodes.get('announcement').inert, false);
+  assert.equal(h.nodes.get('announcement').getAttribute('aria-hidden'), null);
 });
 
 test('actual main wiring stays preparing without ticks/sampling until selected frame acknowledgment, then resets clock/input once', async () => {
@@ -371,6 +389,7 @@ for (const mode of ['easy', 'normal']) test(`${mode} selected preparation frame 
   assert.equal(selected.hudInert, true); assert.equal(selected.hudAriaHidden, 'true');
   assert.equal(h.controls.active(), false); assert.equal(h.audio.active, false);
   assert.equal(h.nodes.get('home').hidden, false); assert.equal(h.doc.activeElement.id, 'start-cancel');
+  assert.equal(selected.announcementHidden, false, 'preparing announcement participates in actual staged measurement');
   assert.equal(selected.announcementAriaHidden, 'true'); assert.match(selected.announcement, /7軍の進軍開始/); assert.equal(selected.hint, '落下地点の予測');
   h.frame(2000); assert.equal(h.read().phase, 'preparing'); assert.equal(h.read().tick, 0);
   h.signal(); h.frame(); assert.equal(h.read().phase, 'playing'); assert.equal(h.read().tick, 0);
@@ -409,3 +428,38 @@ for (const action of ['start-cancel', 'mode', 'home-controls', 'home-rules'] as 
     assert.equal(h.controls.active(), false);
   });
 }
+
+
+test('respawn hides only inactive controls, clears held intent, preserves settings and restores without moving focus', async () => {
+  const h = await selectedPending(); h.signal(); h.frame(); h.frame();
+  const ids = ['fire', 'loop', 'bomb', 'throttle'];
+  const originals = ids.map(id => h.nodes.get(id));
+  originals[2].hidden = true; // A user/mode setting must survive the lifecycle.
+  originals[0].style.width = '137px';
+  originals[0].focus(); assert.equal(h.doc.activeElement, originals[0]);
+  h.controls.climb = -1;
+  for (let n = 0; n < 250 && h.read().phase === 'playing'; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'respawning');
+  assert.equal(h.nodes.get('app').classList.contains('flight-controls-waiting'), true);
+  assert.equal(h.controls.pending, false);
+  assert.equal(h.doc.activeElement, h.nodes.get('pause'));
+  assert.equal(h.nodes.get('pause').hidden, false);
+  assert.equal(h.nodes.get('game-sound').hidden, false);
+  assert.equal(h.nodes.get('respawn-status').hidden, false);
+  h.controls.climb = 0; h.click('pause');
+  const remaining = h.nodes.get('respawn-status').textContent;
+  for (let n = 0; n < 220; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'paused');
+  assert.equal(h.nodes.get('app').classList.contains('flight-controls-waiting'), true);
+  assert.equal(h.nodes.get('respawn-status').textContent, remaining);
+  h.click('resume');
+  const focusAfterResume = h.doc.activeElement;
+  for (let n = 0; n < 210 && h.read().phase === 'respawning'; n++) { h.signal(); h.frame(); }
+  assert.equal(h.read().phase, 'playing');
+  assert.equal(h.nodes.get('app').classList.contains('flight-controls-waiting'), false);
+  assert.equal(h.controls.pending, false);
+  assert.equal(h.doc.activeElement, focusAfterResume);
+  for (let i = 0; i < ids.length; i++) assert.equal(h.nodes.get(ids[i]), originals[i]);
+  assert.equal(originals[2].hidden, true);
+  assert.equal(originals[0].style.width, '137px');
+});

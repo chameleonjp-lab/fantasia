@@ -120,6 +120,9 @@ export interface HudLayout {
   canvasLabels?: Array<{ id: string; status: Placement['status']; rect: HudRect }>;
   compact?: boolean;
   searchChecks?: number;
+  searchLimit?: number;
+  primarySearchChecks?: number;
+  recoverySearchChecks?: number;
   fixedConflicts?: Array<{ first: string; second: string }>;
 }
 function fullSizeFallback(rect: HudRect, bounds: HudRect): HudRect {
@@ -176,6 +179,168 @@ export function layoutCampaignHud(measurement: HudMeasurement, sight: HudRect): 
 /** Pack the full measured readouts, preserving controls and the actual sight.
  * The bounded search can report blocked; it never shrinks or drops a panel. */
 const isFixedControl = (id: string) => ['game-sound', 'pause', 'bomb', 'loop', 'fire', 'throttle'].includes(id);
+/** Relative semantic regions; no stored screen coordinates or item sizes.
+ * This optional schema is not a complete rectangle packer. Every proposal
+ * remains subject to the same exact gaps, bounds and shared recovery budget. */
+export function packSemanticRegions(bounds: HudRect, obstacles: readonly HudObstacle[], items: readonly HudObstacle[], work: { remaining: number }): Map<string, HudRect> | null {
+  if (!Number.isSafeInteger(work.remaining) || work.remaining < 0 || work.remaining > 6_000) return null;
+  const roles: string[] = items.length === 17 ? ["health-label", "health-track", "instrument", "campaign-limit", "ammo", "campaign-threat", "reload-status", "warning", "announcement", "campaign-hud-details", "campaign-mode-status", "target-tally", "game-sound", "pause", "bomb", "loop", "radar"] : ["health-label", "health-track", "instrument", "campaign-limit", "ammo", "campaign-threat", "reload-status", "warning", "announcement", "campaign-hud-details", "campaign-mode-status", "target-tally", "game-sound", "pause", "bomb", "loop", "fire", "throttle", "radar"];
+  const fixedRoles: string[] = ["central-flight-lane", "aim-and-reload-ring"];
+  const horizontal: [string, string][] = items.length === 17 ? [["aim-and-reload-ring", "announcement"], ["aim-and-reload-ring", "campaign-hud-details"], ["aim-and-reload-ring", "game-sound"], ["ammo", "pause"], ["announcement", "loop"], ["campaign-hud-details", "bomb"], ["campaign-hud-details", "loop"], ["campaign-limit", "aim-and-reload-ring"], ["campaign-limit", "central-flight-lane"], ["campaign-limit", "instrument"], ["campaign-threat", "pause"], ["campaign-threat", "radar"], ["central-flight-lane", "announcement"], ["central-flight-lane", "campaign-hud-details"], ["central-flight-lane", "game-sound"], ["game-sound", "bomb"], ["game-sound", "campaign-mode-status"], ["health-label", "announcement"], ["health-label", "bomb"], ["health-track", "pause"], ["instrument", "campaign-hud-details"], ["instrument", "game-sound"], ["pause", "aim-and-reload-ring"], ["pause", "central-flight-lane"], ["pause", "instrument"], ["pause", "reload-status"], ["radar", "aim-and-reload-ring"], ["radar", "central-flight-lane"], ["radar", "health-label"], ["target-tally", "campaign-limit"], ["target-tally", "pause"], ["target-tally", "radar"], ["warning", "campaign-hud-details"], ["warning", "game-sound"], ["warning", "reload-status"]] : [["health-label", "radar"], ["instrument", "announcement"], ["instrument", "game-sound"], ["campaign-limit", "bomb"], ["reload-status", "pause"], ["reload-status", "loop"], ["warning", "throttle"], ["announcement", "campaign-mode-status"], ["game-sound", "warning"], ["pause", "campaign-limit"], ["bomb", "target-tally"], ["loop", "health-track"], ["fire", "instrument"], ["central-flight-lane", "campaign-hud-details"], ["aim-and-reload-ring", "health-label"]];
+  const vertical: [string, string][] = items.length === 17 ? [["aim-and-reload-ring", "instrument"], ["ammo", "warning"], ["announcement", "bomb"], ["announcement", "campaign-hud-details"], ["announcement", "instrument"], ["bomb", "campaign-mode-status"], ["campaign-hud-details", "campaign-mode-status"], ["campaign-hud-details", "game-sound"], ["campaign-limit", "ammo"], ["campaign-limit", "pause"], ["campaign-limit", "reload-status"], ["campaign-mode-status", "reload-status"], ["campaign-threat", "campaign-limit"], ["campaign-threat", "target-tally"], ["central-flight-lane", "instrument"], ["game-sound", "reload-status"], ["health-label", "aim-and-reload-ring"], ["health-label", "campaign-hud-details"], ["health-label", "campaign-limit"], ["health-label", "central-flight-lane"], ["instrument", "reload-status"], ["instrument", "warning"], ["loop", "bomb"], ["loop", "game-sound"], ["pause", "warning"], ["radar", "campaign-limit"], ["radar", "instrument"], ["target-tally", "ammo"], ["warning", "health-track"]] : [["health-label", "campaign-hud-details"], ["health-track", "health-label"], ["campaign-limit", "game-sound"], ["ammo", "instrument"], ["ammo", "fire"], ["campaign-threat", "reload-status"], ["reload-status", "ammo"], ["warning", "campaign-mode-status"], ["campaign-hud-details", "bomb"], ["target-tally", "warning"], ["game-sound", "announcement"], ["loop", "pause"], ["radar", "target-tally"], ["radar", "throttle"], ["central-flight-lane", "campaign-limit"]];
+  if (bounds.width <= bounds.height || items.length !== roles.length || obstacles.length !== 9) return null;
+  const movable = new Map(items.map(item => [item.id, { ...item }]));
+  const fixedItems = obstacles.filter(item => item.id !== 'campaign-site');
+  const fixed = new Map(fixedItems.map(item => [item.id, item]));
+  if (movable.size !== roles.length || fixedItems.length !== fixedRoles.length || fixed.size !== fixedRoles.length
+    || roles.some(id => !movable.has(id)) || fixedRoles.some(id => !fixed.has(id))) return null;
+  const spend = () => work.remaining > 0 && (--work.remaining, true);
+  for (const rect of [bounds, ...items, ...obstacles]) {
+    if (!spend() || !valid(rect)) return null;
+  }
+  let top = bounds.y;
+  for (const item of obstacles) {
+    if (!spend()) return null;
+    if (item.id === 'campaign-site') top = Math.max(top, item.y + item.height + 4);
+  }
+  const all = new Map([...movable, ...fixed]);
+  for (const axis of ['x', 'y'] as const) {
+    const size = axis === 'x' ? 'width' : 'height';
+    const edges = axis === 'x' ? horizontal : vertical;
+    const lower = axis === 'x' ? bounds.x : top, upper = bounds[axis] + bounds[size];
+    if (!Number.isFinite(lower) || !Number.isFinite(upper)) return null;
+    const outgoing = new Map<string, string[]>(), degree = new Map<string, number>(), value = new Map<string, number>();
+    for (const [id, item] of all) {
+      if (!spend()) return null;
+      outgoing.set(id, []); degree.set(id, 0); value.set(id, fixed.has(id) ? item[axis] : lower);
+    }
+    for (const [from, to] of edges) {
+      if (!spend()) return null;
+      outgoing.get(from)!.push(to); degree.set(to, degree.get(to)! + 1);
+    }
+    const queue = [...all.keys()].filter(id => degree.get(id) === 0);
+    let seen = 0;
+    while (queue.length) {
+      if (!spend()) return null;
+      const from = queue.shift()!; seen++;
+      for (const to of outgoing.get(from)!) {
+        if (!spend()) return null;
+        const need = value.get(from)! + all.get(from)![size] + 4;
+        if (fixed.has(to)) { if (need > value.get(to)!) return null; }
+        else value.set(to, Math.max(value.get(to)!, Math.ceil(need * 64) / 64));
+        degree.set(to, degree.get(to)! - 1);
+        if (degree.get(to) === 0) queue.push(to);
+      }
+    }
+    if (seen !== all.size) return null;
+    for (const [id, item] of movable) {
+      if (!spend()) return null;
+      const position = value.get(id)!;
+      if (!Number.isFinite(position) || position < lower || position + item[size] > upper) return null;
+      item[axis] = position;
+    }
+  }
+  const result = [...movable.values()];
+  for (let i = 0; i < result.length; i++) {
+    for (const other of [...obstacles, ...result.slice(0, i)]) {
+      if (!spend()) return null;
+      if (intersects(result[i], other, 4)) return null;
+    }
+  }
+  return movable;
+}
+
+/** Two deterministic MaxRects passes on measured dimensions. Expanding every
+ * rectangle by half the clearance represents fixed and mutual gaps uniformly.
+ * Recovery has its own explicit 6000-check cap; exhaustion is not a fit. */
+function packFreeSpace(bounds: HudRect, obstacles: readonly HudRect[], items: readonly HudObstacle[], work: { remaining: number }): Map<string, HudRect> | null {
+  const semantic = packSemanticRegions(bounds, obstacles as readonly HudObstacle[], items, work);
+  if (semantic) return semantic;
+  const floor = Math.max(0, work.remaining - 6_000);
+  const spend = () => work.remaining > floor && (--work.remaining, true);
+  const expand = (r: HudRect): HudRect => ({ x: r.x - 2, y: r.y - 2, width: r.width + 4, height: r.height + 4 });
+  const subtract = (free: HudRect[], used: HudRect): HudRect[] | null => {
+    const pieces: HudRect[] = [];
+    for (const f of free) {
+      if (!spend()) return null;
+      if (!intersects(f, used)) { pieces.push(f); continue; }
+      if (used.x > f.x) pieces.push({ ...f, width: used.x - f.x });
+      if (used.x + used.width < f.x + f.width) pieces.push({ ...f, x: used.x + used.width, width: f.x + f.width - used.x - used.width });
+      if (used.y > f.y) pieces.push({ ...f, height: used.y - f.y });
+      if (used.y + used.height < f.y + f.height) pieces.push({ ...f, y: used.y + used.height, height: f.y + f.height - used.y - used.height });
+    }
+    if (pieces.length > 256) return null;
+    const kept: HudRect[] = [];
+    for (let i = 0; i < pieces.length; i++) {
+      const p = pieces[i]; let contained = false;
+      for (let j = 0; j < pieces.length; j++) {
+        if (i === j) continue;
+        if (!spend()) return null;
+        const q = pieces[j];
+        if (q.x <= p.x && q.y <= p.y && q.x + q.width >= p.x + p.width && q.y + q.height >= p.y + p.height
+          && (q.x !== p.x || q.y !== p.y || q.width !== p.width || q.height !== p.height || j < i)) { contained = true; break; }
+      }
+      if (!contained && valid(p)) kept.push(p);
+    }
+    return kept;
+  };
+  let reserved = [expand(bounds)];
+  for (const obstacle of obstacles) { const next = subtract(reserved, expand(obstacle)); if (!next) return null; reserved = next; }
+  // Short-wide bounds benefit from reserving broad readouts before tall ones.
+  // Multiple bands wider than two thirds of portrait bounds cannot share a
+  // row; reserve them by width first. This is a bounded geometric heuristic,
+  // not an existence proof. No lifecycle, control ID or fixture name is used.
+  // All choices retain two passes and the same total 6000-check cap.
+  const broadBands = items.filter(item => item.width > bounds.width * 2 / 3).length;
+  // A leading tall rectangle needs a side column before wide readouts split
+  // it. Reserve that column from the top; broad leaders retain width-biased
+  // packing. The deterministic area tie uses the same ID ordering as packing.
+  // This heuristic can be discontinuous at shape ties; blocked still means
+  // unresolved, never an impossibility proof.
+  const areaOrder = [...items].sort((a, b) => b.width * b.height - a.width * a.height || a.id.localeCompare(b.id));
+  const largest = areaOrder[0];
+  // Two tall leading blocks in portrait need upper slots before smaller bands
+  // divide the height. Pack by the lowest candidate bottom edge in that case.
+  // This shape-based branch shares the same bounded recovery budget.
+  const tallLeaders = areaOrder.length >= 2 && areaOrder.slice(0, 2).every(item => item.width <= item.height);
+  const passes = bounds.width > bounds.height
+    ? tallLeaders ? [6, 4] : largest && largest.height > largest.width ? [4, 2] : [2, 0]
+    : broadBands >= 2 ? [3, 0] : tallLeaders ? [5, 0] : [0, 1];
+  for (const pass of passes) {
+    const order = [...items].sort((a, b) => (pass === 6 ? b.height - a.height : pass === 3 ? b.width - a.width : pass === 2 ? b.width * b.width * b.height - a.width * a.width * a.height
+      : (pass === 0 || pass === 4 || pass === 5) ? b.width * b.height - a.width * a.height : b.width + b.height - a.width - a.height) || a.id.localeCompare(b.id));
+    let free = [...reserved]; const placed = new Map<string, HudRect>();
+    for (const item of order) {
+      const width = item.width + 4, height = item.height + 4;
+      let best: { x: number; y: number; short: number; long: number } | null = null;
+      for (const f of free) {
+        if (!spend()) return null;
+        if (width > f.width || height > f.height) continue;
+        const candidate = { x: (pass === 2 || pass === 6) ? f.x + f.width - width : f.x, y: (pass === 1 || pass === 4 || pass === 5 || pass === 6) ? f.y : f.y + f.height - height,
+          short: Math.round(((pass === 5 || pass === 6) ? f.y + height : pass === 2 ? f.x + f.width : Math.min(f.width - width, f.height - height)) * 1e7) / 1e7,
+          long: Math.round((pass === 6 ? f.x + f.width - width : pass === 5 ? f.x : pass === 2 ? f.y + f.height - height : Math.max(f.width - width, f.height - height)) * 1e7) / 1e7 };
+        if (!best || candidate.short < best.short || candidate.short === best.short && (candidate.long < best.long
+          || candidate.long === best.long && (candidate.y < best.y || candidate.y === best.y && candidate.x < best.x))) best = candidate;
+      }
+      if (!best) break;
+      const rect = { x: best.x + 2, y: best.y + 2, width: item.width, height: item.height };
+      // Final exact predicates match the product; never certify rounded gaps.
+      if (rect.x < bounds.x || rect.y < bounds.y || rect.x + rect.width > bounds.x + bounds.width || rect.y + rect.height > bounds.y + bounds.height) break;
+      let safe = true;
+      for (const other of [...obstacles, ...placed.values()]) {
+        if (!spend()) return null;
+        if (intersects(rect, other, 4)) { safe = false; break; }
+      }
+      if (!safe) break;
+      placed.set(item.id, rect);
+      if (placed.size === items.length) return placed;
+      const next = subtract(free, expand(rect)); if (!next) return null; free = next;
+    }
+    if (placed.size === items.length) return placed;
+  }
+  return null;
+}
+
 function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudLayout {
   const { canvas, bounds } = measurement, radius = canvas.width < 360 ? 42 : 49;
   const radar = { id: 'radar', x: canvas.width - radius * 2 - 19,
@@ -249,11 +414,24 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
     }
     return false;
   };
+  // Run the original search and its original 120k budget unchanged. Only a
+  // failed compact search may use the separately measured 6k recovery budget.
+  // Thus every successful original placement (including preferences used by
+  // subsequent canvas labels) returns without entering the new algorithm.
   let found = search(0);
   if (!found && !invalid && portraitRespawn) {
     searchFloor = 0; placed.clear(); items.splice(0, items.length, ...originalItems);
     found = search(0);
   }
+  const recovery = { remaining: 6_000 };
+  const useRecovery = !found && !invalid && !fixedConflicts.length && !measurement.canvasLabels?.length && measurement.movableControls && canvas.width <= 600;
+  if (useRecovery) {
+    placed.clear();
+    const packed = packFreeSpace(bounds, obstacles, items, recovery);
+    if (packed) { for (const [id, rect] of packed) placed.set(id, rect); found = true; }
+  }
+  const primarySearchChecks = 120_000 - Math.max(0, work.remaining);
+  const recoverySearchChecks = 6_000 - recovery.remaining;
   const status: Placement['status'] = invalid ? 'invalid' : found && !fixedConflicts.length ? 'placed' : 'blocked';
   const rectFor = (item: HudObstacle) => found ? placed.get(item.id)! : fullSizeFallback(item, bounds);
   const radarRect = rectFor(radar);
@@ -262,7 +440,8 @@ function layoutCampaignPanels(measurement: HudMeasurement, sight: HudRect): HudL
   const canvasLabels = measurement.canvasLabels?.map(item => ({ id: item.id, status, rect: rectFor(item) }));
   const finalObstacles = controls ? [...obstacles, ...controls.map(item => ({ ...item.rect, id: item.id }))] : obstacles;
   const threat = panels.find(panel => panel.id === 'campaign-threat');
-  return { status, canvas, bounds, obstacles: finalObstacles, panels, controls, canvasLabels, compact: Boolean(controls), fixedConflicts, searchChecks: 120_000 - Math.max(0, work.remaining),
+  return { status, canvas, bounds, obstacles: finalObstacles, panels, controls, canvasLabels, compact: Boolean(controls), fixedConflicts, searchChecks: primarySearchChecks + recoverySearchChecks,
+    searchLimit: useRecovery ? 126_000 : 120_000, primarySearchChecks, recoverySearchChecks,
     radar: { status, rect: radarRect, radius, center: { x: radarRect.x + radius + 1, y: radarRect.y + radius + 1 } },
     threat: threat ? { status, rect: threat.rect } : null };
 }

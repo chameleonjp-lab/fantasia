@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
+import { intersects } from '../src/campaign-hud-layout';
 import { expect, test, type Browser, type Page, type TestInfo } from '@playwright/test';
 
 type Timings = { name: string; setupMs: number; tourMs: number; captureMs: number };
-type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn'; priority: 0 | 4 };
+type HudCase = { name: string; width: number; height: number; mode: 'easy' | 'normal'; alert: 'outside' | 'protected' | 'low' | 'clear' | 'respawn' | 'reachable-reload-loss' | 'reachable-protection' | 'deadline-clear' | 'deadline-low' | 'deadline-outside'; priority: 0 | 4 | 5; measureReflow?: boolean };
 type HudProvenance = 'fresh-page' | 'rotation-stress';
 type HudFailureRecord = { case: string; provenance: HudProvenance | 'aggregate'; stage: string; message: string; stack?: string };
 type HudCaseCoverage = { case: string; attempted: boolean; evidenceCompleted: boolean; imageSaved: boolean; jsonSaved: boolean; exceptionMessage?: string; notRunReason?: string };
@@ -31,17 +33,31 @@ const TYPOGRAPHY_SELECTORS = [
 ];
 
 const SECONDARY_HUD_READOUTS = [
-  { key: 'campaign-threat', selector: '#campaign-threat', detailKey: 'campaign-threat' },
-  { key: 'reload-status', selector: '#reload-status', detailKey: 'reload-status' },
-  { key: 'campaign-limit', selector: '.campaign-limit', detailKey: 'campaign-limit' },
-  { key: 'ammo', selector: '.ammo', detailKey: 'ammo' },
+  { key: 'timer', selector: '.time-block', detailKey: 'timer', location: 'detail' },
+  { key: 'score', selector: '.score-readout', detailKey: 'score', location: 'detail' },
+  { key: 'wingmen', selector: '.wingmen', detailKey: 'wingmen', location: 'detail' },
 ] as const;
+const FIXED_HUD_READOUTS = [
+  { key: 'mode', selector: '#hud-mode', detailKey: null, location: 'fixed' },
+  { key: 'campaign-threat', selector: '#campaign-threat', detailKey: null, location: 'fixed' },
+  { key: 'reload-status', selector: '#reload-status', detailKey: null, location: 'fixed' },
+  { key: 'campaign-limit', selector: '.campaign-limit', detailKey: null, location: 'fixed' },
+  { key: 'ammo', selector: '.ammo', detailKey: null, location: 'fixed' },
+] as const;
+const LIVE_HUD_READOUTS = [...SECONDARY_HUD_READOUTS, ...FIXED_HUD_READOUTS];
 
 async function captureSecondaryHudOriginals(page: Page) {
   const originalNodes = await page.evaluateHandle(readouts => Object.fromEntries(
-    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)])), SECONDARY_HUD_READOUTS);
-  const originalText = await page.evaluate(readouts => Object.fromEntries(
-    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)?.textContent ?? null])), SECONDARY_HUD_READOUTS);
+    readouts.map(readout => [readout.key, document.querySelector<HTMLElement>(readout.selector)])), LIVE_HUD_READOUTS);
+  const originalText = await page.evaluate(readouts => Object.fromEntries(readouts.map(readout => {
+    const node = document.querySelector<HTMLElement>(readout.selector);
+    if (!node || readout.key !== 'timer') return [readout.key, node?.textContent ?? null];
+    // The original mode node moves to the fixed compact HUD. It has its own
+    // identity/value/full-text contract; only its DOM subtree is outside timer.
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let part: Node | null, text = '';
+    while ((part = walker.nextNode())) if (!part.parentElement?.closest('#hud-mode')) text += part.textContent ?? '';
+    return [readout.key, text];
+  })), LIVE_HUD_READOUTS);
   return { originalNodes, originalText };
 }
 
@@ -665,7 +681,7 @@ async function repaintFixedFixture(page: Page) {
 
 async function inspectAnnouncementReachability(page: Page, priority: number, originalAnnouncementHandle: any) {
   return page.evaluate(({ priorityValue, originalAnnouncement }) => {
-    const node = document.querySelector<HTMLElement>('#announcement');
+    let node = document.querySelector<HTMLElement>('#announcement');
     const details = document.querySelector<HTMLElement>('#campaign-hud-details');
     if (!node) return { ok: false, priority: priorityValue, reason: 'missing original #announcement node', glyphs: [], clipChain: [] };
     const originalNode = originalAnnouncement instanceof HTMLElement ? originalAnnouncement : null;
@@ -676,6 +692,22 @@ async function inspectAnnouncementReachability(page: Page, priority: number, ori
     const compactMode = app?.dataset.campaignHud === 'compact';
     const oldScrollTop = details?.scrollTop ?? 0;
     const issues: string[] = [];
+    const state = (window as any).__fantasiaReadState(false)?.campaign;
+    const projectedProtection = node.dataset.lifecycle === 'protection';
+    if (projectedProtection) {
+      if (!node.hidden || node.getAttribute('aria-hidden') !== 'true' || !node.inert)
+        issues.push('duplicate protection announcement remains exposed');
+      const canonical = document.querySelector<HTMLElement>('#campaign-threat');
+      const expected = `復活保護 あと${(state?.player?.protectionTicks / 60).toFixed(1)}秒 · 自機攻撃不可`;
+      if (state?.status !== 'running' || !(state.player.protectionTicks > 0 && state.player.protectionTicks <= 120)
+        || state.player.generation <= 1 || state.selfLosses <= 0) issues.push('invalid authoritative protection lifecycle');
+      if (!canonical || document.querySelectorAll('#campaign-threat').length !== 1)
+        return { ok: false, issues: [...issues, 'missing or duplicated canonical protection status'], glyphs: [], clipChain: [] };
+      if (canonical.textContent !== expected || canonical.getAttribute('role') !== 'status' || canonical.getAttribute('aria-live') !== 'polite')
+        issues.push('canonical protection value or live semantics differ from authoritative state');
+      if (details?.contains(canonical)) issues.push('canonical protection moved into scrolling details');
+      node = canonical; // The unchanged character-by-character check below now measures the sole visible projection.
+    }
     const innerBox = (element: HTMLElement) => {
       const rect = element.getBoundingClientRect(), left = rect.left + element.clientLeft, top = rect.top + element.clientTop;
       return { left, top, right: left + element.clientWidth, bottom: top + element.clientHeight };
@@ -700,7 +732,7 @@ async function inspectAnnouncementReachability(page: Page, priority: number, ori
     if (nodeVisibility === 'hidden' || nodeVisibility === 'collapse') issues.push(`announcement computed visibility is ${nodeVisibility}`);
     if (clipChain.some(item => item.clipPath !== 'none' || item.clip !== 'auto' || item.contain.split(/\s+/).includes('paint')))
       issues.push('announcement has clip-path, legacy clip, or paint containment that this geometry check cannot resolve');
-    const compactPriorityZero = priorityValue < 1 && compactMode;
+    const compactPriorityZero = priorityValue < 1 && compactMode && !projectedProtection;
     if (compactPriorityZero) {
       if (!details || !details.contains(node)) issues.push('compact priority-0 live announcement is outside the permitted secondary detail viewport');
       if (details && !['auto', 'scroll'].includes(getComputedStyle(details).overflowY)) issues.push('compact priority-0 detail viewport is not vertically scrollable');
@@ -787,7 +819,7 @@ async function inspectAnnouncementReachability(page: Page, priority: number, ori
     if (!glyphs.length) issues.push('announcement contains no measurable characters');
     const visibleBox = visibleRectFor((() => { const range = document.createRange(); range.selectNodeContents(node); return range; })());
     return { ok: issues.length === 0 && allGlyphsVisible, priority: priorityValue, liveCount,
-      route: compactPriorityZero ? 'compact secondary details with per-character scroll reachability' : 'direct visible announcement',
+      route: projectedProtection ? 'single fixed protection projection; duplicate announcement hidden' : compactPriorityZero ? 'compact secondary details with per-character scroll reachability' : 'direct visible announcement',
       campaignHudMode: compactMode ? 'compact' : 'full', sameOriginalNode, originalNodeConnected,
       text: node.textContent, elementRect: (() => { const r = node.getBoundingClientRect(); return { left: r.left, top: r.top, right: r.right, bottom: r.bottom }; })(),
       visibleBox, viewport: { width: innerWidth, height: innerHeight },
@@ -802,6 +834,10 @@ async function inspectAnnouncementReachability(page: Page, priority: number, ori
 async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: any, originalText: Record<string, string | null>) {
   return originalNodesHandle.evaluate((originalNodes, input) => {
     const { readouts, expectedText } = input;
+    // Capture numeric authority independently of the DOM baseline. A stale
+    // but visually reachable string must not certify a live instrument.
+    const raw = (window as any).__fantasiaReadState(false);
+    const state = raw?.campaign;
     const details = document.querySelector<HTMLElement>('#campaign-hud-details');
     const issues: string[] = [];
     if (!details) return { ok: false, issues: ['missing #campaign-hud-details'], viewport: null, readouts: [] };
@@ -827,41 +863,97 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
       const original = originalNodes?.[readout.key] instanceof HTMLElement ? originalNodes[readout.key] as HTMLElement : null;
       const expected = expectedText[readout.key];
       const nodeIssues: string[] = [];
-      const text = node?.textContent ?? null;
+      let text = node?.textContent ?? null;
+      if (node && readout.key === 'timer') {
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT); let part: Node | null; text = '';
+        while ((part = walker.nextNode())) if (!part.parentElement?.closest('#hud-mode')) text += part.textContent ?? '';
+      }
+      const fixed = readout.location === 'fixed';
+      const dormant = readout.key === 'reload-status' && expected === '';
       const nodeStyle = node ? getComputedStyle(node) : null;
       const nodeRect = node?.getBoundingClientRect();
       const inDetails = Boolean(node && details.contains(node));
       const sameOriginalNode = Boolean(node && original && node === original && original.isConnected);
       if (matches.length !== 1) nodeIssues.push(`expected one ${readout.selector}, found ${matches.length}`);
       if (!node || !sameOriginalNode) nodeIssues.push('original live node was removed or replaced');
-      if (!node || !inDetails || node.dataset.campaignDetail !== readout.detailKey)
+      if (fixed) {
+        if (inDetails || node?.dataset.campaignDetail) nodeIssues.push('critical live node is inside scrolling details');
+      } else if (!node || !inDetails || node.dataset.campaignDetail !== readout.detailKey)
         nodeIssues.push(`original live node is outside detail slot ${readout.detailKey}`);
-      if (!node || node.hidden || !nodeStyle || nodeStyle.display === 'none' || nodeStyle.visibility === 'hidden'
-        || nodeStyle.opacity === '0' || !nodeRect || nodeRect.width <= 0 || nodeRect.height <= 0 || node.closest('[hidden], [aria-hidden="true"], [inert]'))
+      if (dormant && (!node?.hidden || text !== '')) nodeIssues.push('inactive reload must be empty and hidden');
+      if (!dormant && (!node || node.hidden || !nodeStyle || nodeStyle.display === 'none' || nodeStyle.visibility === 'hidden'
+        || nodeStyle.opacity === '0' || !nodeRect || nodeRect.width <= 0 || nodeRect.height <= 0 || node.closest('[hidden], [aria-hidden="true"], [inert]')))
         nodeIssues.push('original live node is hidden or has no rendered box');
-      if (typeof expected !== 'string' || !expected.trim() || text !== expected)
+      if (typeof expected !== 'string' || (!dormant && !expected.trim()) || text !== expected)
         nodeIssues.push(`original live text changed or was empty: expected ${JSON.stringify(expected)}, received ${JSON.stringify(text)}`);
-      if (node && readout.key === 'reload-status' && !text?.includes('再装填中')) nodeIssues.push('reload status text does not identify active reloading');
+      if (readout.key === 'mode' && (!['easy', 'normal'].includes(state?.mode)
+        || text !== (state.mode === 'normal' ? 'ノーマル' : 'イージー')))
+        nodeIssues.push('mode text differs from authoritative campaign mode');
+      if (readout.key === 'reload-status') {
+        const ticks = state?.player?.reloadUntilTick === null ? 0 : Math.max(0, state?.player?.reloadUntilTick - state?.simTick);
+        const expectedReload = ticks > 0 ? `再装填中 あと${(ticks / 60).toFixed(1)}秒` : '';
+        if (!Number.isFinite(ticks) || raw.player.reloadTicksRemaining !== ticks || text !== expectedReload)
+          nodeIssues.push('reload text or flight state differs from authoritative remaining ticks');
+      }
       if (node && readout.key === 'campaign-threat' && (!text?.trim() || node.getAttribute('role') !== 'status'
         || node.getAttribute('aria-live') !== 'polite')) nodeIssues.push('threat readout text or live status semantics are missing');
+      if (readout.key === 'campaign-threat') {
+        let expectedThreat = '';
+        if (state?.status === 'respawning') {
+          if (state.player.hp !== 0 || state.livesRemaining <= 0) nodeIssues.push('invalid authoritative respawn state');
+          expectedThreat = '復活待機 · 戦役時計は停止中';
+        } else if (state?.player?.protectionTicks > 0) {
+          if (state.player.generation <= 1 || state.selfLosses <= 0 || state.player.protectionTicks > 120)
+            nodeIssues.push('invalid authoritative protection state');
+          expectedThreat = `復活保護 あと${(state.player.protectionTicks / 60).toFixed(1)}秒 · 自機攻撃不可`;
+        } else {
+          const threats = (state?.actors ?? []).filter((a: any) => a.hp > 0 && a.team === 'enemy' && a.phase === 'telegraph'
+            && a.targetRef?.id === state?.player?.id && a.targetRef?.generation === state?.player?.generation
+            && Number.isFinite(a.fireAtTick) && a.fireAtTick > state.simTick)
+            .sort((a: any, b: any) => (a.class === 'turret' ? 0 : a.class === 'dragon' ? 1 : 2)
+              - (b.class === 'turret' ? 0 : b.class === 'dragon' ? 1 : 2) || a.fireAtTick - b.fireAtTick);
+          if (threats.length) {
+            const a = threats[0], label = a.class === 'turret' ? '砲台の魔法' : a.class === 'dragon' ? '竜の火球' : a.class === 'bow' ? '弓兵の矢' : '地上の魔法';
+            expectedThreat = `${label} · 自機を${a.lockedAim ? '照準固定' : '照準中'} · 陣地${a.laneId + 1} · ${((a.fireAtTick - state.simTick) / 60).toFixed(1)}秒${threats.length > 1 ? ` · ほか${threats.length - 1}` : ''}`;
+          }
+        }
+        if (text !== expectedThreat) nodeIssues.push('threat meaning, target, site or remaining time differs from authoritative state');
+      }
       if (node && readout.key === 'campaign-limit') {
         const timer = node.querySelector<HTMLElement>('#remaining-time');
         if (!text?.includes('期限まで') || !timer?.textContent?.trim() || !/^\d+:\d{2}$/u.test(timer.textContent.trim()))
           nodeIssues.push('remaining mission time label or live value is missing');
+        const remaining = Math.max(0, 72000 - state?.activeTicks);
+        const expectedTime = `${Math.floor(remaining / 3600)}:${String(Math.floor(remaining / 60) % 60).padStart(2, '0')}`;
+        if (!Number.isFinite(remaining) || timer?.textContent?.trim() !== expectedTime)
+          nodeIssues.push('remaining mission time differs from authoritative active ticks');
       }
       if (node && readout.key === 'ammo') {
         const machineGun = node.querySelector<HTMLElement>('#mg-ammo'), cannon = node.querySelector<HTMLElement>('#cannon-ammo');
         if (node.getAttribute('aria-label') !== '残弾数' || !text?.includes('機銃') || !text.includes('機関砲')
           || !machineGun?.textContent?.trim() || !cannon?.textContent?.trim()) nodeIssues.push('live machine-gun or cannon ammunition readout is missing');
+        if (!Number.isInteger(state?.player?.mg) || !Number.isInteger(state?.player?.cannon)
+          || machineGun?.textContent?.trim() !== String(state.player.mg) || cannon?.textContent?.trim() !== String(state.player.cannon))
+          nodeIssues.push('ammunition differs from authoritative state');
       }
       const glyphs: any[] = [];
-      if (node) {
-        details.scrollTop = 0;
+      if (node && !dormant) {
+        if (!fixed) details.scrollTop = 0;
         const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
         let textNode: Node | null, index = 0;
         const records: Array<{ index: number; character: string; whitespace: boolean; range: Range }> = [];
         while ((textNode = walker.nextNode())) {
+          if (readout.key === 'timer' && textNode.parentElement?.closest('#hud-mode')) continue;
           const value = textNode.textContent ?? '';
+          // HTML indentation is not a painted character when CSS collapses the
+          // entire whitespace-only text node. Keep source-text equality above;
+          // never waive mixed text, NBSP, preserved whitespace or painted spaces.
+          if (/^[\t\n\f\r ]+$/u.test(value) && textNode.parentElement
+            && ['normal', 'nowrap'].includes(getComputedStyle(textNode.parentElement).whiteSpace)) {
+            const whole = document.createRange(); whole.setStart(textNode, 0); whole.setEnd(textNode, value.length);
+            const box = whole.getBoundingClientRect();
+            if (box.width === 0 && box.height === 0) continue;
+          }
           let offset = 0;
           for (const character of Array.from(value)) {
             const range = document.createRange(); range.setStart(textNode, offset); range.setEnd(textNode, offset + character.length);
@@ -892,7 +984,7 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
             return { rect: null, clips: ['no glyph or whitespace-caret line-position rectangle'], visible: false, geometry };
           let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom;
           const clips: string[] = [];
-          for (let ancestor: HTMLElement | null = node; ancestor; ancestor = ancestor.parentElement) {
+          for (let ancestor: HTMLElement | null = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement; ancestor; ancestor = ancestor.parentElement) {
             const style = getComputedStyle(ancestor), box = innerBox(ancestor);
             const label = ancestor.id || (typeof ancestor.className === 'string' ? ancestor.className : '') || ancestor.tagName.toLowerCase();
             if (ancestor.hidden || style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse'
@@ -924,7 +1016,7 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
             if (measured.rect) initial = { ...measured, geometry: 'whitespace line context' };
           }
           let testedScrollTop: number | null = null;
-          if (initial.rect) {
+          if (initial.rect && !fixed) {
             const box = innerBox(details), rect = initial.rect;
             if (rect.top < box.top - 0.5 || rect.bottom > box.bottom + 0.5) {
               const maxScroll = Math.max(0, details.scrollHeight - details.clientHeight);
@@ -942,14 +1034,14 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
             if (measured.rect) result = { ...measured, geometry: 'whitespace line context' };
           }
           const visible = result.visible;
-          if (!visible) nodeIssues.push(`character ${record.index} ${JSON.stringify(record.character)} is not scroll-reachable${result.clips.length ? ` (${result.clips.join(',')})` : ''}`);
+          if (!visible) nodeIssues.push(`character ${record.index} ${JSON.stringify(record.character)} is not ${fixed ? 'fully visible without scrolling' : 'scroll-reachable'}${result.clips.length ? ` (${result.clips.join(',')})` : ''}`);
           glyphs.push({ index: record.index, character: record.character, whitespace: record.whitespace,
             initialRect: initial.rect, initialGeometry: initial.geometry, testedScrollTop, visibleRect: result.rect,
             visibleGeometry: result.geometry, visible, clips: result.clips });
         }
       }
       const evidence = { key: readout.key, selector: readout.selector, expectedDetailKey: readout.detailKey,
-        count: matches.length, connected: Boolean(node?.isConnected), sameOriginalNode, inDetails,
+        count: matches.length, connected: Boolean(node?.isConnected), sameOriginalNode, inDetails, fixed, dormant,
         campaignDetail: node?.dataset.campaignDetail ?? null, tabindex: node?.getAttribute('tabindex') ?? null,
         text, expectedText: expected, rect: nodeRect ? { x: nodeRect.x, y: nodeRect.y, width: nodeRect.width, height: nodeRect.height } : null,
         scroll: details ? { scrollTop: details.scrollTop, scrollHeight: details.scrollHeight, clientHeight: details.clientHeight,
@@ -961,15 +1053,17 @@ async function inspectSecondaryHudReachability(page: Page, originalNodesHandle: 
     }
     details.scrollTop = oldScrollTop;
     return { ok: issues.length === 0 && readoutEvidence.length === readouts.length
-        && readoutEvidence.every(item => item.characterCount > 0 && item.characterCount === item.reachableCharacterCount && item.issues.length === 0),
+        && readoutEvidence.every(item => (item.dormant || item.characterCount > 0) && item.characterCount === item.reachableCharacterCount && item.issues.length === 0),
       issues, viewport, readouts: readoutEvidence };
-  }, { readouts: SECONDARY_HUD_READOUTS, expectedText: originalText });
+  }, { readouts: LIVE_HUD_READOUTS, expectedText: originalText });
 }
 
 async function inspectDirectSafetyHud(page: Page, alert: HudCase['alert']) {
   return page.evaluate(alertValue => {
+    alertValue = alertValue.replace(/^deadline-/, '') as typeof alertValue;
     const details = document.querySelector<HTMLElement>('#campaign-hud-details');
-    const warning = document.querySelector<HTMLElement>('#warning');
+    const protection = alertValue === 'protected' || alertValue === 'reachable-protection';
+    const warning = document.querySelector<HTMLElement>(protection ? '#campaign-threat' : '#warning');
     const canvas = document.querySelector<HTMLCanvasElement>('#markers');
     const fullyVisibleThroughAncestors = (element: HTMLElement, rect: DOMRect) => {
       let left = rect.left, top = rect.top, right = rect.right, bottom = rect.bottom;
@@ -996,7 +1090,7 @@ async function inspectDirectSafetyHud(page: Page, alert: HudCase['alert']) {
       return { visible: clips.length === 0 && left <= rect.left + 0.5 && top <= rect.top + 0.5
         && right >= rect.right - 0.5 && bottom >= rect.bottom - 0.5, clips };
     };
-    const activeWarning = ['outside', 'protected', 'low'].includes(alertValue);
+    const activeWarning = ['outside', 'protected', 'reachable-protection', 'low'].includes(alertValue);
     const warningStyle = warning ? getComputedStyle(warning) : null, warningRect = warning?.getBoundingClientRect();
     const warningClip = warning && warningRect ? fullyVisibleThroughAncestors(warning, warningRect) : { visible: false, clips: ['missing warning rect'] };
     const warningVisible = Boolean(warning && warningStyle && warningRect && !warning.hidden && !warning.closest('[hidden]')
@@ -1009,7 +1103,7 @@ async function inspectDirectSafetyHud(page: Page, alert: HudCase['alert']) {
       && canvasRect.width >= innerWidth - 1 && canvasRect.height >= innerHeight - 1 && !details?.contains(canvas)
       && canvasClip.visible);
     const expectedWarningText = alertValue === 'outside' ? '作戦圏へ戻って'
-      : alertValue === 'protected' ? '復活保護' : alertValue === 'low' ? '低空注意' : null;
+      : protection ? '復活保護' : alertValue === 'low' ? '低空注意' : null;
     const warningIssue = activeWarning
       ? !warning ? 'missing #warning' : !warningVisible ? '#warning is not directly visible on-screen outside secondary details'
         : expectedWarningText && !warning.textContent?.includes(expectedWarningText) ? `#warning text is missing ${expectedWarningText}` : null
@@ -1068,14 +1162,22 @@ async function checkCanvasPixels(page: Page, mode: 'easy' | 'normal', canvas: an
     const threat = canvas.threatPoint;
     const warningPixels = threat ? annulus(threat.x, threat.y, 13, 2.5, rgba => rgba[0] > 180 && rgba[1] > 90 && rgba[1] < 205 && rgba[2] < 160 && rgba[3] > 70) : 0;
     const alphaPixels = count({ x: 0, y: 0, width: canvas.width, height: canvas.height }, rgba => rgba[3] > 0);
-    return { alphaPixels, ring, reloadRing, centerDot, crosshair, radarPixels, warningPixels };
+    const state = (window as any).__fantasiaReadState(false).campaign;
+    const reloadActive = state.player.reloadUntilTick !== null && state.player.reloadUntilTick > state.simTick;
+    const threatActive = state.status === 'running' && state.player.protectionTicks === 0
+      && state.actors.some((a: any) => a.hp > 0 && a.team === 'enemy' && a.phase === 'telegraph'
+        && a.targetRef?.id === state.player.id && a.targetRef?.generation === state.player.generation && a.fireAtTick > state.simTick);
+    return { alphaPixels, ring, reloadRing, reloadActive, threatActive, centerDot, crosshair, radarPixels, warningPixels };
   }, { mode, canvas });
   expect(pixels.alphaPixels, 'Canvas2D product painter produced visible pixels').toBeGreaterThan(500);
   expect(pixels.ring, 'aim circle pixels exist at the product-projected sight').toBeGreaterThan(50);
-  expect(pixels.reloadRing, 'fixed reload arc pixels exist around the aim circle').toBeGreaterThan(20);
+  if (pixels.reloadActive) expect(pixels.reloadRing, 'active reload arc pixels exist around the aim circle').toBeGreaterThan(20);
   expect(pixels.centerDot, 'aim center pixels exist').toBeGreaterThan(0);
   expect(pixels.radarPixels, 'product radar pixels exist in its measured region').toBeGreaterThan(200);
-  expect(pixels.warningPixels, 'product telegraph pixels exist at its projected warning point').toBeGreaterThan(5);
+  if (pixels.threatActive) {
+    expect(canvas.threatPoint, 'active threat has a projected warning point').toBeTruthy();
+    expect(pixels.warningPixels, 'product telegraph pixels exist at its projected warning point').toBeGreaterThan(5);
+  }
   if (mode === 'normal') for (const [index, count] of pixels.crosshair.entries()) expect(count, `normal crosshair arm ${index}`).toBeGreaterThan(0);
 }
 
@@ -1215,11 +1317,24 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
   recordHudAssertion(failures, provenance, name, 'missing-aim-reload-reservation-rejection', () => expect(missingRingAreaEvidence.status).toBe('invalid'));
   recordHudAssertion(failures, provenance, name, 'duplicate-aim-reload-reservation-rejection', () => expect(duplicateRingAreaEvidence.status).toBe('invalid'));
   recordHudAssertion(failures, provenance, name, 'malformed-aim-reload-reservation-rejection', () => expect(malformedRingAreaEvidence.status).toBe('invalid'));
+  const searchLimit = layout?.searchLimit ?? 120000;
+  recordHudAssertion(failures, provenance, name, 'independent-search-budget-contract', () => {
+    expect(Number.isInteger(layout?.primarySearchChecks)).toBe(true);
+    expect(Number.isInteger(layout?.recoverySearchChecks)).toBe(true);
+    expect(layout.primarySearchChecks).toBeGreaterThanOrEqual(0);
+    expect(layout.primarySearchChecks).toBeLessThanOrEqual(120000);
+    expect(layout.recoverySearchChecks).toBeGreaterThanOrEqual(0);
+    expect(layout.recoverySearchChecks).toBeLessThanOrEqual(6000);
+    expect(layout.searchChecks).toBe(layout.primarySearchChecks + layout.recoverySearchChecks);
+    expect(layout.searchChecks).toBeLessThanOrEqual(126000);
+    expect([120000, 126000]).toContain(searchLimit);
+  });
   const blockedReasons = layout?.status === 'blocked'
     ? [
       ...(layout.fixedConflicts?.length ? [{ kind: 'fixed-conflicts', pairs: layout.fixedConflicts }] : []),
-      ...(layout.searchChecks >= 120000 ? [{ kind: 'bounded-search-exhausted', checks: layout.searchChecks, limit: 120000 }] : []),
-      ...(!layout.fixedConflicts?.length && layout.searchChecks < 120000 ? [{ kind: 'no-complete-full-size-packing', searchChecks: layout.searchChecks }] : []),
+      ...(layout.primarySearchChecks >= 120000 ? [{ kind: 'primary-search-exhausted', checks: layout.primarySearchChecks, limit: 120000, recoveryChecks: layout.recoverySearchChecks, recoveryLimit: 6000 }] : []),
+      ...(layout.searchChecks >= searchLimit ? [{ kind: 'bounded-search-exhausted', checks: layout.searchChecks, limit: searchLimit }] : []),
+      ...(!layout.fixedConflicts?.length && layout.searchChecks < searchLimit ? [{ kind: 'no-complete-full-size-packing', searchChecks: layout.searchChecks }] : []),
       ...(areaBound.status === 'measured' && areaBound.shortageGap0 ? [{ kind: 'necessary-area-shortage', gap: 0, required: areaBound.requiredArea, availableUpperBound: areaBound.availableUpperBoundGap0, deficit: areaBound.deficitGap0 }] : []),
       ...(areaBound.status === 'measured' && areaBound.shortageGap4 ? [{ kind: 'necessary-area-shortage', gap: 4, required: areaBound.requiredArea, availableUpperBound: areaBound.availableUpperBoundGap4, deficit: areaBound.deficitGap4 }] : []),
     ]
@@ -1286,6 +1401,8 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
     viewport: domEvidence.viewport,
     mode,
     announcementPriority: fixture.announcementPriority,
+    fixtureKind: fixture.fixtureKind,
+    reachability: fixture.reachability ?? null,
     announcement: domEvidence.announcement,
     announcementReachability,
     secondaryHudReachability,
@@ -1314,13 +1431,14 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
         naiveArea: overlapFixtureRects.reduce((sum, rect) => sum + rect.width * rect.height, 0),
         unionArea: overlappingAreaFixture, deduplicatedArea: 50 },
     },
-    searchBudget: { checks: layout?.searchChecks ?? null, limit: 120000,
-      state: layout?.status === 'placed' ? 'completed' : layout?.searchChecks >= 120000 ? 'exhausted' : 'stopped-before-limit',
+    searchBudget: { checks: layout?.searchChecks ?? null, limit: searchLimit,
+      primaryChecks: layout?.primarySearchChecks, primaryLimit: 120000, recoveryChecks: layout?.recoverySearchChecks, recoveryLimit: 6000,
+      state: layout?.status === 'placed' ? 'completed' : layout?.searchChecks >= searchLimit ? 'exhausted' : 'stopped-before-limit',
       areaClassification: areaBound.status !== 'measured' ? 'invalid-area-evidence'
         : areaBound.shortageGap0 ? 'necessary-area-shortage-even-at-zero-gap'
           : areaBound.shortageGap4 ? 'necessary-area-shortage-at-product-gap-4'
             : 'area-alone-does-not-prove-impossibility',
-      searchClassification: layout?.status === 'blocked' && layout?.searchChecks >= 120000 ? 'bounded-search-exhaustion'
+      searchClassification: layout?.status === 'blocked' && layout?.searchChecks >= searchLimit ? 'bounded-search-exhaustion'
         : layout?.status === 'blocked' ? 'blocked-before-search-limit'
           : layout?.status ?? 'missing' },
     blockedReasons,
@@ -1337,9 +1455,10 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
       total: readout.characterCount, reachable: readout.reachableCharacterCount, sameOriginalNode: readout.sameOriginalNode,
       detailKey: readout.campaignDetail })), directSafetyHud, announcementTypography, typographyMismatchCount: staleFontSamples.length, blockedReasons })}`);
   recordHudAssertion(failures, provenance, name, 'announcement-visible',
-    () => expect(domEvidence.announcement.visible).toBe(true));
+    () => expect(domEvidence.announcement.visible || (announcementReachability.ok &&
+      announcementReachability.route === 'single fixed protection projection; duplicate announcement hidden')).toBe(true));
   recordHudAssertion(failures, provenance, name, 'announcement-text',
-    () => expect(domEvidence.announcement.text).toContain('砲台の予告'));
+    () => expect(domEvidence.announcement.text).toBe(fixture.announcementText));
   recordHudAssertion(failures, provenance, name, 'announcement-priority-flag',
     () => expect(domEvidence.announcement.critical).toBe(String(fixture.announcementPriority >= 1)));
   for (const font of fontScale.fontBaselines ?? []) recordHudAssertion(failures,
@@ -1357,7 +1476,7 @@ async function inspectAndCaptureHudCase(page: Page, info: TestInfo, hudCase: Hud
   await runCheck('DOM and Canvas HUD geometry', () => checkHudGeometry(page));
   await runCheck('44px HUD controls', () => checkGeometry(page, '#hud'));
   return { screenshotMs, areaBound, areaClassification: evidence.searchBudget.areaClassification,
-    layoutStatus: layout?.status ?? 'missing', searchChecks: layout?.searchChecks ?? null, blockedReasons };
+    layoutStatus: layout?.status ?? 'missing', searchChecks: layout?.searchChecks ?? null, searchLimit, blockedReasons };
 }
 
 test.afterAll(() => {
@@ -1449,41 +1568,181 @@ test('Storage failure offers session-only settings and expires after reload', as
   await record('storage-failure-session-only', setupMs, started, captureMs);
 });
 
-test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page, browser }, info) => {
-  let setupMs = 0; let captureMs = 0; const started = performance.now();
-  const hudFailures: HudFailureRecord[] = [];
-  const freshBaselineByCase = new Map<string, any>();
-  const freshBaselineEvidence: unknown[] = [];
-  const freshAreaEvidence: Array<Record<string, any>> = [];
-  const rotationAreaEvidence: Array<Record<string, any>> = [];
-  const freshCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
-  const rotationCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
-  const freshCoverageByCase = new Map(freshCoverage.map(coverage => [coverage.case, coverage]));
-  const rotationCoverageByCase = new Map(rotationCoverage.map(coverage => [coverage.case, coverage]));
-  let rotationReady = false;
-  let originalReadState: any = null;
-  let originalLivesNoteHandle: any = null;
-  let originalAnnouncementHandle: any = null;
+// Test-only bounded shape measurements. These never replace the original
+// case result, nor certify a product fix from hypothetical dimensions.
+function pairedSyntheticHudCase(original: HudCase): HudCase {
+  const alert = original.alert.replace(/^deadline-/, '');
+  if (!original.alert.startsWith('deadline-') || !['clear', 'outside', 'low'].includes(alert))
+    throw new Error('Unsupported deadline shape pair');
+  return { ...original, alert: alert as 'clear' | 'outside' | 'low', measureReflow: true,
+    name: original.name.replace('-deadline-', '-synthetic-shape-') };
+}
 
-  try {
-    setupMs += await setup(page);
-    originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
-    originalLivesNoteHandle = await page.evaluateHandle(() => [...document.querySelectorAll<HTMLElement>('#app small')]
-      .find(node => node.textContent?.trim() === '現在機を含む') ?? null);
-    originalAnnouncementHandle = await page.evaluateHandle(() => document.querySelector<HTMLElement>('#announcement'));
-    rotationReady = true;
-  } catch (error) {
-    const setupCoverage: HudCaseCoverage = { case: 'rotation-stress-setup', attempted: true, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
-    captureMs += await captureHudFailureEvidence(page, info, setupCoverage, hudFailures, 'rotation-stress', 'rotation-stress-setup', 'shared-page-setup', error);
-    for (const coverage of rotationCoverage) coverage.notRunReason = `shared rotation page setup failed: ${setupCoverage.exceptionMessage ?? String(error)}`;
+// Isolated measurement prototype, not product code or a layout-success claim.
+function chooseWidths(bounds, fixed, original, natural) {
+  const valid = r => r && ['x','y','width','height'].every(k => Number.isFinite(r[k])) && r.width > 0 && r.height > 0;
+  if (!valid(bounds) || fixed.length > 32 || !fixed.every(valid) || ![original,natural].every(x => Number.isFinite(x) && x > 0)) throw new Error('invalid shape source');
+  const edges = [...new Set([bounds.y,bounds.y+bounds.height,...fixed.flatMap(r=>[Math.max(bounds.y,r.y-4),Math.min(bounds.y+bounds.height,r.y+r.height+4)])])].filter(y=>y>=bounds.y&&y<=bounds.y+bounds.height).sort((a,b)=>a-b);
+  const widths = new Set();
+  for (let i=1;i<edges.length;i++) {
+    const y=(edges[i-1]+edges[i])/2;
+    const blocked=fixed.filter(r=>y>r.y-4&&y<r.y+r.height+4).map(r=>[Math.max(bounds.x,r.x-4),Math.min(bounds.x+bounds.width,r.x+r.width+4)]).filter(([l,r])=>r>l).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+    let x=bounds.x;
+    for(const [left,right] of blocked){if(left>x)widths.add(left-x);x=Math.max(x,right);}
+    if(x<bounds.x+bounds.width)widths.add(bounds.x+bounds.width-x);
   }
+  const sorted=[...widths].sort((a,b)=>a-b);
+  const narrower=sorted.filter(x=>x<original).at(-1), wider=sorted.find(x=>x>original);
+  return [...new Set([original,Math.min(natural,bounds.width),narrower,wider].filter(x=>Number.isFinite(x)&&x>0&&x<=bounds.width))];
+}
 
-  const runFreshCase = async (hudCase: HudCase) => {
+function verifyMixedShapes(expected, actual) {
+  if(expected.length!==actual.length) return false;
+  const map=new Map(actual.map(r=>[r.id,r]));
+  if(map.size!==actual.length || new Set(expected.map(r=>r.id)).size!==expected.length) return false;
+  return expected.every(e=>{const a=map.get(e.id);return a&&Number.isFinite(a.width)&&Number.isFinite(a.height)&&a.width>0&&a.height>0&&a.width===e.width&&a.height===e.height&&a.text===e.text;});
+}
+
+// Research-only bounded search. Null means unresolved, never impossible.
+function searchMeasuredShapes(bounds, fixed, roles, limit=6000) {
+  const valid=r=>r&&['x','y','width','height'].every(k=>Number.isFinite(r[k]))&&r.width>0&&r.height>0&&Number.isFinite(r.x+r.width)&&Number.isFinite(r.y+r.height);
+  if(!Number.isSafeInteger(limit)||limit<0||limit>6000||!valid(bounds)||fixed.length>32||roles.length>32||!fixed.every(valid)||new Set(roles.map(r=>r.id)).size!==roles.length||roles.some(r=>!r.id||!Number.isFinite(r.x)||!Number.isFinite(r.y)||!r.shapes.length||r.shapes.length>4||r.shapes.some(s=>!valid({...s,x:r.x,y:r.y}))))return {status:'invalid',checks:0};
+  let remaining=limit, exhausted=false;
+  const spend=()=>{if(remaining<=0){exhausted=true;return false;}remaining--;return true;};
+  const inside=r=>r.x>=bounds.x&&r.y>=bounds.y&&r.x+r.width<=bounds.x+bounds.width&&r.y+r.height<=bounds.y+bounds.height;
+  const choices=(role,occupied)=>{
+    const result=[];
+    for(const [shapeIndex,shape] of role.shapes.entries()) {
+      if(!spend())return null;
+      const xs=new Set([role.x,bounds.x,bounds.x+bounds.width-shape.width]);
+      const ys=new Set([role.y,bounds.y,bounds.y+bounds.height-shape.height]);
+      for(const r of occupied){if(!spend())return null;xs.add(r.x-shape.width-4);xs.add(r.x+r.width+4);ys.add(r.y-shape.height-4);ys.add(r.y+r.height+4);}
+      for(const x of xs)for(const y of ys){
+        if(!spend())return null;
+        const rect={id:role.id,shapeIndex,x,y,width:shape.width,height:shape.height};
+        if(!inside(rect))continue;
+        let safe=true;
+        for(const r of occupied){if(!spend())return null;if(intersects(rect,r,4)){safe=false;break;}}
+        if(safe)result.push(rect);
+      }
+    }
+    return result.sort((a,b)=>Math.hypot(a.x-role.x,a.y-role.y)-Math.hypot(b.x-role.x,b.y-role.y)||a.y-b.y||a.x-b.x||a.shapeIndex-b.shapeIndex);
+  };
+  const walk=(unplaced,placed)=>{
+    if(!spend())return null;
+    if(!unplaced.length){
+      for(let i=0;i<placed.length;i++)for(const other of [...fixed,...placed.slice(0,i)]){if(!spend()||intersects(placed[i],other,4))return null;}
+      return placed;
+    }
+    let best=null;
+    for(const role of unplaced){
+      const options=choices(role,[...fixed,...placed]);
+      if(!options)return null;
+      if(!options.length)return null;
+      const maxArea=Math.max(...role.shapes.map(s=>s.width*s.height));
+      if(!best||options.length<best.options.length||options.length===best.options.length&&(maxArea>best.maxArea||maxArea===best.maxArea&&role.id<best.role.id))best={role,options,maxArea};
+    }
+    for(const option of best.options){if(!spend())return null;const found=walk(unplaced.filter(r=>r!==best.role),[...placed,option]);if(found)return found;if(exhausted)return null;}
+    return null;
+  };
+  const result=walk(roles,[]);
+  return {status:result?'placed':'unknown',checks:limit-remaining,exhausted,rects:result??[]};
+}
+
+/** Test-only shape catalogue. It does not install a new product layout. */
+function installMeasuredShapeProbe(input: any) {
+  const root=document.querySelector<HTMLElement>('#app')!, canvas=root.querySelector('canvas')!, canvasRect=canvas.getBoundingClientRect();
+  const detail=root.querySelector<HTMLElement>('#campaign-hud-details');
+  const candidates=[...root.querySelectorAll<HTMLElement>('.flight-data > *, .hud-top .time-block, #campaign-threat, #payload-status, #reload-status, #warning, #announcement, #respawn-status, #flight-tip, #throttle-layout-note, #campaign-hud-details, #campaign-mode-status, .target-tally, #hud button, #hud [role="slider"]')];
+  const visible=(n:HTMLElement)=>{if(!n.isConnected||!n.getClientRects().length)return false;for(let p:HTMLElement|null=n;p;p=p.parentElement){const s=getComputedStyle(p);if(p.hidden||s.display==='none'||s.visibility==='hidden'||Number(s.opacity)===0)return false;}return true;};
+  const rect=(n:Element)=>{const r=n.getBoundingClientRect();return {x:r.x-canvasRect.x,y:r.y-canvasRect.y,width:r.width,height:r.height};};
+  const rows=input.items.filter((r:any)=>r.id!=='radar').map((r:any)=>{
+    const found=candidates.filter(n=>(n.id||n.className)===r.id && visible(n) && (!detail?.contains(n)||n===detail));
+    if(found.length!==1)throw Error('required original leaf count '+r.id+': '+found.length);
+    return {id:r.id,node:found[0],before:rect(found[0])};
+  });
+  const all=[...new Set(candidates.flatMap(n=>[n,...n.querySelectorAll<HTMLElement>('*')]))];
+  const fonts=['font-size','font-family','font-weight','line-height','letter-spacing'];
+  const before=all.map(n=>({node:n,text:n.textContent,inline:n.getAttribute('style'),parent:n.parentNode,next:n.nextSibling,visible:visible(n),font:fonts.map(k=>getComputedStyle(n).getPropertyValue(k)),r:rect(n)}));
+  const fixedNodes=[...root.querySelectorAll<HTMLElement>('#campaign-sites .campaign-site[data-site]')];
+  const fixedBefore=fixedNodes.map(rect);
+  const restore=()=>{for(const b of before){if(b.inline===null)b.node.removeAttribute('style');else b.node.setAttribute('style',b.inline);}return before.every(b=>b.node.parentNode===b.parent&&b.node.nextSibling===b.next&&b.node.getAttribute('style')===b.inline&&b.node.textContent===b.text)&&JSON.stringify(fixedNodes.map(rect))===JSON.stringify(fixedBefore);};
+  const read=()=>{
+    const failures:any[]=[];
+    for(const b of before){
+      if(!b.node.isConnected||b.node.parentNode!==b.parent||b.node.nextSibling!==b.next)failures.push({id:b.node.id||b.node.className,issue:'ownership'});
+      if(b.node.textContent!==b.text||fonts.some((k,i)=>getComputedStyle(b.node).getPropertyValue(k)!==b.font[i]))failures.push({id:b.node.id||b.node.className,issue:'text-or-font'});
+      if(visible(b.node)!==b.visible)failures.push({id:b.node.id||b.node.className,issue:'visibility'});
+      if(b.node.matches('button,[role="slider"]')){const r=rect(b.node);if(r.width!==b.r.width||r.height!==b.r.height)failures.push({id:b.node.id,issue:'control-size'});}
+    }
+    if(JSON.stringify(fixedNodes.map(rect))!==JSON.stringify(fixedBefore))failures.push({issue:'fixed-sites-changed'});
+    const leaves=rows.map(({id,node}:any)=>({id,...rect(node),text:node.textContent,scrollWidth:node.scrollWidth,clientWidth:node.clientWidth,scrollHeight:node.scrollHeight,clientHeight:node.clientHeight}));
+    const glyphs:any[]=[],shapeIssues:any[]=[];
+    for(const {id,node} of rows){
+      if(id==='campaign-hud-details')continue;
+      const walker=document.createTreeWalker(node,NodeFilter.SHOW_TEXT);let textNode:Node|null;let meaningful=0;
+      while(textNode=walker.nextNode()){
+        if(!textNode.textContent?.trim())continue;meaningful++;
+        if(!textNode.parentElement||!visible(textNode.parentElement))shapeIssues.push({id,issue:'text-ancestor-invisible'});
+        const range=document.createRange();range.selectNodeContents(textNode);const fragments=[...range.getClientRects()];
+        if(!fragments.length)shapeIssues.push({id,issue:'meaningful-text-has-no-fragment',text:textNode.textContent});
+        for(const r of fragments)glyphs.push({id,text:textNode.textContent,x:r.x-canvasRect.x,y:r.y-canvasRect.y,width:r.width,height:r.height});
+      }
+      if(node.textContent?.trim()&&!meaningful)shapeIssues.push({id,issue:'meaningful-text-not-enumerated'});
+    }
+    for(const g of glyphs){const box=leaves.find((r:any)=>r.id===g.id);if(!box||![g.x,g.y,g.width,g.height].every(Number.isFinite)||g.width<=0||g.height<=0||g.x<box.x||g.y<box.y||g.x+g.width>box.x+box.width||g.y+g.height>box.y+box.height)shapeIssues.push({id:g.id,issue:'text-fragment-outside-own-leaf',fragment:g});}
+    return {leaves,glyphs,shapeIssues,failures,fixedSites:fixedNodes.map(rect)};
+  };
+  const set=(n:HTMLElement,k:string,v:string)=>n.style.setProperty(k,v,'important');
+  const apply=(selection:any)=>{for(const [id,width] of Object.entries(selection)){const row=rows.find((r:any)=>r.id===id);if(!row||!input.variableIds.includes(id))throw Error('invalid shape role '+id);if(width!=='max-content'&&(!Number.isFinite(width)||Number(width)<=0))throw Error('invalid width');set(row.node,'width',width==='max-content'?'max-content':`${width}px`);set(row.node,'max-width','none');set(row.node,'white-space','normal');set(row.node,'overflow-wrap','normal');set(row.node,'word-break','normal');if(id==='instrument')set(row.node,'flex-wrap','wrap');}};
+  const measure=(selection:any,keep=false)=>{if(!restore())throw Error('pre-measure restore failed');try{apply(selection);const result=read();if(result.failures.length)throw Error('shape invariant failed '+JSON.stringify(result.failures));if(!keep&&!restore())throw Error('restore failed');return result;}catch(error){if(!restore())throw Error('measurement failure and rollback mismatch');throw error;}};
+  return {measure,read,restore,initial:read()};
+}
+
+async function captureMeasuredShapeCatalogue(page:Page,info:TestInfo,hudCase:HudCase) {
+  const original=await act(page,'evidence'), gameBefore=await page.evaluate(()=>(window as any).__fantasiaReadState(false));
+  const input=original.searchInput, fixed=original.layout.obstacles.filter((r:any)=>['campaign-site','central-flight-lane','aim-and-reload-ring'].includes(r.id));
+  const items=[...input.panels,...(input.movableControls??[]),{id:'radar',...original.layout.radar.rect}];
+  const variableIds=['instrument','ammo','campaign-limit','campaign-threat','reload-status','warning','announcement'].filter(id=>items.some((r:any)=>r.id===id));
+  const receipt:any={purpose:'bounded shape catalogue and simultaneous mixture; product failures retained',case:hudCase.name,original,gameBefore,variableIds,candidates:[],failures:[],restored:false};
+  let handle:any;
+  try {
+    handle=await page.evaluateHandle(installMeasuredShapeProbe,{items,variableIds});receipt.initial=await handle.evaluate((p:any)=>p.initial);receipt.baselineShapeIssues=receipt.initial.shapeIssues;receipt.tokenLineIntegrity='not-yet-validated; catalogue is measurement-only and cannot be product-adopted';
+    const catalogue=new Map(items.map((r:any)=>[r.id,{id:r.id,x:r.x,y:r.y,shapes:[{width:r.width,height:r.height,text:receipt.initial.leaves.find((l:any)=>l.id===r.id)?.text??''}]}]));
+    for(const id of variableIds){
+      const natural=await handle.evaluate((p:any,id:string)=>p.measure({[id]:'max-content'}),id);
+      const base=items.find((r:any)=>r.id===id), width=natural.leaves.find((r:any)=>r.id===id).width;
+      const widths=chooseWidths(input.bounds,fixed,base.width,width);receipt.candidates.push({id,widths,natural});
+      const role:any=catalogue.get(id);role.shapes=[];
+      for(const w of widths){const measured=await handle.evaluate((p:any,v:any)=>p.measure({[v.id]:v.width}),{id,width:w});const shape=measured.leaves.find((r:any)=>r.id===id);receipt.candidates.push({id,requestedWidth:w,measured});if(!measured.shapeIssues.some((issue:any)=>issue.id===id)&&!role.shapes.some((s:any)=>s.width===shape.width&&s.height===shape.height))role.shapes.push({width:shape.width,height:shape.height,text:shape.text,requestedWidth:w});}
+    }
+    receipt.catalogue=[...catalogue.values()];
+    receipt.search=searchMeasuredShapes(input.bounds,fixed,[...catalogue.values()],6000);
+    // A deterministic mixed measurement is retained even when no placement was
+    // found. It is evidence about shape coupling, not a placement success.
+    const selection:any={};for(const id of variableIds){const role:any=catalogue.get(id);if(!role.shapes.length)throw Error('no own-text-fitting shape for '+id);const selected=(receipt.search.rects??[]).find((r:any)=>r.id===id);const shape=role.shapes[selected?.shapeIndex??Math.min(1,role.shapes.length-1)];selection[id]=shape.requestedWidth??shape.width;}
+    receipt.selection=selection;receipt.mixtureIsPlacement=false;receipt.mixed=await handle.evaluate((p:any,s:any)=>p.measure(s,true),selection);
+    await page.evaluate(()=>new Promise<void>(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve()))));receipt.second=await handle.evaluate((p:any)=>p.read());
+    if(JSON.stringify(receipt.mixed)!==JSON.stringify(receipt.second))receipt.failures.push({issue:'mixed-not-stable'});
+    const expected:any[]=[...catalogue.values()].filter((r:any)=>r.id!=='radar').map((r:any)=>{const selected=(receipt.search.rects??[]).find((x:any)=>x.id===r.id);const shape=r.shapes[variableIds.includes(r.id)?selected?.shapeIndex??Math.min(1,r.shapes.length-1):0];return {id:r.id,...shape};});
+    receipt.mixedMatchesStandalone=verifyMixedShapes(expected,receipt.second.leaves);if(!receipt.mixedMatchesStandalone)receipt.failures.push({issue:'mixed-shape-coupling-invalidates-standalone-layout'});
+    const png=await page.screenshot();receipt.image={bytes:png.length,sha256:createHash('sha256').update(png).digest('hex')};await info.attach(`${hudCase.name}.shape-catalogue.png`,{body:png,contentType:'image/png'});
+    receipt.afterImage=await handle.evaluate((p:any)=>p.read());if(JSON.stringify(receipt.second)!==JSON.stringify(receipt.afterImage))receipt.failures.push({issue:'mixed-changed-during-image'});
+    for(const phase of ['mixed','second','afterImage'])for(const issue of [...receipt[phase].failures,...receipt[phase].shapeIssues])receipt.failures.push({phase,...issue});
+  }catch(error){receipt.failures.push({issue:'shape-catalogue-exception',message:String(error)});}
+  finally{
+    if(handle){try{receipt.restored=await handle.evaluate((p:any)=>p.restore());}catch(e){receipt.failures.push({issue:'restore-exception',message:String(e)});}try{await handle.dispose();}catch(e){receipt.failures.push({issue:'dispose-exception',message:String(e)});}}
+    try{await repaintFixedFixture(page);receipt.restoredEvidence=await act(page,'evidence');receipt.gameAfter=await page.evaluate(()=>(window as any).__fantasiaReadState(false));const state=({render:_render,...rest}:any)=>rest;receipt.stateComparisonExcludedFields=['render'];if(JSON.stringify(state(gameBefore))!==JSON.stringify(state(receipt.gameAfter)))receipt.failures.push({issue:'game-state-changed'});if(JSON.stringify(original.searchInput)!==JSON.stringify(receipt.restoredEvidence.searchInput)||JSON.stringify(original.sight)!==JSON.stringify(receipt.restoredEvidence.sight))receipt.failures.push({issue:'original-measurement-not-restored'});}catch(e){receipt.failures.push({issue:'restoration-remeasure-exception',message:String(e)});}
+    if(!receipt.restored)receipt.failures.push({issue:'restore-unproven'});await info.attach(`${hudCase.name}.shape-catalogue.json`,{body:Buffer.from(JSON.stringify(receipt)),contentType:'application/json'});
+  }
+  return receipt;
+}
+
+async function runFreshHudCase(browser: Browser, info: TestInfo, hudCase: HudCase, coverage: HudCaseCoverage) {
     // Every fixed state gets its own document with its viewport set before UI setup.
     // This prevents a previous mode/priority/rotation from becoming its baseline.
     const caseFailures: HudFailureRecord[] = [];
     let caseSetupMs = 0; let caseCaptureMs = 0; let freshBaseline: any = null;
-    const coverage = freshCoverageByCase.get(hudCase.name)!;
     coverage.attempted = true;
     let freshPage: Page | undefined;
     let originalSecondaryNodesHandle: any = null;
@@ -1532,8 +1791,13 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
         'fresh-page', caseFailures, coverage);
       caseCaptureMs += inspection.screenshotMs;
       measuredArea = { status: inspection.areaBound.status, areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
-        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons };
+        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, searchLimit: inspection.searchLimit, blockedReasons: inspection.blockedReasons };
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
+      if ((hudCase.alert.startsWith('deadline-') || hudCase.measureReflow) && (hudCase.mode === 'easy' && ['outside','deadline-outside'].includes(hudCase.alert) || hudCase.mode === 'normal' && ['low','deadline-low'].includes(hudCase.alert))) {
+        const catalogue = await captureMeasuredShapeCatalogue(freshPage, info, hudCase);
+        for (const failure of catalogue.failures) recordHudFailure(caseFailures, 'fresh-page', hudCase.name, 'measured-shape-catalogue', JSON.stringify(failure));
+      }
+
     } catch (error) {
       caseCaptureMs += await captureHudFailureEvidence(freshPage, info, coverage, caseFailures, 'fresh-page', hudCase.name, 'case-exception', error,
         { viewport: { width: hudCase.width, height: hudCase.height }, mode: hudCase.mode, alert: hudCase.alert, priority: hudCase.priority, measuredArea });
@@ -1550,14 +1814,44 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
     return { setupWorkMs: caseSetupMs, captureWorkMs: caseCaptureMs, failures: caseFailures, baseline: freshBaseline,
       area: { case: hudCase.name, ...(measuredArea ?? { status: 'not-measured', areaBound: null,
         areaClassification: 'not-run-or-interrupted-before-area-inspection', layoutStatus: 'not-measured', searchChecks: null, blockedReasons: [] }) } };
-  };
+  }
+
+test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape', async ({ page, browser }, info) => {
+  let setupMs = 0; let captureMs = 0; const started = performance.now();
+  const hudFailures: HudFailureRecord[] = [];
+  const freshBaselineByCase = new Map<string, any>();
+  const freshBaselineEvidence: unknown[] = [];
+  const freshAreaEvidence: Array<Record<string, any>> = [];
+  const rotationAreaEvidence: Array<Record<string, any>> = [];
+  const freshCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
+  const rotationCoverage: HudCaseCoverage[] = HUD_CASES.map(hudCase => ({ case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false }));
+  const freshCoverageByCase = new Map(freshCoverage.map(coverage => [coverage.case, coverage]));
+  const rotationCoverageByCase = new Map(rotationCoverage.map(coverage => [coverage.case, coverage]));
+  let rotationReady = false;
+  let originalReadState: any = null;
+  let originalLivesNoteHandle: any = null;
+  let originalAnnouncementHandle: any = null;
+
+  try {
+    setupMs += await setup(page);
+    originalReadState = await page.evaluateHandle(() => (window as any).__fantasiaReadState);
+    originalLivesNoteHandle = await page.evaluateHandle(() => [...document.querySelectorAll<HTMLElement>('#app small')]
+      .find(node => node.textContent?.trim() === '現在機を含む') ?? null);
+    originalAnnouncementHandle = await page.evaluateHandle(() => document.querySelector<HTMLElement>('#announcement'));
+    rotationReady = true;
+  } catch (error) {
+    const setupCoverage: HudCaseCoverage = { case: 'rotation-stress-setup', attempted: true, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+    captureMs += await captureHudFailureEvidence(page, info, setupCoverage, hudFailures, 'rotation-stress', 'rotation-stress-setup', 'shared-page-setup', error);
+    for (const coverage of rotationCoverage) coverage.notRunReason = `shared rotation page setup failed: ${setupCoverage.exceptionMessage ?? String(error)}`;
+  }
+
   // Two independent documents at a time reduce serial setup cost without sharing
   // state. Join every case and collect evidence in HUD_CASES order before rotation.
   const freshStarted = performance.now();
   let freshSetupWorkMs = 0; let freshCaptureWorkMs = 0;
   for (let index = 0; index < HUD_CASES.length; index += 2) {
     const cases = HUD_CASES.slice(index, index + 2);
-    const results = await Promise.allSettled(cases.map(runFreshCase));
+    const results = await Promise.allSettled(cases.map(hudCase => runFreshHudCase(browser, info, hudCase, freshCoverageByCase.get(hudCase.name)!)));
     for (const [offset, result] of results.entries()) {
       const hudCase = cases[offset];
       if (result.status === 'rejected') {
@@ -1594,7 +1888,7 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
       coverage.evidenceCompleted = coverage.imageSaved && coverage.jsonSaved;
       rotationAreaEvidence.push({ case: hudCase.name, status: inspection.areaBound.status,
         areaBound: inspection.areaBound, areaClassification: inspection.areaClassification,
-        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, blockedReasons: inspection.blockedReasons });
+        layoutStatus: inspection.layoutStatus, searchChecks: inspection.searchChecks, searchLimit: inspection.searchLimit, blockedReasons: inspection.blockedReasons });
     } finally {
       await secondaryOriginals.originalNodes.dispose();
     }
@@ -1665,7 +1959,10 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
     expect(fixture.mode, `fixed Normal fixture ${JSON.stringify(normalModeState)}`).toBe('normal');
     expect(normalModeState.appMode).toBe('normal'); expect(normalModeState.stateMode).toBe('normal'); expect(normalModeState.controlsHidden).toBe(false);
     await expect(page.locator('#fire')).toBeVisible(); await expect(page.locator('#throttle')).toBeVisible();
-    await expect(page.locator('#warning')).toContainText('復活保護'); await expect(page.locator('#reload-status')).toContainText('再装填中');
+    await expect(page.locator('#campaign-threat')).toContainText('復活保護');
+    await expect(page.locator('#warning')).toBeHidden();
+    await expect(page.locator('#reload-status')).toBeHidden();
+    await expect(page.locator('#reload-status')).toHaveText('');
     await expect(page.locator('#campaign-sites .campaign-site')).toHaveCount(7);
     await inspect(normalProtected0, 'normal', fixture, coverage);
     const normalAim = await page.evaluate(async () => {
@@ -1738,8 +2035,8 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
       gap0Shortages: cases.filter(item => item.areaBound?.shortageGap0 === true).length,
       gap4Shortages: cases.filter(item => item.areaBound?.shortageGap4 === true).length,
       gap4OnlyShortages: cases.filter(item => item.areaBound?.shortageGap4 === true && item.areaBound?.shortageGap0 !== true).length,
-      searchExhausted: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks >= 120000).length,
-      blockedBeforeSearchLimit: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks < 120000).length,
+      searchExhausted: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks >= (item.searchLimit ?? 120000)).length,
+      blockedBeforeSearchLimit: cases.filter(item => item.layoutStatus === 'blocked' && item.searchChecks < (item.searchLimit ?? 120000)).length,
     },
     cases,
   });
@@ -1783,6 +2080,19 @@ test('Easy and Normal HUD, seven sites, aim geometry and alerts fit small portra
     rotationStress: rotationCoverageSummary.counts, area: { freshPage: freshAreaSummary.counts, rotationStress: rotationAreaSummary.counts },
     failureCount: hudFailures.length, failureCases: hudFailures.map(failure => ({ provenance: failure.provenance, case: failure.case, stage: failure.stage })) })}`);
   expect(hudFailures, 'fresh-page and original rotation-stress cases completed independently; full HUD geometry, Canvas pixels, text and 44px checks pass').toEqual([]);
+});
+
+// An extra observation, not a replacement for any of the twenty synthetic
+// stress observations above. The standard seed/input equations reach this state;
+// native-input E2E and other seeds remain separate evidence requirements.
+test('Reachable Normal reload and self-loss retain every 200% HUD readout at 320x568', async ({ browser }, info) => {
+  const hudCase: HudCase = { name: 'hud-normal-reachable-reload-loss-portrait-text-200-priority-5.png',
+    width: 320, height: 568, mode: 'normal', alert: 'reachable-reload-loss', priority: 5 };
+  const coverage: HudCaseCoverage = { case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+  const result = await runFreshHudCase(browser, info, hudCase, coverage);
+  await info.attach('reachable-reload-loss-coverage.json', { body: Buffer.from(JSON.stringify({ coverage, ...result }, null, 2)), contentType: 'application/json' });
+  expect(coverage.evidenceCompleted, 'reachable-state PNG and JSON were both captured').toBe(true);
+  expect(result.failures, 'real-input-equation state obeys the unchanged full HUD geometry/text/control contract').toEqual([]);
 });
 
 test('Pause screen details, Rules and settings remain usable without advancing a run', async ({ page }, info) => {
@@ -1859,4 +2169,128 @@ test('Startup error is the real preparation failure UI', async ({ page }, info) 
   await expect(page.locator('#reload')).toBeVisible(); await expect(page.locator('#start')).toBeDisabled();
   await checkGeometry(page, '#home'); await checkBodyPanels(page, '#home'); captureMs += await capture(page, info, 'startup-error.png');
   await record('startup-error', setupMs, started, captureMs);
+});
+
+
+test('Native held input is released across real loss and controls return after paused respawn', async ({ page }, info) => {
+  await page.setViewportSize({ width: 800, height: 700 });
+  await setup(page);
+  await act(page, 'hud', 'normal', 'reachable-controls-ready');
+  const ids = ['fire', 'loop', 'bomb', 'throttle'];
+  await page.evaluate(ids => {
+    (window as any).__controlOriginals = ids.map(id => document.getElementById(id));
+    (window as any).__controlSettings = ids.map(id => {
+      const n = document.getElementById(id)!, style = getComputedStyle(n), rect = n.getBoundingClientRect();
+      return { hidden: n.hidden, width: rect.width, height: rect.height, text: n.textContent, className: n.className,
+        ariaLabel: n.getAttribute('aria-label'), ariaDisabled: n.getAttribute('aria-disabled'), ready: n.dataset.ready,
+        settings: Object.fromEntries(['--control-x', '--control-y', '--control-size', '--control-height', '--control-opacity'].map(key => [key, n.style.getPropertyValue(key)])),
+        minWidth: style.minWidth, minHeight: style.minHeight };
+    });
+  }, ids);
+  const fire = page.locator('#fire');
+  await fire.focus();
+  const box = await fire.boundingBox(); expect(box).not.toBeNull();
+  await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
+  await page.mouse.down(); await page.locator('#flight').focus(); await page.keyboard.down('Space');
+  await fire.focus();
+  const held = await act(page, 'controlLifecycle', 'inspect');
+  expect(held.input.heldPointers.fire.length).toBeGreaterThan(0);
+  expect(held.input.keys.length).toBeGreaterThan(0);
+  const loss = await act(page, 'controlLifecycle', 'lose');
+  expect(loss.status).toBe('respawning'); expect(loss.input.keys).toEqual([]);
+  expect(Object.values(loss.input.heldPointers).flat()).toEqual([]);
+  expect(loss.input.throttlePointer).toBeNull(); expect(loss.input.steerPointer).toBeNull();
+  expect(loss.pendingLoop || loss.pendingBomb).toBe(false);
+  for (const id of ids) await expect(page.locator(`#${id}`)).toBeHidden();
+  await expect(page.locator('#pause')).toBeFocused();
+  await expect(page.locator('#game-sound')).toBeVisible();
+  await expect(page.locator('#respawn-status')).toContainText('戦況と作戦時間は停止中');
+  await page.mouse.up(); // Keep the physical key held through revival.
+  await page.click('#pause');
+  const paused = await act(page, 'controlLifecycle', 'elapsed');
+  expect(paused.screen).toBe('paused'); expect(paused.status).toBe('respawning'); expect(paused.remaining).toBe(loss.remaining);
+  await page.click('#resume');
+  const revived = await act(page, 'controlLifecycle', 'elapsed');
+  expect(revived.status).toBe('running');
+  await page.keyboard.down('Space'); // Native repeated keydown must not re-arm a cleared hold.
+  const released = await act(page, 'controlLifecycle', 'inspect');
+  await page.keyboard.up('Space');
+  expect(released.sample.fire || released.sample.loop || released.sample.bomb).toBe(false);
+  expect(released.sample.throttle).toBe(0);
+  const restored = await page.evaluate(ids => ids.map((id, index) => {
+    const n = document.getElementById(id)!, original = (window as any).__controlSettings[index], rect = n.getBoundingClientRect();
+    const style = getComputedStyle(n), settings = Object.fromEntries(Object.keys(original.settings).map(key => [key, n.style.getPropertyValue(key)]));
+    const after = { width: rect.width, height: rect.height, text: n.textContent, className: n.className,
+      ariaLabel: n.getAttribute('aria-label'), ariaDisabled: n.getAttribute('aria-disabled'), ready: n.dataset.ready,
+      settings, minWidth: style.minWidth, minHeight: style.minHeight };
+    const glyphIssues: string[] = []; let glyphCount = 0;
+    const walker = document.createTreeWalker(n, NodeFilter.SHOW_TEXT); let text: Node | null;
+    while ((text = walker.nextNode())) {
+      let offset = 0;
+      for (const character of Array.from(text.textContent ?? '')) {
+        const start = offset; offset += character.length; if (/\s/u.test(character)) continue;
+        glyphCount++; const range = document.createRange(); range.setStart(text, start); range.setEnd(text, offset);
+        const g = range.getBoundingClientRect();
+        if (!(g.width > 0 && g.height > 0) || g.left < rect.left - .5 || g.right > rect.right + .5 || g.top < rect.top - .5 || g.bottom > rect.bottom + .5)
+          glyphIssues.push(`${character}: outside control`);
+        for (let parent = text.parentElement; parent; parent = parent.parentElement) {
+          const s = getComputedStyle(parent), box = parent.getBoundingClientRect();
+          if (parent.hidden || s.display === 'none' || s.visibility !== 'visible' || Number(s.opacity) === 0) glyphIssues.push(`${character}: hidden ancestor`);
+          if ((s.overflowX !== 'visible' && (g.left < box.left + parent.clientLeft - .5 || g.right > box.left + parent.clientLeft + parent.clientWidth + .5))
+            || (s.overflowY !== 'visible' && (g.top < box.top + parent.clientTop - .5 || g.bottom > box.top + parent.clientTop + parent.clientHeight + .5))) glyphIssues.push(`${character}: clipped ancestor`);
+        }
+      }
+    }
+    const minimumWidth = Math.max(44, parseFloat(original.settings['--control-size']) || 0);
+    const minimumHeight = id === 'throttle' ? Math.max(44, parseFloat(original.settings['--control-height']) || 0) : minimumWidth;
+    return { id, before: original, after, identity: n === (window as any).__controlOriginals[index], hidden: n.hidden === original.hidden,
+      settingsUnchanged: JSON.stringify(settings) === JSON.stringify(original.settings),
+      sameTextDimensions: n.textContent !== original.text || (Math.abs(rect.width - original.width) < .01 && Math.abs(rect.height - original.height) < .01),
+      minimumSize: rect.width >= minimumWidth - .5 && rect.height >= minimumHeight - .5,
+      visible: style.display !== 'none', captures: n.hasPointerCapture(1), glyphCount, glyphIssues };
+  }), ids);
+  // Preserve the actual differing value even if any subsequent assertion fails.
+  await info.attach('native-input-lifecycle.json', { body: Buffer.from(JSON.stringify({ held, loss, paused, revived, released, restored }, null, 2)), contentType: 'application/json' });
+  await capture(page, info, 'native-input-controls-restored.png');
+  for (const r of restored) {
+    expect(r.identity && r.hidden && r.settingsUnchanged && r.sameTextDimensions && r.minimumSize && r.visible && !r.captures,
+      `${r.id} restoration: ${JSON.stringify(r)}`).toBe(true);
+    expect(r.glyphCount).toBeGreaterThan(0); expect(r.glyphIssues).toEqual([]);
+  }
+  await checkGeometry(page, '#hud');
+
+});
+
+
+test('Reachable Normal revival protection is one full visible status at 568x320 and 200%', async ({ browser }, info) => {
+  const hudCase: HudCase = { name: 'hud-normal-reachable-protection-landscape-text-200-priority-5.png',
+    width: 568, height: 320, mode: 'normal', alert: 'reachable-protection', priority: 5 };
+  const coverage: HudCaseCoverage = { case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+  const result = await runFreshHudCase(browser, info, hudCase, coverage);
+  await info.attach('reachable-protection-coverage.json', { body: Buffer.from(JSON.stringify({ coverage, ...result }, null, 2)), contentType: 'application/json' });
+  expect(coverage.evidenceCompleted).toBe(true);
+  expect(result.failures, 'natural flight plus production revival retains protection duration, attack lockout and independent information').toEqual([]);
+});
+
+for (const condition of [
+  { mode: 'easy', alert: 'deadline-clear', width: 568, height: 320 },
+  { mode: 'easy', alert: 'deadline-outside', width: 320, height: 568 },
+  { mode: 'easy', alert: 'deadline-low', width: 568, height: 320 },
+  { mode: 'normal', alert: 'deadline-low', width: 568, height: 320 },
+] as const) test(`Production deadline branch with controlled ${condition.mode}/${condition.alert} preconditions retains the complete 200% HUD`, async ({ browser }, info) => {
+  const hudCase: HudCase = { ...condition, name: `hud-${condition.mode}-${condition.alert}-text-200.png`, priority: 4 };
+  const coverage: HudCaseCoverage = { case: hudCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+  const result = await runFreshHudCase(browser, info, hudCase, coverage);
+  await info.attach('deadline-branch-coverage.json', { body: Buffer.from(JSON.stringify({ coverage, ...result,
+    scope: 'Actual frame crosses the deadline threshold from explicit synthetic world preconditions; full-run reachability is not established.' }, null, 2)), contentType: 'application/json' });
+  // Keep the historical synthetic notice as an additional shape dimension.
+  // A separate fresh context avoids contaminating the production-wording case.
+  const pairedCase = pairedSyntheticHudCase(hudCase);
+  const pairedCoverage: HudCaseCoverage = { case: pairedCase.name, attempted: false, evidenceCompleted: false, imageSaved: false, jsonSaved: false };
+  const pairedResult = await runFreshHudCase(browser, info, pairedCase, pairedCoverage);
+  await info.attach('paired-synthetic-shape-coverage.json', { body: Buffer.from(JSON.stringify({ coverage: pairedCoverage, ...pairedResult,
+    scope: 'Original synthetic priority-4 turret notice; separate from the real deadline branch and not a full-run reachability claim.' }, null, 2)), contentType: 'application/json' });
+  expect(pairedCoverage.evidenceCompleted, 'paired original synthetic notice PNG and JSON were both captured').toBe(true);
+  expect(coverage.evidenceCompleted, 'state-controlled deadline branch PNG and JSON were both captured').toBe(true);
+  expect([...result.failures, ...pairedResult.failures], 'deadline and original synthetic notices keep the unchanged full HUD geometry/text/control contract').toEqual([]);
 });

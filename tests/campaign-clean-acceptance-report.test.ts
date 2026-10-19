@@ -1,3 +1,4 @@
+import {readFileSync} from 'node:fs';
 import {detailScrollMeasurement} from '../browser-acceptance/detail-scroll-observation';
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -109,7 +110,7 @@ test('compact fallback cannot inherit full-text pass without a complete native d
 function compactFixture(){
   const raw=fixture();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),e=>{
    e.observations.find((o:any)=>o.label==='actual-live-dom-geometry').dom.compact=true;
-   const persistentIds=['campaign-mode-status','lives-count','pause','bomb','loop',...Array.from({length:7},(_,i)=>`site-${i+1}`),...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`)];
+   const persistentIds=['campaign-mode-status','lives-count','pause','game-sound','bomb','loop',...Array.from({length:7},(_,i)=>`site-${i+1}`),...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`)];
    const geometry={viewport:{width:200,height:200},regions:[{key:'viewport',kind:'detail-viewport',rect:{x:10,y:10,width:100,height:100}},{key:'entry',kind:'detail-entry',rect:{x:11,y:11,width:98,height:150}}],styles:[{key:'style:campaign-hud-details:0',clipRect:{x:11,y:11,width:98,height:98},overflowX:'hidden',overflowY:'auto',scrollWidth:98,clientWidth:98,scrollHeight:200,clientHeight:98,lineClamp:'none',maxLines:'none',contain:'none',unsupported:[]}],runs:[{text:'detail',owner:'entry',ancestorRegions:['entry','viewport'],fragments:[{x:20,y:20,width:40,height:15}],styleKeys:['style:campaign-hud-details:0']}]};
    const fragments=['entry:0:0'],samples=['keyboard','touch'].flatMap(method=>[0,100].map(scrollTop=>({method,scrollTop,phase:'playing',neutralInput:true,persistentIds,fullyVisibleFragments:fragments,fullHudScroll:{windowX:0,windowY:0,appLeft:0,appTop:0,hudLeft:0,hudTop:0}})));
    e.observations.find((o:any)=>o.label==='full-text-geometry-before-assertions').textGeometry=geometry;
@@ -207,4 +208,99 @@ test('Tab settlement cannot claim more trusted native Tab inputs than the retain
   (e:any)=>{e.observations.find((o:any)=>o.label==='detail-scroll-native-events').events.find((event:any)=>event.key==='Tab').isTrusted=false;},
   (e:any)=>{const sample=e.observations.find((o:any)=>o.label==='detail-scroll-snapshot');sample.motion.tabCount=2;sample.settling.first=structuredClone(detailScrollMeasurement(sample));},
  ]){const raw=make();changeEvidence(raw,CASES.findIndex(c=>c[1]===8),edit);assert.equal((await report(raw)).browserAcceptance,'not-passed');}
+});
+
+test('independent browser workflow evidence depends on preparation rather than prior UI success',()=>{
+ const yaml=readFileSync('.github/workflows/verify.yml','utf8');
+ for(const name of ['Short real-rendered camera contract','Preserved 34-case gameplay and UI acceptance (optional)']){
+  const block=yaml.slice(yaml.indexOf(`name: ${name}`)).split('\n      - ')[0];
+  const match=block.match(/if: \$\{\{ (.+) \}\}/);assert.ok(match,`${name}: explicit status condition`);
+  const expression=match[1];
+  for(const id of ['dependencies','build','browserSetup'])assert(expression.includes(`steps.${id}.outcome == 'success'`));
+  assert(expression.includes('!cancelled()'));assert(!expression.includes('steps.browser.'));
+  const run=(cancelled:boolean,failed:string|null,full:boolean)=>Function('cancelled','steps','github','inputs',`return (${expression});`)(()=>cancelled,
+    Object.fromEntries(['dependencies','build','browserSetup','browser'].map(id=>[id,{outcome:id===failed?'failure':'success'}])),{event_name:'workflow_dispatch'},{full_browser_acceptance:full});
+  assert.equal(run(false,'browser',true),true,'UI failure must remain recorded without suppressing independent evidence');
+  for(const id of ['dependencies','build','browserSetup'])assert.equal(run(false,id,true),false);
+  assert.equal(run(true,null,true),false);
+  if(name.startsWith('Preserved'))assert.equal(run(false,null,false),false);
+ }
+ assert(!yaml.includes('continue-on-error:'),'No failed suite may be turned into a success');
+});
+
+test('case evidence is saved losslessly as a path attachment and never overwritten',async()=>{
+ const helpers=await import('../browser-acceptance/acceptance-helpers');
+ const save=(helpers as any).attachAcceptanceBytes;assert.equal(typeof save,'function');
+ const {mkdtemp,readFile}=await import('node:fs/promises');const {join}=await import('node:path');
+ const root=await mkdtemp('/tmp/fantasia-evidence-');const attachments:any[]=[];
+ const info={outputPath:(name:string)=>join(root,name),attach:async(name:string,options:any)=>attachments.push({name,...options})};
+ const bytes=Buffer.from(JSON.stringify({unicode:'全文保持',payload:'abc'.repeat(1000000)}));
+ const reference=await save(info,'case.json','application/json',bytes);
+ assert((await readFile(reference.path)).equals(bytes));assert.equal(reference.bytes,bytes.length);
+ assert.equal(attachments.length,1);assert.equal(attachments[0].body,undefined);assert.equal(attachments[0].path,reference.path);
+ await assert.rejects(save(info,'case.json','application/json',Buffer.from('replacement')),/EEXIST/);
+ assert((await readFile(reference.path)).equals(bytes));
+ await assert.rejects(save({...info,attach:async()=>{throw new Error('attachment failed');}},'attach-fails.json','application/json',bytes),/attachment failed/);
+});
+
+test('all 34 file-backed cases survive artifact relocation with exact byte/hash validation and missing files fail closed',async()=>{
+ const {mkdtemp,mkdir,writeFile}=await import('node:fs/promises');const {join}=await import('node:path');
+ const {readSourceAttachment,createReportStorage,byteReference,readVerifiedReference}=await import('../scripts/acceptance-report-storage');
+ const root=await mkdtemp('/tmp/fantasia-report-paths-');await mkdir(join(root,'cases'));
+ const raw=fixture(),expected=new Map<string,Buffer>();
+ for(const [i,spec] of raw.suites[0].specs.entries())for(const a of spec.tests[0].results[0].attachments){
+  const bytes=Buffer.from(a.body,'base64'),path=`/home/runner/work/fantasia/fantasia/test-results/cases/${i}.json`;
+  await writeFile(join(root,'cases',`${i}.json`),bytes,{flag:'wx'});expected.set(path,bytes);delete (a as any).body;(a as any).path=path;
+ }
+ const source=join(root,'clean-browser-acceptance-results.json');await writeFile(source,JSON.stringify(raw),{flag:'wx'});
+ const storage=await createReportStorage(root),original=await storage.preserveRaw(source);
+ const report=await buildAcceptanceReport(raw,path=>readSourceAttachment(source,path),async(bytes,context)=>{
+  const {resolveSourceAttachment}=await import('../scripts/acceptance-report-storage');
+  return storage.indexAttachment(bytes,{...context,sourcePath:await resolveSourceAttachment(source,context.sourcePath!)},original);
+ });
+ assert.equal(report.counts.validated,34);assert.equal(report.browserAcceptance,'passed');
+ for(const c of report.cases){const a=c.attempts[0].attachments[0],bytes=expected.get(a.sourcePath)!;
+  assert.equal(a.sha256,byteReference(bytes).sha256);assert.equal(a.bytes,bytes.length);assert((await readVerifiedReference(root,c.evidence)).equals(bytes));
+ }
+ const missing=await buildAcceptanceReport(raw,async path=>{if(path.endsWith('/7.json'))throw new Error('missing artifact');return readSourceAttachment(source,path);});
+ assert.equal(missing.browserAcceptance,'not-passed');assert.equal(missing.counts.validated,33);
+});
+
+test('saved stage image rejects clock or geometry changes without dropping the image bytes',async()=>{
+ const {attachAcceptanceImage}=await import('../browser-acceptance/acceptance-helpers');
+ const {mkdtemp,readFile}=await import('node:fs/promises');const {join}=await import('node:path');
+ const root=await mkdtemp('/tmp/fantasia-image-'),attached:any[]=[];
+ const info:any={outputPath:(name:string)=>join(root,name),attach:async(name:string,a:any)=>attached.push(a)};
+ const baseline={tick:12,phase:'playing',screen:'playing',status:'running',render:{hudLayout:{measurements:7}}};
+ for(const [index,change] of [{},{tick:13},{render:{hudLayout:{measurements:8}}}].entries()){
+  let calls=0;const driver:any={evidence:[],read:async()=>{throw new Error('Driver wall-clock budget exceeded');},page:{evaluate:async()=>calls++?{...baseline,...change}:baseline,screenshot:async()=>Buffer.from('complete PNG bytes')}};
+  const work=attachAcceptanceImage(driver,info,`stage-${index}.png`,true);
+  if(index)await assert.rejects(work);else await work;
+  assert.equal((await readFile(join(root,`stage-${index}.png`))).toString(),'complete PNG bytes');assert.equal(driver.evidence[0].label,'preserved-case-image');
+ }
+ assert.equal(attached.length,3);assert(attached.every(a=>a.path&&a.body===undefined));
+});
+
+test('runCase retains original failure and complete JSON when final image attachment fails',async()=>{
+ const {runCase}=await import('../browser-acceptance/acceptance-helpers');
+ const {mkdtemp,readFile}=await import('node:fs/promises');const {join}=await import('node:path');
+ const root=await mkdtemp('/tmp/fantasia-case-failure-');const attached:any[]=[];
+ const info:any={outputPath:(name:string)=>join(root,name),attach:async(name:string,a:any)=>{if(a.contentType==='image/png')throw new Error('image sink failed');attached.push({name,...a});}};
+ const driver:any={boot:async()=>{},backend:async()=>({webgl2:true}),evidence:[],pageErrors:[],releasedFences:0,createdFences:0,budget:{steps:0},read:async()=>{throw new Error('Driver wall-clock budget exceeded');},page:{evaluate:async()=>null,screenshot:async()=>Buffer.from('PNG')}};
+ await assert.rejects(runCase(driver,info,String(CASES[0][0]),async()=>{throw new Error('original body failure');}),/image sink failed/);
+ const payload=JSON.parse(await readFile(join(root,'clean-acceptance-evidence.json'),'utf8'));
+ assert.equal(payload.outcome,'failed');assert(payload.observations.some((x:any)=>x.label==='case-body-error'&&x.message.includes('original body failure')));
+ assert(payload.observations.some((x:any)=>x.label==='case-image-error'&&x.message.includes('image sink failed')));
+ assert.equal(attached.length,1);assert.equal(attached[0].body,undefined);
+});
+
+test('all acceptance entry points use complete file-backed evidence without inline JSON or PNG bodies',()=>{
+ const source=readFileSync('browser-acceptance/acceptance.spec.ts','utf8');
+ const preserved=source.slice(0,source.indexOf('// Separate from the preserved 34-case'));
+ assert(!/info\.attach\(/.test(preserved),'all 34 cases must use the common file attachment helpers');
+ assert(preserved.includes("attachAcceptanceBytes(info,'clean-acceptance-evidence.json'"));
+ assert(preserved.includes("attachAcceptanceImage(d,info,'native-case-final.png')"));
+ assert(preserved.includes("attachAcceptanceImage(d,info,'explicit-live-hud.png',true)"));
+ assert(preserved.includes("label:'case-body-error'"));
+ assert(preserved.includes("label:'case-image-error'"));
 });

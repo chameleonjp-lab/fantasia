@@ -38,9 +38,51 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     selectedMode = mode;
     resetCampaign();
     syncMode();
+    if (alert === 'reachable-reload-loss' || alert === 'reachable-controls-ready' || alert === 'reachable-protection') {
+      if (mode !== 'normal') throw new Error('Reachable reload-loss requires Normal controls');
+      // Actual flight inputs and campaign reducers from a standard new run.
+      // No actor/site/ammo/position/status writes and no synthetic announcement.
+      // This is input-equation reachability, not native browser input E2E.
+      announcementUntil = 0; announcementPriority = 0; el('announcement').textContent = '';
+      scene.setUiOnlyThreat(null);
+      const input = { turn: 0, climb: 0, accelerate: false, brake: false, fire: false, bomb: false, loop: false,
+        viewAspect: window.innerWidth / window.innerHeight, steeringRevision: 0 };
+      const path = []; let steps = 0;
+      const step = patch => {
+        campaign.step(flight.step(state, { ...input, ...patch })); flight.sync(state); handleEvents(state.events); steps++;
+      };
+      while (state.status === 'running' && player.reloadTicksRemaining <= 0 && steps < 1000) step({ fire: true });
+      path.push({ action: 'fire', steps, tick: state.simTick, reloadTicksRemaining: player.reloadTicksRemaining });
+      if (alert === 'reachable-controls-ready') {
+        if (state.status !== 'running' || player.reloadTicksRemaining <= 0) throw new Error('Reachable controls preparation failed');
+        setScreen('playing'); updateHUD(); scene.setOverlayVisible(true); scene.render(state, player, state.mode);
+        return { status: state.status, fixtureKind: 'input-equations-reachable-controls', path };
+      }
+      const fireSteps = steps;
+      while (state.status === 'running' && steps < 1600) step({ climb: -1 });
+      path.push({ action: 'descend', steps: steps - fireSteps, tick: state.simTick, reloadTicksRemaining: player.reloadTicksRemaining });
+      if (state.status !== 'respawning' || player.reloadTicksRemaining <= 0 || !state.events.some(event => event.kind === 'selfLoss'))
+        throw new Error('Input-equation path did not reach simultaneous reload and self-loss');
+      const selfLossEvent = state.events.find(event => event.kind === 'selfLoss');
+      respawnRemaining = 3;
+      if (alert === 'reachable-protection') completeRespawn(); // Actual production transition; countdown boundary is test-controlled.
+      setScreen('playing'); updateHUD(); scene.setOverlayVisible(true);
+      if (!scene.render(state, player, state.mode)) throw new Error('Reachable-state Canvas2D painter did not render');
+      const rendered = uiOnlyCanvas();
+      return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status,
+        announcementPriority, announcementText: el('announcement').textContent, fixtureKind: 'input-equations-reachable-state',
+        reachability: { seed: state.seed, nativeInput: false, stateOverrides: false, path, selfLossEvent, controlledRespawnBoundary: alert === 'reachable-protection' } };
+    }
+    const deadlineBranch = alert.startsWith('deadline-');
+    if (deadlineBranch) {
+      alert = alert.slice('deadline-'.length);
+      if (!['clear', 'low', 'outside'].includes(alert)) throw new Error('Unknown deadline branch condition');
+    }
     state.status = 'running';
-    state.activeTicks = 240;
-    state.simTick = 240;
+    // Explicit state-controlled branch coverage, not a claim that this whole
+    // world was reached by 70,199 native gameplay ticks.
+    state.activeTicks = deadlineBranch ? CAMPAIGN_LIMIT_TICKS - 1801 : 240;
+    state.simTick = state.activeTicks;
     state.sites.forEach((site, index) => {
       site.owner = ['friendly', 'neutral', 'enemy', 'friendly', 'enemy', 'neutral', 'friendly'][index];
       site.progress = (index + 1) * 5000;
@@ -54,30 +96,81 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     player.position.set(position.x, position.y, position.z);
     state.player.position = { ...position };
     state.player.bombs = 0; // Make the actual painter skip its predictive bomb guide.
-    player.reloadTicksRemaining = 108;
-    state.player.reloadUntilTick = state.simTick + player.reloadTicksRemaining;
+    // Synthetic reload stress state still obeys authoritative ammo invariants.
+    state.player.mg = 0; state.player.cannon = 0;
+    state.player.reloadUntilTick = state.simTick + 108;
     bombPrediction = null; bombPredictionTick = state.simTick; // updateHUD does not calculate flight prediction for this fixed state.
-    state.player.protectionTicks = alert === 'protected' ? 180 : 0;
+    state.player.protectionTicks = 0;
     state.player.boundaryTicks = alert === 'outside' ? 90 : 600;
     scene.setUiOnlyThreat(null);
     const turret = state.actors.find(actor => actor.team === 'enemy' && actor.class === 'turret');
-    if (turret) {
+    if (turret && alert !== 'respawn' && alert !== 'protected') {
       turret.phase = 'telegraph';
       turret.targetRef = { id: state.player.id, generation: state.player.generation };
-      turret.fireAtTick = state.simTick + 90;
+      turret.fireAtTick = state.simTick + 72;
       turret.lockedAim = null;
       scene.setUiOnlyThreat(turret);
     }
-    if (alert === 'respawn') { state.status = 'respawning'; respawnRemaining = 2.4; }
-    else state.status = 'running';
+    if (alert === 'respawn' || alert === 'protected') {
+      // Use the real loss/respawn reducers, rather than a status-only label.
+      campaign.step({ playerPosition: { x: 0, y: ground, z: 0 } });
+      if (state.status !== 'respawning') throw new Error('UI fixture failed to enter actual respawn');
+      respawnRemaining = 2.4;
+      if (alert === 'protected') { campaign.resumeRespawn(); respawnRemaining = 0; }
+    }
+    // One authoritative state feeds both the HUD and the renderer.
+    flight.sync(state, true);
     setScreen('playing');
     announcementUntil = 0; announcementPriority = 0; el('announcement').textContent = '';
-    announce('砲台の予告 · 陣地4 · 1.5秒', 5, fixturePriority);
+    if (deadlineBranch) {
+      const beforeActiveTicks = state.activeTicks;
+      clearInput(); accumulator = 0; lastFrame = performance.now() - CAMPAIGN_DT * 1000;
+      // Execute the actual production deadline branch, rather than injecting
+      // its wording or priority into announce(). UI-only rAF is suppressed.
+      frame();
+      if (state.activeTicks !== beforeActiveTicks + 1 || state.status !== 'running')
+        throw new Error('Deadline branch did not advance exactly one running tick');
+      if (announcementPriority !== 4 || el('announcement').textContent !== '作戦期限まで、あと30秒')
+        throw new Error('Production deadline announcement was not emitted');
+      const rendered = uiOnlyCanvas();
+      return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status,
+        announcementPriority, announcementText: el('announcement').textContent, fixtureKind: 'state-controlled-deadline-branch',
+        reachability: { stateOverrides: true, fullRunReachable: false, nativeInput: false, beforeActiveTicks,
+          afterActiveTicks: state.activeTicks, actualFrameTransition: true, condition: alert } };
+    }
+    // Lifecycle notices and threat notices describe this fixture's state.
+    // Priority remains an explicit synthetic stress dimension, not a claim
+    // that normal gameplay emits this exact combination or priority.
+    const announcementText = alert === 'respawn' ? '自機喪失 · 復活すると記録時間に10秒加算'
+      : alert === 'protected' ? '復活 · 2秒の保護中は自機も攻撃できません'
+      : `砲台の予告 · 陣地${turret.laneId + 1} · ${((turret.fireAtTick - state.simTick) / 60).toFixed(1)}秒`;
+    announce(announcementText, 5, fixturePriority, alert === 'protected' ? 'protection' : '');
     updateHUD();
     scene.setOverlayVisible(true);
     if (!scene.render(state, player, state.mode)) throw new Error('UI-only Canvas2D painter did not render');
     const rendered = uiOnlyCanvas();
-    return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status, announcementPriority: fixturePriority };
+    return { screen, mode: state.mode, layout: rendered.hudLayout, canvas: rendered, status: state.status, announcementPriority: fixturePriority, announcementText, fixtureKind: 'synthetic-hud-stress' };
+  }
+
+  // Browser-native presses can be held across the real consumeTick loss path.
+  // Held presses are native; descent inputs and elapsed frame time are
+  // adapter-controlled. Campaign state is never injected.
+  function uiOnlyControlLifecycle(action) {
+    if (action === 'lose') {
+      if (screen !== 'playing' || state.status !== 'running') throw new Error('Loss transition requires an active run');
+      const input = { turn: 0, climb: -1, accelerate: false, brake: false, fire: false, bomb: false, loop: false,
+        viewAspect: window.innerWidth / window.innerHeight, steeringRevision: 0 };
+      let steps = 0;
+      while (state.status === 'running' && steps++ < 1000) consumeTick(input);
+      if (state.status !== 'respawning') throw new Error('Descent did not reach a real loss');
+      updateHUD(); uiOnlyPaint();
+    } else if (action === 'elapsed') {
+      // Exercise the production frame's frozen/pause and respawn/resume wiring.
+      lastFrame = performance.now() - 3100; frame();
+    } else if (action !== 'inspect') throw new Error(`Unknown control lifecycle action: ${action}`);
+    return { screen, status: state.status, remaining: respawnRemaining, input: controls.peek(),
+      pendingLoop, pendingBomb, sample: action === 'inspect' ? controls.sample(false) : null,
+      stateOverrides: false, nativeHeldInput: true, controlledDescentInput: true, controlledFrameTime: true };
   }
 
   function uiOnlyPause() {
@@ -131,7 +224,7 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
 
   Object.defineProperty(window, '__fantasiaUiOnlyTest', {
     value: Object.freeze({ reset: uiOnlyReset, hud: uiOnlyHud, paint: uiOnlyPaint, canvas: uiOnlyCanvas, evidence: uiOnlyLayoutEvidence,
-      pause: uiOnlyPause, result: uiOnlyResult, startupError: uiOnlyStartupError, layout: uiOnlyLayout }),
+      controlLifecycle: uiOnlyControlLifecycle, pause: uiOnlyPause, result: uiOnlyResult, startupError: uiOnlyStartupError, layout: uiOnlyLayout }),
     configurable: false, enumerable: false, writable: false,
   });
 }

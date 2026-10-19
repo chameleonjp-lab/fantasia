@@ -1,6 +1,6 @@
 import test from 'node:test';import assert from 'node:assert/strict';
 import {detailAccessIssues,type DetailAccessEvidence} from '../browser-acceptance/detail-scroll-contract';
-function fixture():DetailAccessEvidence{return {active:true,viewportId:'campaign-hud-details',expectedEntryIds:['timer','site-1'],actualEntryIds:['timer','site-1'],expectedFragments:['timer:0:0','site-1:0:0'],persistentIds:['site-1','site-2','site-3','site-4','site-5','site-6','site-7','campaign-mode-status','lives-count',...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`),'pause','bomb','loop'],samples:['keyboard','touch'].flatMap(method=>[0,100].map((scrollTop,i)=>({method:method as 'keyboard'|'touch',scrollTop,phase:'playing',neutralInput:true,fullHudScroll:{windowX:0,windowY:0,appLeft:0,appTop:0,hudLeft:0,hudTop:0},persistentIds:['site-1','site-2','site-3','site-4','site-5','site-6','site-7','campaign-mode-status','lives-count',...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`),'pause','bomb','loop'],fullyVisibleFragments:[i?'site-1:0:0':'timer:0:0']}))) };}
+function fixture():DetailAccessEvidence{return {active:true,viewportId:'campaign-hud-details',expectedEntryIds:['timer','site-1'],actualEntryIds:['timer','site-1'],expectedFragments:['timer:0:0','site-1:0:0'],persistentIds:['site-1','site-2','site-3','site-4','site-5','site-6','site-7','campaign-mode-status','lives-count',...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`),'pause','game-sound','bomb','loop'],samples:['keyboard','touch'].flatMap(method=>[0,100].map((scrollTop,i)=>({method:method as 'keyboard'|'touch',scrollTop,phase:'playing',neutralInput:true,fullHudScroll:{windowX:0,windowY:0,appLeft:0,appTop:0,hudLeft:0,hudTop:0},persistentIds:['site-1','site-2','site-3','site-4','site-5','site-6','site-7','campaign-mode-status','lives-count',...Array.from({length:7},(_,i)=>`campaign-site-state-${i+1}`),'pause','game-sound','bomb','loop'],fullyVisibleFragments:[i?'site-1:0:0':'timer:0:0']}))) };}
 test('every detail fragment is reached by native keyboard and touch while critical HUD stays fixed',()=>assert.deepEqual(detailAccessIssues(fixture()),[]));
 test('missing details, fake nonmoving samples, unread fragments and whole-HUD scroll fail',()=>{
  for(const change of [(e:DetailAccessEvidence)=>e.actualEntryIds.pop(),(e:DetailAccessEvidence)=>{for(const s of e.samples)s.scrollTop=0;},(e:DetailAccessEvidence)=>{e.samples[3].fullyVisibleFragments=[];},(e:DetailAccessEvidence)=>{e.samples[0].fullHudScroll.hudTop=5;},(e:DetailAccessEvidence)=>{e.samples[0].persistentIds=[];},(e:DetailAccessEvidence)=>{e.samples[1].neutralInput=false;},(e:DetailAccessEvidence)=>{e.samples[0].phase='paused';}]){const e=fixture();change(e);assert.ok(detailAccessIssues(e).length>0);}
@@ -25,7 +25,7 @@ import {activeFixedStatusIds,type FixedStatusEvidence} from '../browser-acceptan
 const statusFixture=():FixedStatusEvidence=>({screen:'playing',status:'running',position:{x:0,y:400,z:0},protectionTicks:0,reloadTicksRemaining:0,text:{'campaign-threat':'','reload-status':'','payload-status':''}});
 test('active warnings derive from state while dormant nonempty warning and respawn text do not force visibility',()=>{
  const e=statusFixture();e.text.warning='低空注意';e.text['respawn-status']='復活まで1秒';assert.deepEqual(activeFixedStatusIds(e),[]);
- for(const mutate of [(e:FixedStatusEvidence)=>{e.position.y=20;},(e:FixedStatusEvidence)=>{e.position.x=2200;},(e:FixedStatusEvidence)=>{e.protectionTicks=60;}]){const active=statusFixture();mutate(active);assert.ok(activeFixedStatusIds(active).includes('warning'));}
+ for(const mutate of [(e:FixedStatusEvidence)=>{e.position.y=20;},(e:FixedStatusEvidence)=>{e.position.x=2200;}]){const active=statusFixture();mutate(active);assert.ok(activeFixedStatusIds(active).includes('warning'));}
  e.status='respawning';assert.ok(activeFixedStatusIds(e).includes('respawn-status'));
 });
 test('nonempty threat/reload/payload and actual reload stay required regardless of hidden or missing text',()=>{
@@ -116,4 +116,129 @@ test('late notification evidence must match every retained native log coordinate
  const tab={motion:{sequence:0,endedSequence:0,tabCount:1},settling:{operation:{kind:'tab'}}};
  assert.ok(nativeDetailEventIssues(tab,[]).length);
  assert.deepEqual(nativeDetailEventIssues(tab,[{type:'keydown',key:'Tab',isTrusted:true}]),[]);
+});
+
+test('protection requires its canonical status without inventing a second warning',()=>{
+ const e=statusFixture();e.protectionTicks=120;
+ assert.deepEqual(activeFixedStatusIds(e),['campaign-threat']);
+ for(const mutate of [(s:FixedStatusEvidence)=>{s.position.y=20;},(s:FixedStatusEvidence)=>{s.position.x=2200;}]){
+  const s=statusFixture();s.protectionTicks=120;mutate(s);
+  assert(activeFixedStatusIds(s).includes('warning'));assert(activeFixedStatusIds(s).includes('campaign-threat'));
+ }
+});
+test('pause and sound cannot disappear during either detail traversal phase',()=>{
+ for(const phase of ['playing','respawning'] as const)for(const id of ['pause','game-sound']){
+  const e=fixture();e.phase=phase;for(const sample of e.samples)sample.phase=phase;
+  e.persistentIds=e.persistentIds.filter(x=>x!==id);
+  assert(detailAccessIssues(e,phase).some(issue=>issue.includes(id)),`${phase}: ${id}`);
+ }
+});
+
+import * as detailContract from '../browser-acceptance/detail-scroll-contract';
+test('persistent policy exempts only state-authorized inactive controls and tagged protection duplicate',()=>{
+ const policy=(detailContract as any).detailItemPolicy;assert.equal(typeof policy,'function');
+ const node=(id:string)=>({id,hidden:false,critical:false,text:'text',lifecycle:''});
+ const running=statusFixture(),waiting={...running,status:'respawning'},protectedState={...running,protectionTicks:120};
+ for(const id of ['fire','loop','bomb','throttle']){
+  assert.equal(policy(waiting,node(id)),'inactive-control');assert.equal(policy(running,node(id)),'required');
+ }
+ for(const id of ['pause','game-sound','campaign-threat'])assert.equal(policy(waiting,{...node(id),hidden:true,critical:true}),'required');
+ assert.equal(policy(protectedState,{...node('announcement'),critical:true,lifecycle:'protection'}),'duplicate-protection');
+ assert.equal(policy(running,{...node('announcement'),critical:true,lifecycle:'protection'}),'required');
+ assert.equal(policy(protectedState,{...node('announcement'),critical:true}),'required');
+ assert.equal(policy(protectedState,{...node('warning'),critical:true,lifecycle:'protection'}),'required');
+});
+test('lifecycle evidence rejects missing or rendered inactive controls and accessible duplicate projection',()=>{
+ const check=(detailContract as any).detailLifecycleIssues;assert.equal(typeof check,'function');
+ const waiting={...statusFixture(),status:'respawning'};
+ const controls=['fire','loop','bomb','throttle'].map(id=>({id,count:1,rendered:false}));
+ assert.deepEqual(check(waiting,controls,[]),[]);
+ assert(check(waiting,controls.slice(1),[]).length);
+ assert(check(waiting,controls.map(c=>({...c,rendered:c.id==='fire'})),[]).length);
+ const p={...statusFixture(),protectionTicks:120};
+ assert.deepEqual(check(p,controls,[{hidden:true,inert:true,ariaHidden:'true'}]),[]);
+ assert(check(p,controls,[{hidden:false,inert:true,ariaHidden:'true'}]).length);
+ assert(check(p,controls,[{hidden:true,inert:false,ariaHidden:'true'}]).length);
+ assert(check(p,controls,[{hidden:true,inert:true,ariaHidden:null}]).length);
+});
+test('state-based browser item policy survives serialization without host dependencies',()=>{
+ const policy=runInNewContext(`(${detailContract.detailItemPolicy.toString()})`);
+ assert.equal(policy({...statusFixture(),status:'respawning'},{id:'fire',hidden:false,critical:false,text:'射撃',lifecycle:''}),'inactive-control');
+ assert.equal(policy(statusFixture(),{id:'pause',hidden:true,critical:false,text:'Ⅱ',lifecycle:''}),'required');
+});
+
+import {readFileSync} from 'node:fs';
+test('browser setup creates a callable policy handle without invoking it with missing arguments',async()=>{
+ const source=readFileSync('browser-acceptance/detail-scroll.ts','utf8');
+ const expression=source.match(/const itemPolicy=await (.+);/)![1];
+ const policy=await runInNewContext(`(async()=>${expression})()`,{
+  detailItemPolicy:detailContract.detailItemPolicy,
+  d:{page:{evaluateHandle:async(value:string|(()=>unknown))=>typeof value==='function'?value():runInNewContext(value)}}
+ });
+ assert.equal(typeof policy,'function');
+ assert.equal(policy({...statusFixture(),status:'respawning'},{id:'fire',hidden:false,critical:false,text:'射撃',lifecycle:''}),'inactive-control');
+});
+
+test('bounded native plan finds narrow visible intervals instead of repeating arrow/page cycles',()=>{
+ const plan=(detailContract as any).planDetailKeys;assert.equal(typeof plan,'function');
+ for(const [top,delta,window] of [[0,25.5,11],[27,49.5,11],[49,-23.5,11]]){
+  const r=plan({top,max:1000,delta,window,steps:{arrow:40,page:49}});
+  assert(r.actions.length>0);assert(r.visited<=512);let position=top;
+  for(const a of r.actions)position=Math.max(0,Math.min(1000,position+a.direction*({arrow:40,page:49} as any)[a.kind]));
+  assert(Math.abs(position-(top+delta))<=window/2,JSON.stringify(r));
+ }
+ const unknown=plan({top:0,max:1000,delta:25.5,window:11,steps:{arrow:40}});
+ assert.equal(unknown.actions[0].kind,'page');assert.equal(unknown.calibration,true);
+ const impossible=plan({top:0,max:1000,delta:25.5,window:-1,steps:{arrow:40,page:49}});
+ assert.deepEqual(impossible.actions,[]);assert.equal(impossible.reason,'fragment-taller-than-viewport');
+ const unreachable=plan({top:0,max:1000,delta:25,window:2,steps:{arrow:40,page:80}});
+ assert.deepEqual(unreachable.actions,[]);assert(unreachable.visited<=512);
+});
+
+test('native completion starts the first full capture immediately and retains a separate 32ms matching capture',async()=>{
+ const {readFileSync}=await import('node:fs');const ts=await import('typescript');
+ const source=readFileSync('browser-acceptance/detail-scroll.ts','utf8');
+ const start=source.indexOf("const sample=async(method:");const end=source.indexOf('// Persist the complete atomic observation',start);
+ const body=source.slice(start,end)+'return {settling,atomic};}; return sample;';
+ const code=ts.transpileModule(body,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.None}}).outputText;
+ for(const scenario of ['stable','incomplete','mutation','capture-race'] as const){
+  let now=0,captures=0;const times:number[]=[],evidence:any[]=[];
+  const value=()=>({scrollTop:40,motion:{sequence:now>=16&&scenario==='mutation'?2:1},geometry:{runs:[]},layout:{measurements:1}});
+  const light=async()=>value();
+  const capture=async()=>{times.push(now);captures++;const v=value();if(scenario==='capture-race'&&captures===1)v.motion.sequence=99;return v;};
+  const d={evidence,budget:{remaining:()=>1500},call:async(_name:string,_work:unknown)=>{now+=16;}};
+  const expect=(v:unknown)=>({toBeTruthy:()=>assert(v)});
+  const sample=Function('d','performance','light','capture','detailOperationIssues','detailScrollMeasurement','expect',
+   'let stage="",traversalStarted=0;'+code)(d,{now:()=>now},light,capture,
+   (_op:unknown,_v:unknown)=>scenario==='incomplete'&&now<64?['incomplete']:[],
+   (v:any)=>({scrollTop:v.scrollTop,motion:v.motion,measurements:v.layout.measurements}),expect);
+  const r=await sample('keyboard',{kind:'arrow',before:{},evidenceIndex:0});
+  assert(r.settling.elapsedWallMs>=32);assert(captures>=2);assert.equal(times[0],scenario==='incomplete'?64:0);
+  if(scenario==='mutation')assert(r.settling.first.motion.sequence===2&&now>=48,'changed light observation invalidates the first full baseline');
+  if(scenario==='capture-race')assert(captures>=3,'a raced full capture cannot serve as stable baseline');
+  assert.deepEqual(r.settling.first,{scrollTop:r.atomic.scrollTop,motion:r.atomic.motion,measurements:r.atomic.layout.measurements});
+ }
+});
+
+test('touch planning uses the measured clip with four-pixel interior endpoints in both directions',async()=>{
+ const module=await import('../browser-acceptance/detail-scroll-contract');const plan=(module as any).planDetailTouch;assert.equal(typeof plan,'function');
+ const clip={x:113,y:68.796875,width:112,height:62};
+ for(const delta of [-500,-20,0,20,500]){
+  const p=plan(clip,delta,15);assert.equal(p.x,169);
+  for(const y of [p.y,p.endY])assert(y>=clip.y+4&&y<=clip.y+clip.height-4);
+  assert(Math.abs(p.travel)<=54);assert.equal(p.endY,p.y-p.travel);
+ }
+ assert.equal(plan(clip,500,15).travel,54);assert.equal(plan(clip,-500,15).travel,-54);
+ for(const c of [{...clip,height:8},{...clip,width:0},{...clip,y:NaN}])assert.throws(()=>plan(c,20,15));
+ assert.throws(()=>plan(clip,NaN,15));assert.throws(()=>plan(clip,20,-1));
+});
+
+test('touch plan targets the far interior of the full-fragment interval without extending its clip endpoints',async()=>{
+ const {planDetailTouch}=await import('../browser-acceptance/detail-scroll-contract');const clip={x:113,y:68.796875,width:112,height:62};
+ const plan=planDetailTouch as any;
+ assert.equal(plan(clip,26,15,24).travel,51,'use ten extra safe pixels inside the 24px full-text interval');
+ assert.equal(plan(clip,-26,15,24).travel,-51);
+ assert.equal(plan(clip,26,15,2).travel,41,'narrow intervals keep their center');
+ assert.equal(plan(clip,50,15,24).travel,54,'never extend the four-pixel clip endpoints');
+ assert.throws(()=>plan(clip,20,15,-1));assert.throws(()=>plan(clip,20,15,NaN));
 });

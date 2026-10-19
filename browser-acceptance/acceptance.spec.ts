@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { RealRendererDriver } from './real-driver';
 import { titleFor } from './acceptance-cases';
-import { runCase, inputAt, neutral, frozen, liveGeometry, cancelNativeCapture } from './acceptance-helpers';
+import { runCase, inputAt, neutral, frozen, liveGeometry, cancelNativeCapture, attachAcceptanceBytes, attachAcceptanceImage } from './acceptance-helpers';
 
 const functional = (id: string, body: (d: RealRendererDriver) => Promise<void>) =>
   test(titleFor(id), async ({ page }, info) => { const d = new RealRendererDriver(page); await runCase(d, info, id, () => body(d)); });
@@ -221,7 +221,7 @@ for(const size of sizes) test.describe(size.id,()=>{
       await d.start(mode); await d.nextTick(); const measured=await liveGeometry(d); expect(measured.dom.dpr).toBe(size.dpr);
       const full=await d.full(); expect(full.render.pixelRatio).toBeLessThanOrEqual(1.5);
       // Live screenshot precedes any pause; screenshot does not substitute for geometry assertions.
-      await info.attach('live-hud', {contentType:'image/png',body:await page.screenshot()}); expect((await d.requireState('after-live-capture')).phase).toBe('playing');
+      await attachAcceptanceImage(d,info,'explicit-live-hud.png',true); expect((await d.requireState('after-live-capture')).phase).toBe('playing');
     });
   });
 });
@@ -279,10 +279,17 @@ test(titleFor('native-capability'),async({page},info)=>{
       capabilityOutcome='startup-and-bounded-frame-completion';
     }
     expect(d.pageErrors).toEqual([]); outcome='passed';
+  } catch(error) {
+    d.evidence.push({label:'case-body-error',message:String(error)});throw error;
   } finally {
-    await info.attach('clean-acceptance-evidence',{contentType:'application/json',body:JSON.stringify({schemaVersion:1,id:'native-capability',category:10,
+    // Native time may advance during this capability screenshot; retain both states.
+    try { await attachAcceptanceImage(d,info,'native-case-final.png'); }
+    catch(error){outcome='failed';d.evidence.push({label:'case-image-error',message:String(error)});throw error;}
+    finally {
+    await attachAcceptanceBytes(info,'clean-acceptance-evidence.json','application/json',Buffer.from(JSON.stringify({schemaVersion:1,id:'native-capability',category:10,
       classification:'ordinary-wall-clock-capability',outcome,capabilityOutcome,clockInstalled:false,runtimeMocked:false,rendererMocked:false,applicationQueueModified:false,
-      physicalDeviceAcceptance:'unverified',performanceAcceptance:'not-measured',releaseReady:false,backend,pageErrors:d.pageErrors,observations:d.evidence},null,2)});
+      physicalDeviceAcceptance:'unverified',performanceAcceptance:'not-measured',releaseReady:false,backend,pageErrors:d.pageErrors,observations:d.evidence},null,2)));
+    }
   }
 });
 

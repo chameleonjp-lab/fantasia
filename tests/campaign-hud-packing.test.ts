@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { CampaignHudLayout, layoutCampaignHud, layoutCompactCampaignSites, intersects, type HudMeasurement, type HudRect } from '../src/campaign-hud-layout';
+import { CampaignHudLayout, packSemanticRegions, layoutCampaignHud, layoutCompactCampaignSites, intersects, type HudMeasurement, type HudRect } from '../src/campaign-hud-layout';
 
 // Raw CI 37566989885 compact measurements. These are regression inputs, not a
 // claim that this revision has run in a native browser.
@@ -117,4 +117,209 @@ test('moving aim into full-mode fixed control invalidates cached measurement', (
   let measured=0;const layout=new CampaignHudLayout({measure:()=>{measured++;return measurement;},observe:()=>()=>{},applyThreat:()=>{},applyPanels:()=>{}});
   assert.equal(layout.update({x:100,y:100,width:20,height:20})!.status,'placed');
   assert.equal(layout.update({x:610,y:410,width:20,height:20})!.status,'blocked');assert.equal(measured,2);
+});
+
+// Exact e03359d CI run39153257236 measured dimensions; no invented browser geometry.
+const diagnosticCaptures = [{"name":"hud-easy-clear-small-landscape-text-200-priority-0.png","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":8,"y":140,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":180,"width":110,"height":3,"id":"health-track"},{"x":8,"y":190,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":144,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":376,"y":150,"width":180,"height":82,"id":"campaign-threat"},{"x":161.875,"y":221.1875,"width":244.25,"height":39.265625,"id":"reload-status"},{"x":8,"y":220,"width":114,"height":96,"id":"campaign-hud-details"},{"x":8,"y":140,"width":72,"height":24,"id":"campaign-mode-status"},{"x":8,"y":140,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":356,"y":266,"width":81.296875,"height":44,"id":"game-sound"},{"x":310,"y":266,"width":44,"height":50,"id":"pause"},{"x":185.25,"y":255.046875,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":428.3359375,"y":160.9921875,"width":86.203125,"height":100.390625,"id":"loop"}],"flightData":{"x":252,"y":188,"width":167.046875,"height":27.03125},"threat":{"x":376,"y":150,"width":180,"height":82}},"sight":{"x":230.8,"y":106.8,"width":106.4,"height":106.4,"id":"aim-and-reload-ring"}},{"name":"hud-easy-outside-small-portrait-text-200-priority-0.png","measurement":{"canvas":{"x":0,"y":0,"width":320,"height":568},"bounds":{"x":8,"y":8,"width":304,"height":552},"obstacles":[{"x":8,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":237.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":8,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"}],"panels":[{"x":8,"y":238,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":263,"width":118,"height":3,"id":"health-track"},{"x":8,"y":276,"width":94,"height":50,"id":"instrument"},{"x":97,"y":341.1875,"width":144,"height":26,"id":"campaign-limit"},{"x":97,"y":375.1875,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":12,"y":246.03125,"width":93.796875,"height":146.96875,"id":"campaign-threat"},{"x":37.875,"y":345.1875,"width":244.25,"height":39.265625,"id":"reload-status"},{"x":80,"y":330.625,"width":160,"height":68.375,"id":"warning"},{"x":8,"y":220,"width":114,"height":72,"id":"campaign-hud-details"},{"x":8,"y":140,"width":72,"height":24,"id":"campaign-mode-status"},{"x":8,"y":140,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":87,"y":440,"width":81.296875,"height":44,"id":"game-sound"},{"x":270,"y":440,"width":44,"height":50,"id":"pause"},{"x":88.53125,"y":502.5625,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":222.4921875,"y":315.578125,"width":86.203125,"height":118.59375,"id":"loop"}],"flightData":{"x":97,"y":375.1875,"width":167.046875,"height":27.03125},"threat":{"x":12,"y":246.03125,"width":93.796875,"height":146.96875}},"sight":{"x":106.8,"y":230.8,"width":106.4,"height":106.4,"id":"aim-and-reload-ring"}}];
+for (const capture of diagnosticCaptures) test(`deterministic free-space packing recovers ${capture.name}`, () => {
+  const source = capture.measurement as HudMeasurement, before = JSON.stringify(source);
+  const packed = assertPacked(source, capture.sight);
+  assert(packed.primarySearchChecks! <= 120_000);
+  assert(packed.recoverySearchChecks! > 0 && packed.recoverySearchChecks! <= 6_000);
+  assert(packed.searchChecks! <= 126_000);
+  assert.equal(packed.searchChecks, packed.primarySearchChecks! + packed.recoverySearchChecks!);
+  assert.deepEqual(layoutCampaignHud(source, capture.sight), packed);
+  assert.equal(JSON.stringify(source), before);
+});
+
+// Independent synthetic counterexample, seed197/n2145; not a browser observation.
+const lateSearchRegression = {"measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":192.03412248608865,"y":48.073760454731875,"width":98.56218385441463,"height":28.1893886406906,"id":"health-label"},{"x":256.8582162416049,"y":171.54823055598993,"width":88.59522144217046,"height":2.416233312059194,"id":"health-track"},{"x":275.59656412319737,"y":186.9179439256965,"width":88.59522144217046,"height":40.27055520098657,"id":"instrument"},{"x":242.90754348233494,"y":59.97093512015672,"width":115.97919897884131,"height":20.940688704513015,"id":"campaign-limit"},{"x":154.35989568732168,"y":111.92805433824813,"width":134.54140801679605,"height":21.771268905533365,"id":"ammo"},{"x":327.7206124855905,"y":133.7804742477976,"width":144.97399872355166,"height":66.04371052961797,"id":"campaign-threat"},{"x":229.80921618058386,"y":42.00448940519926,"width":196.72166215681938,"height":31.624970381274764,"id":"reload-status"},{"x":309.6405023302979,"y":86.89408443727037,"width":181.2804211469411,"height":25.773155328631404,"id":"warning"},{"x":181.3298569074436,"y":98.76455195154132,"width":144.97399872355166,"height":45.10302182510496,"id":"announcement"},{"x":145.83704719442935,"y":143.2694429264325,"width":91.81686585824937,"height":77.31946598589421,"id":"campaign-hud-details"},{"x":317.5703980254453,"y":212.52759372318977,"width":57.989599489420655,"height":19.329866496473553,"id":"campaign-mode-status"},{"x":142.67978828830533,"y":18.881896978255064,"width":56.88215922139353,"height":46.05944751112839,"id":"target-tally"}],"movableControls":[{"x":296,"y":222,"width":81.296875,"height":44,"id":"game-sound"},{"x":509,"y":60,"width":44,"height":50,"id":"pause"},{"x":475,"y":172,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":330,"y":118,"width":86.203125,"height":100.390625,"id":"loop"},{"x":475,"y":239,"width":62,"height":51.1875,"id":"fire"},{"x":420,"y":172,"width":51.1875,"height":102.390625,"id":"throttle"}],"flightData":{"x":252,"y":188,"width":167.046875,"height":27.03125},"threat":{"x":376,"y":150,"width":180,"height":82}},"sight":{"x":246.79999999999995,"y":79.0089291012429,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}};
+test('late primary search success is preserved before attempting recovery', () => {
+  const packed = assertPacked(lateSearchRegression.measurement, lateSearchRegression.sight);
+  assert.equal(packed.searchChecks, 108833);
+  assert.equal(packed.recoverySearchChecks, 0);
+  assert.equal(packed.primarySearchChecks, 108833);
+});
+
+// Exact 6a7be91 CI dimensions, with only the proposed secondary viewport height
+// changed. This is a geometry prediction; browser scroll/glyph proof is separate.
+const protectedLandscapeDetail64 = {"measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":112,"y":160,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":199,"width":110,"height":3,"id":"health-track"},{"x":420,"y":118,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":144,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":210.453125,"height":27.03125,"id":"ammo"},{"x":376,"y":150,"width":180,"height":56,"id":"campaign-threat"},{"x":8,"y":226,"width":280,"height":58,"id":"warning"},{"x":112,"y":60,"width":114,"height":96,"id":"campaign-hud-details"},{"x":296,"y":270,"width":72,"height":24,"id":"campaign-mode-status"},{"x":372,"y":278,"width":70.625,"height":57.1875,"id":"target-tally"},{"x":8,"y":300,"width":110,"height":9.203125,"id":"bomb-hint"}],"movableControls":[{"x":296,"y":222,"width":81.296875,"height":44,"id":"game-sound"},{"x":509,"y":60,"width":44,"height":50,"id":"pause"},{"x":475,"y":172,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":330,"y":118,"width":86.203125,"height":100.390625,"id":"loop"},{"x":475,"y":239,"width":62,"height":51.1875,"id":"fire"},{"x":420,"y":172,"width":51.1875,"height":102.390625,"id":"throttle"}],"flightData":{"x":252,"y":188,"width":210.453125,"height":27.03125},"threat":{"x":376,"y":150,"width":180,"height":56}},"sight":{"x":246.79999999999995,"y":79.0089291012429,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}};
+test('short landscape width-biased recovery packs full-size protected HUD with a 64px secondary viewport', () => {
+  const input = structuredClone(protectedLandscapeDetail64);
+  input.measurement.panels.find(panel => panel.id === 'campaign-hud-details')!.height = 64;
+  const before = JSON.stringify(input);
+  const out = assertPacked(input.measurement, input.sight);
+  assert.equal(out.primarySearchChecks, 120_000);
+  assert(out.recoverySearchChecks! > 0 && out.recoverySearchChecks! <= 6_000);
+  assert(out.searchChecks! <= 126_000);
+  assert.equal(JSON.stringify(input), before);
+  assert.deepEqual(layoutCampaignHud(input.measurement, input.sight), out);
+});
+
+// Exact 6fec6ea natural-state dimensions, with only inactive flight controls removed.
+const respawnInactiveCapture = {"measurement":{"canvas":{"x":0,"y":0,"width":320,"height":568},"bounds":{"x":8,"y":8,"width":304,"height":552},"obstacles":[{"x":8,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":237.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":8,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"}],"panels":[{"x":189.59375,"y":518,"width":82.203125,"height":35,"id":"health-label"},{"x":189.59375,"y":557,"width":118,"height":3,"id":"health-track"},{"x":98.5,"y":441,"width":122.421875,"height":24,"id":"instrument"},{"x":97,"y":341.1875,"width":144,"height":26,"id":"campaign-limit"},{"x":97,"y":375.1875,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":12,"y":307.21875,"width":106,"height":85.78125,"id":"campaign-threat"},{"x":40.875,"y":258.265625,"width":238.25,"height":33.265625,"id":"reload-status"},{"x":8,"y":160,"width":238,"height":67.59375,"id":"respawn-status"},{"x":98,"y":340,"width":106,"height":155.9375,"id":"announcement"},{"x":198,"y":441.1875,"width":114,"height":64,"id":"campaign-hud-details"},{"x":239.5,"y":68,"width":72,"height":24,"id":"campaign-mode-status"},{"x":9.890625,"y":362,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":8,"y":390,"width":81.296875,"height":44,"id":"game-sound"},{"x":268,"y":102,"width":44,"height":50,"id":"pause"}],"flightData":{"x":97,"y":375.1875,"width":167.046875,"height":27.03125},"threat":{"x":12,"y":307.21875,"width":106,"height":85.78125}},"sight":{"x":122.79999999999997,"y":169.07084915470614,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}};
+test('multiple broad bands in portrait preserve all natural respawn information without inactive controls', () => {
+  const source = structuredClone(respawnInactiveCapture);
+  const before = JSON.stringify(source);
+  const out = assertPacked(source.measurement, source.sight);
+  assert.equal(out.primarySearchChecks, 120_000);
+  assert(out.recoverySearchChecks! > 0 && out.recoverySearchChecks! <= 6_000);
+  assert(out.searchChecks! <= 126_000);
+  assert.equal(JSON.stringify(source), before);
+  assert.deepEqual(layoutCampaignHud(source.measurement, source.sight), out);
+});
+
+// Exact 8fa9fe7 run39163386275 measured protection geometry.
+const protectionCaptures = [{"name":"hud-normal-protected-small-landscape-text-200-priority-0.png","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":112,"y":160,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":199,"width":110,"height":3,"id":"health-track"},{"x":420,"y":118,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":144,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":210.453125,"height":27.03125,"id":"ammo"},{"x":376,"y":150,"width":180,"height":56,"id":"campaign-threat"},{"x":112,"y":60,"width":114,"height":64,"id":"campaign-hud-details"},{"x":296,"y":270,"width":72,"height":24,"id":"campaign-mode-status"},{"x":372,"y":278,"width":70.625,"height":57.1875,"id":"target-tally"},{"x":8,"y":300,"width":110,"height":9.203125,"id":"bomb-hint"}],"movableControls":[{"x":296,"y":222,"width":81.296875,"height":44,"id":"game-sound"},{"x":509,"y":60,"width":44,"height":50,"id":"pause"},{"x":475,"y":172,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":330,"y":118,"width":86.203125,"height":100.390625,"id":"loop"},{"x":475,"y":239,"width":62,"height":51.1875,"id":"fire"},{"x":420,"y":172,"width":51.1875,"height":102.390625,"id":"throttle"}],"flightData":{"x":252,"y":188,"width":210.453125,"height":27.03125},"threat":{"x":376,"y":150,"width":180,"height":56}},"sight":{"x":246.79999999999995,"y":79.0089291012429,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}},{"name":"hud-normal-protected-small-landscape-text-200-priority-4.png","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":112,"y":160,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":199,"width":110,"height":3,"id":"health-track"},{"x":420,"y":118,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":144,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":210.453125,"height":27.03125,"id":"ammo"},{"x":376,"y":150,"width":180,"height":56,"id":"campaign-threat"},{"x":112,"y":60,"width":114,"height":64,"id":"campaign-hud-details"},{"x":296,"y":270,"width":72,"height":24,"id":"campaign-mode-status"},{"x":372,"y":278,"width":70.625,"height":57.1875,"id":"target-tally"},{"x":8,"y":300,"width":110,"height":9.203125,"id":"bomb-hint"}],"movableControls":[{"x":296,"y":222,"width":81.296875,"height":44,"id":"game-sound"},{"x":509,"y":60,"width":44,"height":50,"id":"pause"},{"x":475,"y":172,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":330,"y":118,"width":86.203125,"height":100.390625,"id":"loop"},{"x":475,"y":239,"width":62,"height":51.1875,"id":"fire"},{"x":420,"y":172,"width":51.1875,"height":102.390625,"id":"throttle"}],"flightData":{"x":252,"y":188,"width":210.453125,"height":27.03125},"threat":{"x":376,"y":150,"width":180,"height":56}},"sight":{"x":246.79999999999995,"y":79.0089291012429,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}},{"name":"hud-normal-reachable-protection-landscape-text-200-priority-5.png","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":112,"y":160,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":199,"width":110,"height":3,"id":"health-track"},{"x":420,"y":118,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":144,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":210.453125,"height":27.03125,"id":"ammo"},{"x":376,"y":150,"width":180,"height":56,"id":"campaign-threat"},{"x":112,"y":60,"width":114,"height":64,"id":"campaign-hud-details"},{"x":296,"y":270,"width":72,"height":24,"id":"campaign-mode-status"},{"x":372,"y":278,"width":70.625,"height":57.1875,"id":"target-tally"},{"x":8,"y":300,"width":110,"height":9.203125,"id":"bomb-hint"}],"movableControls":[{"x":296,"y":222,"width":81.296875,"height":44,"id":"game-sound"},{"x":509,"y":60,"width":44,"height":50,"id":"pause"},{"x":475,"y":172,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":330,"y":118,"width":86.203125,"height":100.390625,"id":"loop"},{"x":475,"y":239,"width":62,"height":51.1875,"id":"fire"},{"x":420,"y":172,"width":51.1875,"height":102.390625,"id":"throttle"}],"flightData":{"x":252,"y":188,"width":210.453125,"height":27.03125},"threat":{"x":376,"y":150,"width":180,"height":56}},"sight":{"x":246.79999999999995,"y":79.0089291012429,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}}];
+for (const capture of protectionCaptures) test(`tall leading rectangle recovery preserves ${capture.name}`, () => {
+  const source = structuredClone(capture), before = JSON.stringify(source);
+  const out = assertPacked(source.measurement, source.sight);
+  assert.equal(out.primarySearchChecks, 120_000);
+  assert(out.recoverySearchChecks! > 0 && out.recoverySearchChecks! <= 6_000);
+  assert(out.searchChecks! <= 126_000);
+  assert.equal(out.searchChecks, out.primarySearchChecks! + out.recoverySearchChecks!);
+  const lane = { x: source.measurement.canvas.width / 2 - 42, y: source.measurement.canvas.height / 2 - 42, width: 84, height: 84 };
+  for (const rect of [out.radar.rect, ...out.panels!.map(p => p.rect), ...out.controls!.map(p => p.rect)]) assert(!intersects(rect, lane, 4));
+  assert.deepEqual(layoutCampaignHud(source.measurement, source.sight), out);
+  assert.equal(JSON.stringify(source), before);
+});
+
+// Exact 558245c full run39182532375 initial Normal portrait 200% measurement.
+const initialPortraitCapture={"measurement":{"canvas":{"x":0,"y":0,"width":320,"height":568},"bounds":{"x":8,"y":8,"width":304,"height":552},"obstacles":[{"x":8,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":237.5,"y":8,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":8,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":84.5,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"},{"x":161,"y":66.578125,"width":74.5,"height":56.578125,"id":"campaign-site"}],"panels":[{"x":8,"y":238,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":263,"width":118,"height":3,"id":"health-track"},{"x":8,"y":276,"width":94,"height":50,"id":"instrument"},{"x":97,"y":341.1875,"width":144,"height":26,"id":"campaign-limit"},{"x":97,"y":375.1875,"width":210.453125,"height":27.03125,"id":"ammo"},{"x":8,"y":220,"width":114,"height":72,"id":"campaign-hud-details"},{"x":8,"y":140,"width":72,"height":24,"id":"campaign-mode-status"},{"x":8,"y":140,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":87,"y":430,"width":81.296875,"height":44,"id":"game-sound"},{"x":268,"y":430,"width":44,"height":50,"id":"pause"},{"x":88.53125,"y":497.3125,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":221.8984375,"y":190.703125,"width":86.203125,"height":118.59375,"id":"loop"},{"x":172,"y":452,"width":96,"height":96,"id":"fire"},{"x":22.390625,"y":362,"width":64,"height":128,"id":"throttle"}],"flightData":null,"threat":null},"sight":{"x":122.79999999999994,"y":169.07084915470614,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"},"label":{"x":84,"y":145.07084915470614,"width":120.4765625,"height":20}};
+test('two tall leading items retain actual full-ammunition portrait HUD and canvas guide',()=>{
+ const c=structuredClone(initialPortraitCapture),before=JSON.stringify(c),out=assertPacked(c.measurement,c.sight);
+ assert.equal(out.primarySearchChecks,120000);assert(out.recoverySearchChecks!<=6000);assert(out.searchChecks!<=126000);
+ const host=new CampaignHudLayout({measure:()=>c.measurement,observe:()=>()=>{},applyThreat:()=>{},applyPanels:()=>{}});
+ assert.equal(host.update(c.sight)!.status,'placed');
+ const label=host.placeCanvasLabel('bomb-guide',c.label);assert.equal(label.status,'placed');
+ const updated=host.diagnostics();
+ for(const rect of [updated.radar!.rect,...updated.panels!.map(p=>p.rect),...updated.obstacles!])assert(!intersects(label.rect,rect,4));
+ assert.equal(JSON.stringify(c),before);assert.deepEqual(layoutCampaignHud(c.measurement,c.sight),out);
+});
+
+// Exact 53549294 run39218607354 real-DOM reflow measurements; unchanged full text and controls.
+const semanticRegionCaptures = [{"name":"easy-deadline-clear-text-200-narrow-alert-column","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":8,"y":140,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":180,"width":110,"height":3,"id":"health-track"},{"x":8,"y":190,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":131.28125,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":450,"y":150,"width":106,"height":108,"id":"campaign-threat"},{"x":161.875,"y":221.1875,"width":244.25,"height":39.265625,"id":"reload-status"},{"x":450,"y":84,"width":106,"height":82,"id":"announcement"},{"x":8,"y":220,"width":114,"height":64,"id":"campaign-hud-details"},{"x":8,"y":140,"width":72,"height":24,"id":"campaign-mode-status"},{"x":8,"y":140,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":356,"y":266,"width":81.296875,"height":44,"id":"game-sound"},{"x":310,"y":266,"width":44,"height":50,"id":"pause"},{"x":185.25,"y":255.046875,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":428.3359375,"y":160.9921875,"width":86.203125,"height":100.390625,"id":"loop"}],"flightData":{"x":252,"y":188,"width":167.046875,"height":27.03125},"threat":{"x":450,"y":150,"width":106,"height":108}},"sight":{"x":230.8,"y":106.8,"width":106.4,"height":106.4,"id":"aim-and-reload-ring"}},{"name":"easy-deadline-low-text-200-narrow-alert-column","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":8,"y":140,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":180,"width":110,"height":3,"id":"health-track"},{"x":8,"y":190,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":131.28125,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":450,"y":150,"width":106,"height":108,"id":"campaign-threat"},{"x":161.875,"y":221.1875,"width":244.25,"height":39.265625,"id":"reload-status"},{"x":171.4609375,"y":182,"width":225.078125,"height":32,"id":"warning"},{"x":450,"y":84,"width":106,"height":82,"id":"announcement"},{"x":8,"y":220,"width":114,"height":64,"id":"campaign-hud-details"},{"x":8,"y":140,"width":72,"height":24,"id":"campaign-mode-status"},{"x":8,"y":140,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":356,"y":266,"width":81.296875,"height":44,"id":"game-sound"},{"x":310,"y":266,"width":44,"height":50,"id":"pause"},{"x":185.25,"y":255.046875,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":428.3359375,"y":160.9921875,"width":86.203125,"height":100.390625,"id":"loop"}],"flightData":{"x":252,"y":188,"width":167.046875,"height":27.03125},"threat":{"x":450,"y":150,"width":106,"height":108}},"sight":{"x":230.8,"y":106.8,"width":106.4,"height":106.4,"id":"aim-and-reload-ring"}},{"name":"normal-deadline-low-text-200-content-box-padding-one","measurement":{"canvas":{"x":0,"y":0,"width":568,"height":320},"bounds":{"x":8,"y":8,"width":552,"height":304},"obstacles":[{"x":8,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":87.140625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":166.28125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":245.421875,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":324.5625,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":403.703125,"y":8,"width":77.140625,"height":55.796875,"id":"campaign-site"},{"x":482.84375,"y":8,"width":77.15625,"height":55.796875,"id":"campaign-site"}],"panels":[{"x":112,"y":160,"width":122.375,"height":35,"id":"health-label"},{"x":8,"y":199,"width":110,"height":3,"id":"health-track"},{"x":420,"y":118,"width":110,"height":50,"id":"instrument"},{"x":130,"y":140,"width":131.28125,"height":26,"id":"campaign-limit"},{"x":252,"y":188,"width":167.046875,"height":27.03125,"id":"ammo"},{"x":418,"y":150,"width":138,"height":80,"id":"campaign-threat"},{"x":215,"y":168.203125,"width":138,"height":70.53125,"id":"reload-status"},{"x":8,"y":226,"width":223.078125,"height":30,"id":"warning"},{"x":325,"y":60,"width":232,"height":28,"id":"announcement"},{"x":112,"y":60,"width":114,"height":64,"id":"campaign-hud-details"},{"x":296,"y":270,"width":72,"height":24,"id":"campaign-mode-status"},{"x":372,"y":278,"width":70.625,"height":57.1875,"id":"target-tally"}],"movableControls":[{"x":296,"y":222,"width":81.296875,"height":44,"id":"game-sound"},{"x":509,"y":60,"width":44,"height":50,"id":"pause"},{"x":475,"y":172,"width":72.53125,"height":62.6875,"id":"bomb"},{"x":330,"y":118,"width":86.203125,"height":100.390625,"id":"loop"},{"x":475,"y":239,"width":62,"height":51.1875,"id":"fire"},{"x":420,"y":172,"width":51.1875,"height":102.390625,"id":"throttle"}],"flightData":{"x":252,"y":188,"width":167.046875,"height":27.03125},"threat":{"x":418,"y":150,"width":138,"height":80}},"sight":{"x":246.79999999999995,"y":79.0089291012429,"width":74.4,"height":74.4,"id":"aim-and-reload-ring"}}];
+for (const capture of semanticRegionCaptures) test(`bounded semantic recovery fits measured ${capture.name}`, () => {
+  const source = structuredClone(capture), before = JSON.stringify(source);
+  const out = assertPacked(source.measurement, source.sight);
+  assert.equal(out.primarySearchChecks, 120_000);
+  assert(out.recoverySearchChecks! > 0 && out.recoverySearchChecks! <= 6_000);
+  assert(out.searchChecks! <= 126_000);
+  assert.equal(out.searchChecks, out.primarySearchChecks! + out.recoverySearchChecks!);
+  assert.deepEqual(layoutCampaignHud(source.measurement, source.sight), out);
+  assert.equal(JSON.stringify(source), before);
+});
+
+test('critical announcement reflow is limited to visible active short-landscape notices', () => {
+  const css = readFileSync(new URL('../src/style.css', import.meta.url), 'utf8');
+  const marker = '/* Active critical-announcement regions:';
+  assert.ok(css.includes(marker));
+  const block = css.slice(css.indexOf(marker));
+  assert.ok(block.includes('(orientation: landscape) and (max-width: 600px) and (max-height: 360px)'));
+  assert.ok(block.includes(':not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden]))'));
+  assert.ok(block.includes('[data-mode="easy"]'));
+  assert.ok(block.includes('[data-mode="normal"]'));
+  assert.ok(block.includes('padding: 1px'));
+  assert.ok(!/font-size|line-height|display:\s*none|visibility:\s*hidden|#fire|#loop|#bomb|#throttle/.test(block));
+});
+
+function semanticTemplateInput() {
+  const capture = structuredClone(semanticRegionCaptures[2]), m = capture.measurement;
+  return { bounds: m.bounds, items: [...m.panels, ...m.movableControls, { id: 'radar', x: 0, y: 0, width: 100, height: 116 }],
+    obstacles: [...m.obstacles, { id: 'central-flight-lane', x: m.canvas.width / 2 - 42, y: m.canvas.height / 2 - 42, width: 84, height: 84 }, capture.sight] };
+}
+
+test('semantic regions fail closed on invalid roles, dimensions, fixed anchors and exhausted work', () => {
+  const original = semanticTemplateInput(), before = JSON.stringify(original);
+  const run = (input = original, remaining = 6_000) => {
+    const work = { remaining }, result = packSemanticRegions(input.bounds, input.obstacles, input.items, work);
+    assert(work.remaining >= 0 || !Number.isFinite(remaining) || remaining < 0);
+    return { result, used: remaining - work.remaining };
+  };
+  const validResult = run(); assert.ok(validResult.result); assert.equal(validResult.used, 562);
+  assert.equal(run(original, 561).result, null);
+  for (const remaining of [-1, 0, 0.5, Infinity, NaN, 6_001]) assert.equal(run(original, remaining).result, null);
+  for (const value of [NaN, Infinity, -1, 0]) {
+    const c = structuredClone(original); c.items[0].width = value; assert.equal(run(c).result, null);
+  }
+  for (const kind of ['missing', 'duplicate', 'extra', 'fixed-missing', 'fixed-extra', 'fixed-duplicate', 'site-missing', 'site-extra'] as const) {
+    const c = structuredClone(original);
+    if (kind === 'missing') c.items.pop();
+    if (kind === 'duplicate') c.items[1].id = c.items[0].id;
+    if (kind === 'extra') c.items.push({ ...c.items[0], id: 'extra' });
+    if (kind === 'fixed-missing') c.obstacles.pop();
+    if (kind === 'fixed-extra') c.obstacles.push({ ...c.obstacles.at(-1)!, id: 'extra' });
+    if (kind === 'fixed-duplicate') c.obstacles[c.obstacles.length - 1].id = 'central-flight-lane';
+    if (kind === 'site-missing') c.obstacles.shift();
+    if (kind === 'site-extra') c.obstacles.unshift({ ...c.obstacles[0] });
+    assert.equal(run(c).result, null, kind);
+  }
+  assert.equal(JSON.stringify(original), before);
+});
+
+test('semantic region zero-slack boundaries reject unsafe growth and remain deterministic', () => {
+  const original = semanticTemplateInput();
+  for (const delta of [-0.01, 0, 0.01]) {
+    const c = structuredClone(original); for (const p of c.items) { p.width += delta; p.height += delta; }
+    const a = packSemanticRegions(c.bounds, c.obstacles, c.items, { remaining: 6000 });
+    const b = packSemanticRegions(c.bounds, c.obstacles, c.items, { remaining: 6000 });
+    assert.deepEqual(a, b);
+    if (delta > 0) { assert.equal(a, null); continue; }
+    assert.ok(a);
+    const rects = [...a.values()];
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i];
+      assert(r.x >= c.bounds.x && r.y >= c.bounds.y && r.x + r.width <= c.bounds.x + c.bounds.width && r.y + r.height <= c.bounds.y + c.bounds.height);
+      for (const q of [...c.obstacles, ...rects.slice(i + 1)]) assert(!intersects(r, q, 4));
+    }
+  }
+});
+
+
+// Exact 522caa37 run39221941265 paired low-altitude measurements share every
+// shape except campaign-limit: 0:30 is 131.28125px; the original 19:56 is 144px.
+// Keep all content/control dimensions; do not substitute the deadline value.
+function easyLowRelativeInput() {
+  const capture = structuredClone(semanticRegionCaptures[1]);
+  capture.measurement.panels.find(p => p.id === 'campaign-limit')!.width = 144;
+  const m = capture.measurement;
+  return { capture, bounds: m.bounds, items: [...m.panels, ...m.movableControls, { id: 'radar', x: 0, y: 0, width: 100, height: 116 }],
+    obstacles: [...m.obstacles, { id: 'central-flight-lane', x: m.canvas.width / 2 - 42, y: m.canvas.height / 2 - 42, width: 84, height: 84 }, capture.sight] };
+}
+
+test('relative Easy regions retain the wider original time value with independent low-altitude warning', () => {
+  const input = easyLowRelativeInput(), before = JSON.stringify(input);
+  const out = assertPacked(input.capture.measurement, input.capture.sight);
+  assert.equal(out.primarySearchChecks, 120000); assert.equal(out.recoverySearchChecks, 563);
+  assert.equal(out.searchChecks, 120563);
+  assert.deepEqual(layoutCampaignHud(input.capture.measurement, input.capture.sight), out);
+  assert.equal(JSON.stringify(input), before);
+});
+
+test('Easy relative regions enforce exact schema, work cap and safe shape boundaries', () => {
+  const original = easyLowRelativeInput(), before = JSON.stringify(original);
+  const run = (c = original, remaining = 6000) => packSemanticRegions(c.bounds, c.obstacles, c.items, { remaining });
+  assert.ok(run()); assert.equal(run(original, 562), null); assert.ok(run(original, 563));
+  for (const value of [NaN, Infinity, 0, -1]) {
+    const c = structuredClone(original); c.items[0].height = value; assert.equal(run(c), null);
+  }
+  for (const kind of ['missing', 'duplicate', 'fixed-missing', 'fixed-duplicate']) {
+    const c = structuredClone(original);
+    if (kind === 'missing') c.items.pop();
+    if (kind === 'duplicate') c.items[1].id = c.items[0].id;
+    if (kind === 'fixed-missing') c.obstacles.pop();
+    if (kind === 'fixed-duplicate') c.obstacles[c.obstacles.length - 1].id = 'central-flight-lane';
+    assert.equal(run(c), null, kind);
+  }
+  for (const delta of [-0.01, 0, 1e-8, 0.01]) {
+    const c = structuredClone(original); for (const p of c.items) { p.width += delta; p.height += delta; }
+    const result = run(c); assert.deepEqual(result, run(c));
+    if (delta === 0.01) { assert.equal(result, null); continue; }
+    assert.ok(result); const rects = [...result.values()];
+    for (let i = 0; i < rects.length; i++) {
+      const r = rects[i]; assert(r.x >= c.bounds.x && r.y >= c.bounds.y && r.x + r.width <= c.bounds.x + c.bounds.width && r.y + r.height <= c.bounds.y + c.bounds.height);
+      for (const q of [...c.obstacles, ...rects.slice(i + 1)]) assert(!intersects(r, q, 4));
+    }
+  }
+  assert.equal(JSON.stringify(original), before);
 });

@@ -1221,7 +1221,7 @@ p {
 #app[data-campaign-hud="compact"] .flight-data { display: contents; }
 #app[data-campaign-hud="compact"] .campaign-sites {
   top: max(8px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left));
-  right: max(8px, env(safe-area-inset-right)); max-width: none; gap: 2px;
+  right: max(8px, env(safe-area-inset-right)); max-width: none; gap: 2px; align-items: start;
 }
 #app[data-campaign-hud="compact"] .campaign-site { padding: 2px; }
 #app[data-campaign-hud="compact"] .campaign-site-heading { flex-wrap: wrap; gap: 2px; }
@@ -1299,6 +1299,11 @@ p {
 }
 #campaign-hud-details .campaign-site-force,
 #campaign-hud-details .campaign-site-wave { overflow: visible; text-overflow: clip; font-size: 9px; }
+/* A moved site's pixel line-height snapshot must not compress enlarged type.
+   Measure complete lines for the heading, force and reinforcement readouts. */
+#campaign-hud-details [data-site-detail],
+#campaign-hud-details [data-site-detail] * { line-height: 1.3 !important; }
+#campaign-hud-details [data-site-detail] > b { display: block; }
 @media (orientation: landscape) and (max-height: 600px) {
   #campaign-hud-details .campaign-site-force,
   #campaign-hud-details .campaign-site-wave { font-size: 8px; }
@@ -1322,11 +1327,11 @@ p {
 #app[data-campaign-hud="compact"] #hud > .target-tally { font-size: 9px; }
 #app[data-campaign-hud="compact"] #hud > .target-tally > span,
 #app[data-campaign-hud="compact"] #hud > .target-tally > small { font-size: 9px; }
-#app[data-campaign-hud="compact"] #hud > .target-tally > b { font-size: 22px; line-height: 1; }
+#app[data-campaign-hud="compact"] #hud > .target-tally > b { font-size: 22px; line-height: 1.3 !important; }
 #campaign-mode-status { font-size: 9px; }
 
 #app[data-campaign-hud="compact"] .campaign-site-state {
-  display: block; white-space: normal; overflow-wrap: anywhere;
+  display: block; white-space: normal; overflow-wrap: anywhere; line-height: 1.3 !important;
 }
 
 /* At 320px with enlarged type, two padded pixels on either side forced the
@@ -1334,8 +1339,9 @@ p {
    Recover padding, never type size or status text. */
 @media (max-width: 360px) and (orientation: portrait) {
   #app[data-campaign-hud="compact"] .campaign-site { padding: 0; }
-  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(-n+4) { min-height: 56px; }
-  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(n+5) { min-height: 84px; }
+  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(-n+4) { min-height: 48px; }
+  #app[data-campaign-hud="compact"] #campaign-sites .campaign-site:nth-child(n+5) { min-height: 48px; }
+  #app[data-campaign-hud="compact"] .campaign-site-progress { margin-block: 0; }
   #campaign-hud-details { height: 72px; }
   #app[data-campaign-hud="compact"][data-mode="normal"] .respawn-status { padding: 4px 8px; line-height: 1.15; }
 }
@@ -1452,6 +1458,16 @@ p {
   #app[data-campaign-hud="compact"][data-mode="normal"] #hud #throttle { left: 420px !important; top: 172px !important; }
 }
 
+/* Fixed critical readouts need real space alongside the enlarged controls.
+   Remove decorative padding and inherited paragraph leading, never text or
+   font size. Content-sized counters avoid unnecessary second lines. */
+#app[data-campaign-hud="compact"] #hud :is(#campaign-threat, #reload-status, #warning, #respawn-status, #announcement) {
+  padding: 2px; line-height: 1.3 !important;
+}
+#app[data-campaign-hud="compact"] #hud .flight-data > :is(.campaign-limit, .ammo) {
+  width: max-content; max-width: calc(100dvw - 16px); line-height: 1.3;
+}
+
 /* Spring-centred rate lever: rectangular bounds match the settings preview. */
 #app #hud #throttle {
   height: var(--control-height, 128px);
@@ -1475,13 +1491,19 @@ p {
 
 
 
-/* Keep portrait respawn packing within the original typography and scroll contract. */
+/* A respawn warning is a fixed readout, not a second scroll viewport. Give its
+   complete enlarged text a measured natural-height box. */
 @media (max-width: 360px) and (orientation: portrait) {
   #app[data-campaign-hud="compact"] #campaign-hud-details .target-tally,
   #app[data-campaign-hud="compact"] #hud > .target-tally { font-size: 8px; }
 
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #respawn-status {
-    top: 160px !important; height: 120px !important; min-height: 120px !important; max-height: 120px !important; box-sizing: border-box !important; padding: 2px 0 !important; line-height: 1 !important; overflow-x: hidden !important; overflow-y: auto !important; pointer-events: auto !important; overscroll-behavior: contain; touch-action: pan-y; scrollbar-width: thin;
+    left: max(8px, env(safe-area-inset-left)) !important; top: 160px !important;
+    width: calc(100dvw - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right))) !important;
+    max-width: calc(100dvw - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right))) !important;
+    height: auto !important; min-height: 0 !important; max-height: none !important;
+    box-sizing: border-box !important; padding: 2px !important; line-height: 1.3 !important;
+    overflow: visible !important; pointer-events: none !important;
   }
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #announcement {
     top: 340px !important;
@@ -1494,9 +1516,84 @@ p {
   }
 }
 
+/* Let long fixed alerts wrap beside the unchanged Easy sight reservation.
+   Only the shape changes: full strings, enlarged type and safety gap remain. */
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"] #hud #campaign-threat,
+  #app[data-campaign-hud="compact"][data-mode] #hud #announcement[data-campaign-critical="true"] {
+    width: calc(50dvw - 13.5vmin - 15px - max(8px, env(safe-area-inset-left), env(safe-area-inset-right))) !important;
+    max-width: calc(50dvw - 13.5vmin - 15px - max(8px, env(safe-area-inset-left), env(safe-area-inset-right))) !important;
+    white-space: normal; overflow-wrap: anywhere; padding: 2px;
+  }
+}
+
 
 @media (max-width: 360px) and (orientation: portrait) {
   #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud #throttle {
     height: min(var(--control-height, 128px), 100px) !important; max-height: 100px !important;
+  }
+}
+
+/* Complete enlarged respawn readouts need compact text flow, not smaller
+   text or touch targets. Remove only decoration, keep all safety reservations,
+   and let the original strings determine each box's natural height. */
+@media (max-width: 360px) and (orientation: portrait) {
+  #app[data-campaign-hud="compact"] .campaign-site { border-width: 0; }
+  #app[data-campaign-hud="compact"] .campaign-site-heading { gap: 0; }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud :is(#campaign-threat, #reload-status, #respawn-status, #announcement[data-campaign-critical="true"]) {
+    padding: 0 !important; border-width: 0;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud :is(#campaign-threat, #announcement[data-campaign-critical="true"]) {
+    width: 106px !important; max-width: 106px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #hud #respawn-status {
+    width: 238px !important;
+    max-width: calc(100dvw - max(8px, env(safe-area-inset-left)) - max(8px, env(safe-area-inset-right))) !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) .flight-data > .instrument {
+    width: max-content; flex-wrap: nowrap; white-space: nowrap;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:has(#respawn-status:not([hidden])) #campaign-hud-details {
+    height: 64px !important;
+  }
+}
+
+/* Preserve full enlarged secondary text through the existing scroll viewport.
+   Only short Normal landscape uses a smaller window; fixed critical readouts,
+   control preferences and the sight reservation keep their measured sizes. */
+@media (orientation: landscape) and (max-width: 600px) and (max-height: 360px) {
+  #app[data-campaign-hud="compact"][data-mode="normal"] #campaign-hud-details {
+    height: 64px;
+  }
+}
+
+/* Respawn freezes flight: keep state information, pause and sound available,
+   but remove only the four inactive flight controls from layout and focus/AT.
+   Individual hidden flags and custom dimensions are untouched on restoration. */
+#app.flight-controls-waiting [data-flight-control] { display: none !important; }
+
+/* Active critical-announcement regions: keep every readout and its type size.
+   Narrow Easy columns and Normal's content-preserving one-pixel padding leave
+   room for independent hazards. Hidden notices and frozen flight use their
+   established lifecycle layouts; saved control dimensions are untouched. */
+@media (orientation: landscape) and (max-width: 600px) and (max-height: 360px) {
+  #app[data-campaign-hud="compact"][data-mode="easy"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud :is(#campaign-threat, #announcement) {
+    width: 106px !important; max-width: 106px !important;
+    white-space: normal; overflow-wrap: anywhere;
+  }
+  #app[data-campaign-hud="compact"][data-mode="easy"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #campaign-hud-details {
+    height: 64px;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud :is(#campaign-threat, #reload-status, #warning, #announcement) {
+    padding: 1px; white-space: normal; overflow-wrap: anywhere;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud :is(#campaign-threat, #reload-status) {
+    width: 138px !important; max-width: 138px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud #announcement {
+    width: 232px !important; max-width: 232px !important;
+  }
+  #app[data-campaign-hud="compact"][data-mode="normal"]:not(.flight-controls-waiting):has(#announcement[data-campaign-critical="true"]:not([hidden])) #hud #warning {
+    width: max-content;
   }
 }

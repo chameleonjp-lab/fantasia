@@ -1,10 +1,11 @@
-import {unreadDetailFragments,nativeTouchTravel} from './detail-navigation';
+import {unreadDetailFragments} from './detail-navigation';
 import {expect} from '@playwright/test';
 import {detailScrollMeasurement,detailSettlingIssues,detailOperationIssues} from './detail-scroll-observation';
 import {RealRendererDriver} from './real-driver';
 import {collectHudTextGeometry,detailGeometrySnapshot,textGeometryIssues,type TextRegion} from './text-geometry';
+import {activeSampleIssues} from './active-critical-contract';
 import {createVisibilityPredicate} from './geometry-contract';
-import {detailAccessIssues,activeFixedStatusIds,type FixedStatusEvidence,type DetailAccessEvidence} from './detail-scroll-contract';
+import {detailAccessIssues,activeFixedStatusIds,detailItemPolicy,detailLifecycleIssues,planDetailKeys,planDetailTouch,type FixedStatusEvidence,type DetailAccessEvidence} from './detail-scroll-contract';
 
 /** Native navigation only: never assign scrollTop, dispatch synthetic events,
  * shrink text, alter layout, or replace the runtime input/renderer. */
@@ -22,6 +23,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
   expect(contract.max,'Fallback must actually provide a scrollable detail region').toBeGreaterThan(0);
   const evidence:DetailAccessEvidence={active:true,...(phase==='respawning'?{phase}:{}),viewportId:'campaign-hud-details',expectedEntryIds:contract.expected,actualEntryIds:contract.actual,expectedFragments:[],persistentIds:[],samples:[]};
   const visibility=await d.page.evaluateHandle(createVisibilityPredicate);
+  const itemPolicy=await d.page.evaluateHandle(`(${detailItemPolicy.toString()})`);
   const collector=await d.page.evaluateHandle(`(${collectHudTextGeometry.toString()})`);
   await viewport.evaluate(node=>{
     const events:any[]=[];
@@ -45,23 +47,27 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
   });
   // One synchronous browser task reads geometry, scroll offsets, viewport,
   // critical status, renderer reservations and raw application input together.
-  const capture=(cap:number)=>d.call('atomic detail scroll observation',()=>d.page.evaluate(({collector,visibility})=>{
+  const capture=(cap:number)=>d.call('atomic detail scroll observation',()=>d.page.evaluate(({collector,visibility,itemPolicy})=>{
     const scrollTopBefore=document.querySelector<HTMLElement>('#campaign-hud-details')!.scrollTop;
     const data=collector(visibility),state=(window as any).__fantasiaReadState(false),input=state.controlsInput;
     const v=document.querySelector<HTMLElement>('#campaign-hud-details')!,app=document.querySelector<HTMLElement>('#app')!,hud=document.querySelector<HTMLElement>('#hud')!;
     const rect=document.querySelector<HTMLElement>('#flight')!.getBoundingClientRect(),layout=state.render.hudLayout;
     const statusEvidence={screen:state.screen,status:state.status,position:state.player.position,protectionTicks:state.campaignPlayer.protectionTicks,reloadTicksRemaining:state.player.reloadTicksRemaining,
       text:Object.fromEntries(['campaign-threat','reload-status','payload-status'].map(id=>[id,document.getElementById(id)?.textContent??'']))};
-    const required=[...document.querySelectorAll<HTMLElement>('#campaign-sites [data-site], #campaign-sites .campaign-site-number, #campaign-sites .campaign-site-owner, #campaign-sites .campaign-site-state, #hud button, #hud [role="slider"], #campaign-mode-status, #lives-count, [data-campaign-critical="true"]')].filter(n=>n.matches('[data-campaign-critical="true"]')?!!n.textContent?.trim():!n.closest('[hidden]'));
+    const items=[...document.querySelectorAll<HTMLElement>('#campaign-sites [data-site], #campaign-sites .campaign-site-number, #campaign-sites .campaign-site-owner, #campaign-sites .campaign-site-state, #hud button, #hud [role="slider"], #campaign-mode-status, #lives-count, [data-campaign-critical="true"]')];
+    const policy=(n:HTMLElement)=>itemPolicy(statusEvidence,{id:n.id,hidden:!!n.closest('[hidden]'),critical:n.matches('[data-campaign-critical="true"]'),text:n.textContent??'',lifecycle:n.dataset.lifecycle??''});
+    const required=items.filter(n=>policy(n)==='required');
+    const inactiveControls=['fire','loop','bomb','throttle'].map(id=>{const nodes=[...document.querySelectorAll<HTMLElement>(`#${id}`)];return {id,count:nodes.length,rendered:nodes.some(n=>{const r=n.getBoundingClientRect(),s=getComputedStyle(n);return !n.closest('[hidden]')&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0;})};});
+    const protectionDuplicates=items.filter(n=>policy(n)==='duplicate-protection').map(n=>({hidden:n.hidden,inert:n.inert,ariaHidden:n.getAttribute('aria-hidden')}));
     const candidates=[...new Set([...required,...['campaign-threat','reload-status','payload-status','warning','respawn-status'].map(id=>document.getElementById(id)).filter((n):n is HTMLElement=>!!n)])];
     const visible=candidates.filter(n=>{const r=n.getBoundingClientRect(),s=getComputedStyle(n);return !n.closest('[hidden]')&&s.display!=='none'&&s.visibility!=='hidden'&&r.width>0&&r.height>0&&r.left>=-.75&&r.top>=-.75&&r.right<=innerWidth+.75&&r.bottom<=innerHeight+.75;});
     const ids={of(n:HTMLElement){return n.id||(n.dataset.site?`site-${n.dataset.site}`:`${n.className}-${n.closest<HTMLElement>('[data-site]')?.dataset.site}`);}};
-    return {geometry:data,statusEvidence,layout,focusEntry:(document.activeElement as HTMLElement)?.closest<HTMLElement>('[data-campaign-detail]')?.dataset.campaignDetail??null,canvas:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},input,
+    return {geometry:data,statusEvidence,layout,inactiveControls,protectionDuplicates,focusEntry:(document.activeElement as HTMLElement)?.closest<HTMLElement>('[data-campaign-detail]')?.dataset.campaignDetail??null,canvas:{x:rect.x,y:rect.y,width:rect.width,height:rect.height},input,
       scrollTopBefore,motion:{...(window as any).__detailScrollEvents.motion},scrollHeight:v.scrollHeight,clientHeight:v.clientHeight,
       scrollTop:v.scrollTop,phase:state.phase,neutralInput:input.keys.length===0&&input.steerPointer===null&&input.throttlePointer===null&&input.throttle===0&&input.turn===0&&input.climb===0&&Object.values(input.heldPointers).every((ids:any)=>ids.length===0),
       fullHudScroll:{windowX:scrollX,windowY:scrollY,appLeft:app.scrollLeft,appTop:app.scrollTop,hudLeft:hud.scrollLeft,hudTop:hud.scrollTop},
       requiredIds:required.map(ids.of),visibleIds:visible.map(ids.of)};
-  },{collector,visibility} as any),cap);
+  },{collector,visibility,itemPolicy} as any),cap);
   // No full text walk or runtime-state serialization while waiting for native
   // completion. Reads never advance the page clock or bypass a reflowing runtime.
   const light=(cap:number,readRuntime=false)=>d.call('lightweight native scroll observation',()=>viewport.evaluate((v,readRuntime)=>{
@@ -81,7 +87,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     const history:any[]=[];let candidates=0,fullCaptures=0;
     const record=(stage:string,value:any)=>{candidates++;const entry={stage,elapsedWallMs:performance.now()-started,...value};
       if(history.length===32)history.splice(8,1);history.push(entry);};
-    let first:ReturnType<typeof detailScrollMeasurement>|undefined,firstAt=0,atomic:any,settling:any,lastLight:any,lightAt=0;
+    let first:ReturnType<typeof detailScrollMeasurement>|undefined,firstAt=0,atomic:any,settling:any,lastLight:any;
     let failure:string|undefined;
     try {
       stage='settling-budget';deadline=started+Math.min(1500,d.budget.remaining('native detail scroll settling'));
@@ -89,8 +95,11 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
         stage='native-completion-wait';const probe=await light(Math.max(1,deadline-performance.now()));record('native-wait',probe);
         const operationIssues=detailOperationIssues(operation,probe);
         if(operationIssues.length){first=undefined;lastLight=undefined;}
-        else if(!lastLight||JSON.stringify(lastLight)!==JSON.stringify(probe)){lastLight=probe;lightAt=performance.now();first=undefined;}
-        else if(performance.now()-lightAt>=32){
+        else {
+          // Native completion is already proven. The first full observation is
+          // the stability baseline; a separate preliminary 32ms wait duplicates it.
+          if(!lastLight||JSON.stringify(lastLight)!==JSON.stringify(probe)){lastLight=probe;first=undefined;}
+          if(!first||performance.now()-firstAt>=32){
           fullCaptures++;record('full-capture-start',{fullCaptures});
           stage='full-atomic-capture';atomic=await capture(Math.max(1,deadline-performance.now()));const measurement=detailScrollMeasurement(atomic),now=performance.now();
           record('full-capture-result',{scrollTop:atomic.scrollTop,scrollTopBefore:atomic.scrollTopBefore,motion:atomic.motion,
@@ -101,6 +110,7 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
           else if(first&&JSON.stringify(first)===JSON.stringify(measurement)&&now-firstAt>=32){
             settling={first,elapsedWallMs:now-firstAt,operation:operationEvidence,totalWallMs:now-started};break;
           }else if(!first||JSON.stringify(first)!==JSON.stringify(measurement)){first=measurement;firstAt=now;}
+          }
         }
         await d.call('native detail scroll poll interval',()=>new Promise<void>(resolve=>setTimeout(resolve,16)),Math.max(1,deadline-performance.now()));
       }
@@ -111,7 +121,13 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
       d.evidence.push({label:'detail-scroll-observation-attempt',method,operation:operationEvidence,outcome:settling?'settled':'failed',
         stage,cumulativeWallMs:performance.now()-traversalStarted,totalWallMs:performance.now()-started,candidates,fullCaptures,history,ticks,...(failure?{failure}:{})});
     }
-    expect(detailSettlingIssues({...atomic,settling})).toEqual([]);lastAtomic=atomic;stage='validate-geometry';
+    // Persist the complete atomic observation before any contract assertion.
+    d.evidence.push({label:'detail-scroll-atomic-before-validation',method,...atomic,settling});
+    lastAtomic=atomic;stage='validate-geometry';
+    expect(detailSettlingIssues({...atomic,settling})).toEqual([]);
+    expect(detailLifecycleIssues(atomic.statusEvidence,atomic.inactiveControls,atomic.protectionDuplicates)).toEqual([]);
+    if(atomic.statusEvidence.screen==='playing'&&atomic.statusEvidence.status==='running'&&atomic.statusEvidence.protectionTicks>0)
+      expect(activeSampleIssues('protection',atomic)).toEqual([]);
     const data=atomic.geometry,snapshot=detailGeometrySnapshot(data),layout=atomic.layout,canvas=atomic.canvas;
     expect(canvas.width).toBeGreaterThan(0);expect(canvas.height).toBeGreaterThan(0);expect(layout.status).toBe('placed');
     const currentReservations:TextRegion[]=[{key:'canvas:radar',kind:'radar',rect:layout.radar.rect},
@@ -160,22 +176,28 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
     const seen=(method:'keyboard'|'touch')=>new Set(evidence.samples.filter(s=>s.method===method).flatMap(s=>s.fullyVisibleFragments));
     const complete=(method:'keyboard'|'touch')=>evidence.expectedFragments.every(id=>seen(method).has(id));
     // Preserve a native held-arrow/consumed-input check, including any live reflow.
+    const nativeSteps:Partial<Record<'arrow'|'page',number>>={};
+    const rememberStep=(kind:'arrow'|'page',before:number,after:number)=>{
+      const max=lastAtomic.scrollHeight-lastAtomic.clientHeight;
+      if(after>0&&after<max&&Math.abs(after-before)>0)nativeSteps[kind]=Math.abs(after-before);
+    };
     const heldArrow=await beginOperation('arrow');await d.page.keyboard.down('ArrowDown');await consumedNeutral();await d.page.keyboard.up('ArrowDown');
-    top=await sample('keyboard',heldArrow);
+    top=await sample('keyboard',heldArrow);rememberStep('arrow',heldArrow.before.scrollTop,top);
     const restart=await beginOperation('home');await d.page.keyboard.press('Home');top=await sample('keyboard',restart);
     // Native Tab scrolls the real focusable entry into view. DOM focus is used
     // only for the viewport setup above, never to substitute for this traversal.
     for(const [entryIndex,entryId] of contract.navigable.entries()){
       if(entryIndex>0&&complete('keyboard'))break;
       const operation=await beginOperation('tab',1,entryId);await d.page.keyboard.press('Tab');top=await sample('keyboard',operation);
-      const visited=new Set<string>();
       const fragmentLimit=unreadDetailFragments(lastAtomic.geometry,new Set(),entryId).length*4+4;
       for(let i=0;i<fragmentLimit;i++){
         const pending=unreadDetailFragments(lastAtomic.geometry,seen('keyboard'),entryId);if(!pending.length)break;
-        const target=pending[0],direction=target.delta<0?-1:1,key=`${top}:${target.id}`;
-        const phaseShift=visited.has(key);visited.add(key);
-        const kind=phaseShift?'page':'arrow',button=phaseShift?(direction>0?'PageDown':'PageUp'):(direction>0?'ArrowDown':'ArrowUp');
+        const target=pending[0],plan=planDetailKeys({top,max:lastAtomic.scrollHeight-lastAtomic.clientHeight,delta:target.delta,window:target.window,steps:nativeSteps});
+        d.evidence.push({label:'detail-scroll-key-plan',targetFragment:target.id,top,delta:target.delta,window:target.window,steps:{...nativeSteps},...plan});
+        expect(plan.actions.length,'A bounded native key path must exist; predictions never substitute for observed full text').toBeGreaterThan(0);
+        const {kind,direction}=plan.actions[0],button=kind==='page'?(direction>0?'PageDown':'PageUp'):(direction>0?'ArrowDown':'ArrowUp');
         const adjustment=await beginOperation(kind,direction);await d.page.keyboard.press(button);top=await sample('keyboard',adjustment);
+        rememberStep(kind,adjustment.before.scrollTop,top);
       }
       expect(unreadDetailFragments(lastAtomic.geometry,seen('keyboard'),entryId),`Native keyboard must read every fragment in ${entryId}`).toEqual([]);
     }
@@ -193,9 +215,19 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
       const maxMoves=evidence.expectedFragments.length*4+20;
       for(let i=0;i<maxMoves&&!complete('touch');i++){
         const target=unreadDetailFragments(lastAtomic.geometry,seen('touch'))[0];expect(target).toBeTruthy();
-        const rect=await viewport.boundingBox();expect(rect).toBeTruthy();const r=rect!,travel=nativeTouchTravel(target.delta,r.height,slop),direction=travel<0?-1:1;
-        const x=r.x+r.width*.5,y=direction>0?r.y+r.height-8:r.y+8;
-        d.evidence.push({label:'detail-scroll-navigation-plan',method:'touch',targetFragment:target.id,targetRect:target.rect,delta:target.delta,travel,remaining:unreadDetailFragments(lastAtomic.geometry,seen('touch')).length});
+        const clip=lastAtomic.geometry.styles.find((s:any)=>s.key.startsWith('style:campaign-hud-details:'))?.clipRect;
+        expect(clip).toBeTruthy();const {x,y,endY,travel,direction}=planDetailTouch(clip,target.delta,slop,target.window);
+        const hit=await viewport.evaluate((v,{clip,x,y,endY})=>{
+          const r=v.getBoundingClientRect(),actual={x:r.x+v.clientLeft,y:r.y+v.clientTop,width:v.clientWidth,height:v.clientHeight};
+          const unchanged=Object.keys(actual).every(k=>Math.abs(actual[k as keyof typeof actual]-clip[k as keyof typeof actual])<.01);
+          const points=[{x,y},{x,y:endY}];return {actual,unchanged,points:points.map(p=>{
+            const node=document.elementFromPoint(p.x,p.y);return {...p,insideScreen:p.x>=0&&p.x<innerWidth&&p.y>=0&&p.y<innerHeight,hit:!!node&&(node===v||v.contains(node))};
+          })};
+        },{clip,x,y,endY});
+        d.evidence.push({label:'detail-scroll-touch-hit-plan',clip,...hit});
+        expect(hit.unchanged,'Measured touch clip must still match the live scroll client area').toBe(true);
+        expect(hit.points.every(p=>p.insideScreen&&p.hit),'Both native touch endpoints must hit this scroll viewport').toBe(true);
+        d.evidence.push({label:'detail-scroll-navigation-plan',method:'touch',targetFragment:target.id,targetRect:target.rect,delta:target.delta,window:target.window,travel,remaining:unreadDetailFragments(lastAtomic.geometry,seen('touch')).length});
         const operation=await beginOperation('touch',direction);await session.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y,id:1}]});
         if(i===0)await consumedNeutral();
         for(let j=1;j<=4;j++){await session.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-travel*j/4,id:1}]});await d.page.waitForTimeout(20);}
@@ -216,5 +248,5 @@ export async function verifyDetailScroll(d:RealRendererDriver,reservations:TextR
   }finally{
     const events=await d.page.evaluate(()=>{const o=(window as any).__detailScrollEvents;const events=o.events;o.remove();delete (window as any).__detailScrollEvents;return events;});
     d.evidence.push({label:'detail-scroll-native-events',events});
-    await collector.dispose();await visibility.dispose();d.evidence.push({label:'authorized-detail-scroll-proof',...evidence,issues:detailAccessIssues(evidence,phase)});}
+    await itemPolicy.dispose();await collector.dispose();await visibility.dispose();d.evidence.push({label:'authorized-detail-scroll-proof',...evidence,issues:detailAccessIssues(evidence,phase)});}
 }
