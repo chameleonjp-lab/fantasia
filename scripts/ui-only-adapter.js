@@ -212,7 +212,50 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
     // Observes only the existing synchronous calls. Does not focus, scroll,
     // advance time, change layout, or infer a cause from a mutation count.
     const observer = new MutationObserver(() => {});
-    const observation = { scope: 'synchronous sampling only; not scrollend or causation proof', stages: [] };
+    const observation = { scope: 'synchronous sampling only; not scrollend or causation proof', stages: [], internal: [], revisionObserved: false };
+    const restorers = [], target = document.getElementById('campaign-hud-details');
+    let currentStage = 'setup';
+    const descriptor = (object, key) => {
+      for (let owner = object; owner; owner = Object.getPrototypeOf(owner)) {
+        const found = Object.getOwnPropertyDescriptor(owner, key);
+        if (found) return found;
+      }
+      return null;
+    };
+    const install = (object, key, make) => {
+      const own = object && Object.getOwnPropertyDescriptor(object, key);
+      const original = object && descriptor(object, key);
+      if (!original || own?.configurable === false) {
+        observation.internal.push({ kind: 'unavailable', hook: key }); return;
+      }
+      const replacement = make(original);
+      if (!replacement) { observation.internal.push({ kind: 'unavailable', hook: key }); return; }
+      try { Object.defineProperty(object, key, { ...replacement, configurable: true }); }
+      catch { observation.internal.push({ kind: 'unavailable', hook: key }); return; }
+      restorers.push(() => { if (own) Object.defineProperty(object, key, own); else delete object[key]; });
+    };
+    const observeMeasure = () => install(scene?.hudLayout?.host, 'measure', original => {
+      if (typeof original.value !== 'function') return null;
+      return { ...original, value: function (...args) {
+        const entry = { kind: 'measure', stage: currentStage };
+        observation.internal.push(entry);
+        const result = Reflect.apply(original.value, this, args);
+        entry.returned = true;
+        return result;
+      } };
+    });
+    const installInternal = () => {
+      // These wrappers observe existing calls only, during this synchronous action.
+      // Native compositor scrolling does not invoke JavaScript scrollTop setters.
+      observeMeasure();
+      install(target, 'scrollTop', original => typeof original.get === 'function' && typeof original.set === 'function' ? {
+        ...original, get: function () { return Reflect.apply(original.get, this, []); },
+        set: function (value) {
+          if (this === target) observation.internal.push({ kind: 'scrollTop-set', stage: currentStage, value });
+          return Reflect.apply(original.set, this, [value]);
+        },
+      } : null);
+    };
     const read = () => {
       const viewport = document.getElementById('campaign-hud-details');
       return { present: !!viewport, connected: viewport?.isConnected ?? false,
@@ -220,30 +263,40 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
         clientHeight: viewport?.clientHeight ?? null, focusId: document.activeElement?.id ?? null };
     };
     const stage = (name, action) => {
+      currentStage = name;
       const before = read();
       const value = action();
       const records = observer.takeRecords();
       const mutations = { total: records.length, childList: 0, attributes: 0, characterData: 0,
-        addedNodes: 0, removedNodes: 0, targets: [] };
+        addedNodes: 0, removedNodes: 0, targets: [], changes: [] };
       for (const record of records) {
         if (record.type in mutations && typeof mutations[record.type] === 'number') mutations[record.type]++;
         mutations.addedNodes += record.addedNodes?.length ?? 0;
         mutations.removedNodes += record.removedNodes?.length ?? 0;
         const target = record.target?.id || record.target?.parentElement?.id || '(no-id)';
         if (!mutations.targets.includes(target) && mutations.targets.length < 24) mutations.targets.push(target);
+        if (record.type === 'childList' && mutations.changes.length < 24) {
+          const identify = node => ({ id: node.id || null, nodeName: node.nodeName || null });
+          mutations.changes.push({ target, added: Array.from(record.addedNodes).slice(0, 24).map(identify),
+            removed: Array.from(record.removedNodes).slice(0, 24).map(identify),
+            addedCount: record.addedNodes.length, removedCount: record.removedNodes.length });
+        }
       }
       observation.stages.push({ name, before, after: read(), mutations });
       return value;
     };
     try {
       observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+      installInternal();
       const sample = stage('controls.sample(false)', () => controls.sample(false));
       stage('updateHUD()', () => updateHUD());
       stage('uiOnlyPaint()', () => uiOnlyPaint());
       return { purpose: 'fixed fixture real-control sampling; no campaign tick', before,
         after: { tick: state.simTick, activeTicks: state.activeTicks, screen, status: state.status, input: controls.peek() },
         sample, pendingLoop, pendingBomb, focusSame: document.activeElement === focus, observation };
-    } finally { observer.disconnect(); }
+    } finally {
+      try { for (const restore of restorers.reverse()) restore(); } finally { observer.disconnect(); }
+    }
   }
 
   function uiOnlyPause() {

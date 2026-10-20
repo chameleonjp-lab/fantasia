@@ -358,7 +358,7 @@ function detailObservationHarness(fault='') {
  class Observer {constructor(_fn:any){}observe(){calls.push('observe');}takeRecords(){return records.splice(0);}disconnect(){disconnected=true;}}
  const stage=(name:string)=>{calls.push(name);if(fault===name)throw Error(name);records.push({type:'childList',target:viewport,addedNodes:[{}],removedNodes:[]});if(name==='hud')scroll=0;};
  const sample={turn:0};const c:any={screen:'playing',state:{status:'running',simTick:240,activeTicks:240},uiOnlyPlacementRestore:null,
-  document:{body:{},activeElement:focus,getElementById:()=>viewport},MutationObserver:Observer,
+  document:{body:{},activeElement:focus,getElementById:()=>viewport},MutationObserver:Observer,scene:null,
   controls:{peek:()=>({}),sample:(advance:boolean)=>{assert.equal(advance,false);stage('sample');return sample;}},
   updateHUD:()=>stage('hud'),uiOnlyPaint:()=>stage('paint'),pendingLoop:false,pendingBomb:false};
  runInNewContext(body,c);return {run:()=>c.uiOnlySampleDetailInput(),calls,disconnected:()=>disconnected,sample};
@@ -370,9 +370,56 @@ test('native detail diagnostics attribute synchronous mutations and scroll to ea
  assert.deepEqual(Array.from(r.observation.stages,(s:any)=>s.name),['controls.sample(false)','updateHUD()','uiOnlyPaint()']);
  assert.equal(r.observation.stages[0].before.scrollTop,40);assert.equal(r.observation.stages[0].after.scrollTop,40);
  assert.equal(r.observation.stages[1].after.scrollTop,0);assert.equal(r.observation.stages[1].mutations.childList,1);
+ assert.equal(r.observation.stages[1].mutations.changes[0].target,'campaign-hud-details');
+ assert.equal(r.observation.stages[1].mutations.changes[0].addedCount,1);
  assert.equal(r.before.tick,r.after.tick);assert.equal(r.focusSame,true);
 });
 test('native detail diagnostics disconnect on initial read or original stage failure without swallowing it',()=>{
  for(const fault of ['read','sample','hud','paint']){const h=detailObservationHarness(fault);assert.throws(h.run,new RegExp(fault));assert(h.disconnected());
   if(fault!=='read')assert.equal(h.calls.at(-1),fault,'no later original stage runs after failure');}
+});
+
+function internalDetailHarness(change=true,fault='',own=false) {
+ const source=readFileSync('scripts/ui-only-adapter.js','utf8');
+ const body=source.slice(source.indexOf('  function uiOnlySampleDetailInput()'),source.indexOf('  function uiOnlyPause()'));
+ const events:string[]=[], failure=Error('original failure');let top=40,sets=0;
+ const base={};Object.defineProperty(base,'scrollTop',{configurable:true,enumerable:true,get(){return top;},set(v){sets++;if(fault==='setter')throw failure;top=v;}});
+ const viewport:any=Object.assign(Object.create(base),{id:'campaign-hud-details',isConnected:true,scrollHeight:500,clientHeight:100});
+ if(own)Object.defineProperty(viewport,'scrollTop',Object.getOwnPropertyDescriptor(base,'scrollTop')!);
+ const initialScroll=Object.getOwnPropertyDescriptor(viewport,'scrollTop');
+ if(fault==='locked')Object.preventExtensions(viewport);
+ class Details {viewport=viewport;layoutRevision=2;compact=true;
+  sync(value:boolean){if(this!==details){events.push('foreign');return 'foreign-result';}events.push('sync');this.compact=value;if(change)this.layoutRevision++;if(fault==='sync')throw failure;return 'sync-result';}
+  restoreReading(revision:number,value:number,focus:any){assert.equal(this,details);assert.equal(focus,viewport);events.push('restore');if(revision!==this.layoutRevision)this.viewport.scrollTop=value;if(fault==='restore')throw failure;return 'restore-result';}}
+ const details=new Details();const originalSync=Details.prototype.sync,originalRestore=Details.prototype.restoreReading;
+ const hostBase={measure(sight:any){assert.equal(this,host);assert.equal(sight,marker);events.push('measure');const r=details.layoutRevision;assert.equal(details.sync(true),'sync-result');assert.equal(details.restoreReading(r,40,viewport),'restore-result');if(fault==='measure')throw failure;return marker;}};
+ const host:any=Object.create(hostBase),marker={};if(own)host.measure=hostBase.measure;
+ const measureDescriptor=Object.getOwnPropertyDescriptor(host,'measure');let disconnected=false;
+ const c:any={screen:'playing',state:{status:'running',simTick:240,activeTicks:240},uiOnlyPlacementRestore:null,
+  document:{body:{},activeElement:viewport,getElementById:()=>viewport},scene:{hudLayout:{host}},
+  MutationObserver:class{observe(){}takeRecords(){return [];}disconnect(){disconnected=true;}},
+  controls:{peek:()=>({}),sample:()=>({turn:0})},updateHUD:()=>{},uiOnlyPaint:()=>{if(fault==='foreign')assert.equal(Reflect.apply(Details.prototype.sync,{viewport:{},layoutRevision:999},[false]),'foreign-result');assert.equal(host.measure(marker),marker);},pendingLoop:false,pendingBomb:false};
+ runInNewContext(body,c);return {run:()=>c.uiOnlySampleDetailInput(),events,sets:()=>sets,failure,
+  clean:()=>{assert.equal(Details.prototype.sync,originalSync);assert.equal(Details.prototype.restoreReading,originalRestore);assert.deepEqual(Object.getOwnPropertyDescriptor(host,'measure'),measureDescriptor);assert.deepEqual(Object.getOwnPropertyDescriptor(viewport,'scrollTop'),initialScroll);assert(disconnected);}};
+}
+test('internal observer distinguishes absent versus same-position script assignments without adding writes',()=>{
+ for(const own of [false,true])for(const changed of [false,true]){const h=internalDetailHarness(changed,'',own),r=h.run();h.clean();
+  assert.equal(h.sets(),changed?1:0);assert.deepEqual(h.events,['measure','sync','restore']);
+  const events=r.observation.internal;assert.equal(events.filter((e:any)=>e.kind==='measure').length,1);
+  assert.equal(events.filter((e:any)=>e.kind==='scrollTop-set').length,changed?1:0);
+  assert.equal(r.observation.revisionObserved,false);
+ }
+});
+test('internal observer restores own and inherited descriptors and propagates original failures',()=>{
+ for(const own of [false,true])for(const fault of ['sync','restore','measure','setter']){const h=internalDetailHarness(true,fault,own);assert.throws(h.run,(error:any)=>error===h.failure);h.clean();}
+});
+
+test('unavailable setter instrumentation preserves execution and previously installed hooks are restored',()=>{
+ const h=internalDetailHarness(true,'locked'),r=h.run();h.clean();assert.equal(h.sets(),1);
+ assert(r.observation.internal.some((e:any)=>e.kind==='unavailable'&&e.hook==='scrollTop'));
+ assert.equal(r.observation.internal.filter((e:any)=>e.kind==='scrollTop-set').length,0);
+});
+test('other detail instances delegate unchanged and are not recorded',()=>{
+ const h=internalDetailHarness(true,'foreign'),r=h.run();h.clean();assert.equal(h.events[0],'foreign');
+ assert.equal(r.observation.internal.filter((e:any)=>e.kind==='measure').length,1);
 });
