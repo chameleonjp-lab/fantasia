@@ -1,0 +1,16 @@
+{
+  "id": "candidate-852x393-normal-100",
+  "capturedAt": "2026-10-20T10:58:04.299Z",
+  "source": "601df7804b1cb8a6b339b7d30ac1ed76ca8c2090",
+  "browser": "154.0.8037.57",
+  "viewport": {
+    "width": 852,
+    "height": 393
+  },
+  "dpr": 1,
+  "textScale": 1,
+  "mode": "normal",
+  "clock": "controlled animation, actual WebGL2, native UI input, no state injection",
+  "errors": [],
+  "failure": "TimeoutError: page.goto: Timeout 10000ms exceeded.\nCall log:\n\u001b[2m  - navigating to \"http://127.0.0.1:4184/\", waiting until \"load\"\u001b[22m\n"
+}

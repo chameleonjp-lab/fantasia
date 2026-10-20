@@ -1,0 +1,7 @@
+Local read-only independent review of the P1 implementation diff:
+
+No implementation correctness findings. Settings own geometry; flight targets remain fixed HUD obstacles. Respawn uses an app class without overwriting hidden/style flags and moves focus only when appropriate. No rectangle-search machinery was added. Focused layout/runtime suites, UI integrity, TypeScript and diff checks passed.
+
+Nonblocking test-quality finding: pending input was originally asserted false without first setting it. Addressed by explicitly seeding pending input before pause and on the respawn-restoration frame, then running the full unit suite (488 passed).
+
+Browser acceptance was not run by the reviewer. HUD parity, critical-warning layout and 200% readability are not approved by this review.

@@ -1,0 +1,3 @@
+import {defineConfig} from '@playwright/test';
+import original from '../playwright.acceptance.config';
+export default defineConfig({...original,testDir:'../browser-acceptance',reporter:[['list'],['json',{outputFile:'/workspace/fantasia-work/p1-acceptance34-final/results.json'}]],outputDir:'/workspace/fantasia-work/p1-acceptance34-final/attachments',use:{...original.use,baseURL:'http://127.0.0.1:4184',launchOptions:{...original.use?.launchOptions,executablePath:'/usr/bin/chromium',args:[...original.use?.launchOptions?.args??[],'--no-sandbox']}},webServer:{command:'npm run dev',url:'http://127.0.0.1:4184',reuseExistingServer:true}});
