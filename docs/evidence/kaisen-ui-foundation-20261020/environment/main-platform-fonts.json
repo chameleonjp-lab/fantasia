@@ -1,0 +1,121 @@
+{
+  "source": {
+    "commit": "f8264c530c213f0a66c6454d5fe3de619ea86c9a",
+    "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "browser": "154.0.8037.57",
+  "viewport": {
+    "width": 393,
+    "height": 852
+  },
+  "fonts": [
+    {
+      "selector": "#timer",
+      "computed": {
+        "family": "ui-monospace, SFMono-Regular, Consolas, monospace",
+        "size": "27px",
+        "lineHeight": "normal",
+        "text": "00:00.00"
+      },
+      "fonts": [
+        {
+          "familyName": "Noto Sans Mono CJK JP",
+          "postScriptName": "NotoSansMonoCJKjp-Regular",
+          "isCustomFont": false,
+          "glyphCount": 8
+        }
+      ]
+    },
+    {
+      "selector": "#health",
+      "computed": {
+        "family": "system-ui, -apple-system, \"Hiragino Kaku Gothic ProN\", \"Noto Sans JP\", sans-serif",
+        "size": "15px",
+        "lineHeight": "normal",
+        "text": "100"
+      },
+      "fonts": [
+        {
+          "familyName": "Noto Sans",
+          "postScriptName": "NotoSans-Regular",
+          "isCustomFont": false,
+          "glyphCount": 3
+        }
+      ]
+    },
+    {
+      "selector": "#altitude",
+      "computed": {
+        "family": "ui-monospace, monospace",
+        "size": "10px",
+        "lineHeight": "normal",
+        "text": "300m"
+      },
+      "fonts": [
+        {
+          "familyName": "Noto Sans Mono CJK JP",
+          "postScriptName": "NotoSansMonoCJKjp-Regular",
+          "isCustomFont": false,
+          "glyphCount": 4
+        }
+      ]
+    },
+    {
+      "selector": "#loop > span",
+      "computed": {
+        "family": "system-ui, -apple-system, \"Hiragino Kaku Gothic ProN\", \"Noto Sans JP\", sans-serif",
+        "size": "31px",
+        "lineHeight": "40.3px",
+        "text": "↻"
+      },
+      "fonts": [
+        {
+          "familyName": "DejaVu Sans",
+          "postScriptName": "DejaVuSans",
+          "isCustomFont": false,
+          "glyphCount": 1
+        }
+      ]
+    },
+    {
+      "selector": "#loop > b",
+      "computed": {
+        "family": "system-ui, -apple-system, \"Hiragino Kaku Gothic ProN\", \"Noto Sans JP\", sans-serif",
+        "size": "12px",
+        "lineHeight": "normal",
+        "text": "宙返り"
+      },
+      "fonts": [
+        {
+          "familyName": "Noto Sans CJK JP",
+          "postScriptName": "NotoSansCJKjp-Bold",
+          "isCustomFont": false,
+          "glyphCount": 3
+        }
+      ]
+    },
+    {
+      "selector": "#bomb-ammo",
+      "computed": {
+        "family": "system-ui, -apple-system, \"Hiragino Kaku Gothic ProN\", \"Noto Sans JP\", sans-serif",
+        "size": "9px",
+        "lineHeight": "12.15px",
+        "text": "残り2発"
+      },
+      "fonts": [
+        {
+          "familyName": "Noto Sans",
+          "postScriptName": "NotoSans-Bold",
+          "isCustomFont": false,
+          "glyphCount": 1
+        },
+        {
+          "familyName": "Noto Sans CJK JP",
+          "postScriptName": "NotoSansCJKjp-Bold",
+          "isCustomFont": false,
+          "glyphCount": 3
+        }
+      ]
+    }
+  ]
+}

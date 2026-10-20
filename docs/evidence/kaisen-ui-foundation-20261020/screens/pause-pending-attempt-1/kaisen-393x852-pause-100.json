@@ -1,0 +1,285 @@
+{
+  "id": "kaisen-393x852-pause-100",
+  "source": {
+    "commit": "6118b7868b72315bd52106da4326f9f00f91814c",
+    "trackedDiffSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "capturedAt": "2026-10-20T10:54:03.212Z",
+  "browser": "154.0.8037.57",
+  "viewport": {
+    "width": 393,
+    "height": 852
+  },
+  "textScale": 1,
+  "dpr": 1,
+  "method": "actual WebGL2, native UI input, controlled animation, no state injection",
+  "errors": [],
+  "before": {
+    "phase": "paused",
+    "screen": "paused",
+    "mode": "normal",
+    "tick": 0,
+    "player": {
+      "kind": "aircraft",
+      "id": 1,
+      "team": "friendly",
+      "role": "player",
+      "position": {
+        "x": 0,
+        "y": 220,
+        "z": 240
+      },
+      "previous": {
+        "x": 0,
+        "y": 220,
+        "z": 240
+      },
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "yaw": 0,
+      "pitch": 0,
+      "bank": 0,
+      "speed": 110,
+      "health": 80,
+      "maxHealth": 80,
+      "mg": 288,
+      "cannon": 96,
+      "reloadTicksRemaining": 0,
+      "generation": "initial",
+      "fireClock": 0,
+      "cannonClock": 0,
+      "bombs": 2,
+      "torpedoes": 1,
+      "bombReloadTicks": 0,
+      "torpedoReloadTicks": 0,
+      "payloadCooldown": 0,
+      "aiBomb": false,
+      "loopProgress": 0,
+      "loopCooldown": 0,
+      "mode": "pursue",
+      "age": 0,
+      "targetId": null,
+      "aiPhase": "approach",
+      "aiPhaseTime": 0,
+      "aiWaypoint": {
+        "x": 0,
+        "y": 220,
+        "z": 240
+      },
+      "aiTurn": 0,
+      "aiClimb": 0,
+      "aiFire": false
+    },
+    "controlsInput": {
+      "turn": 0,
+      "climb": 0,
+      "steerPointer": null,
+      "throttle": 0,
+      "throttlePointer": null,
+      "heldPointers": {
+        "fire": [],
+        "loop": [],
+        "accelerate": [],
+        "brake": [],
+        "bomb": [],
+        "torpedo": []
+      },
+      "keys": []
+    },
+    "pauseReasons": [
+      "manual"
+    ],
+    "render": {
+      "queue": {
+        "status": "pending",
+        "failure": null,
+        "pendingMs": 10,
+        "lastCompletedPendingMs": 16,
+        "completedFrameIntervalMs": 16,
+        "submittedCount": 5,
+        "completedCount": 4,
+        "skippedCount": 32
+      },
+      "pausedView": {
+        "missionId": 3,
+        "phase": "paused",
+        "tick": 0,
+        "showHUD": true,
+        "layoutRevision": 1,
+        "cssWidth": 393,
+        "cssHeight": 852,
+        "bufferWidth": 393,
+        "bufferHeight": 852,
+        "overlayBufferWidth": 393,
+        "overlayBufferHeight": 852,
+        "submittedCount": 5,
+        "completedCount": 4,
+        "ready": false
+      },
+      "calls": 130,
+      "triangles": 180736,
+      "geometries": 50,
+      "textures": 4,
+      "particles": 0,
+      "navalFlashes": 0,
+      "planes": 10,
+      "ships": 4,
+      "width": 393,
+      "height": 852,
+      "pixelRatio": 1,
+      "aircraftTracers": {
+        "segments": 0,
+        "capacity": 2048,
+        "corePx": 1.5,
+        "outlinePx": 2.5,
+        "tailSeconds": 0.045,
+        "depthTest": true,
+        "resolution": [
+          393,
+          852
+        ]
+      }
+    }
+  },
+  "after": {
+    "phase": "paused",
+    "screen": "paused",
+    "mode": "normal",
+    "tick": 0,
+    "player": {
+      "kind": "aircraft",
+      "id": 1,
+      "team": "friendly",
+      "role": "player",
+      "position": {
+        "x": 0,
+        "y": 220,
+        "z": 240
+      },
+      "previous": {
+        "x": 0,
+        "y": 220,
+        "z": 240
+      },
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "yaw": 0,
+      "pitch": 0,
+      "bank": 0,
+      "speed": 110,
+      "health": 80,
+      "maxHealth": 80,
+      "mg": 288,
+      "cannon": 96,
+      "reloadTicksRemaining": 0,
+      "generation": "initial",
+      "fireClock": 0,
+      "cannonClock": 0,
+      "bombs": 2,
+      "torpedoes": 1,
+      "bombReloadTicks": 0,
+      "torpedoReloadTicks": 0,
+      "payloadCooldown": 0,
+      "aiBomb": false,
+      "loopProgress": 0,
+      "loopCooldown": 0,
+      "mode": "pursue",
+      "age": 0,
+      "targetId": null,
+      "aiPhase": "approach",
+      "aiPhaseTime": 0,
+      "aiWaypoint": {
+        "x": 0,
+        "y": 220,
+        "z": 240
+      },
+      "aiTurn": 0,
+      "aiClimb": 0,
+      "aiFire": false
+    },
+    "controlsInput": {
+      "turn": 0,
+      "climb": 0,
+      "steerPointer": null,
+      "throttle": 0,
+      "throttlePointer": null,
+      "heldPointers": {
+        "fire": [],
+        "loop": [],
+        "accelerate": [],
+        "brake": [],
+        "bomb": [],
+        "torpedo": []
+      },
+      "keys": []
+    },
+    "pauseReasons": [
+      "manual"
+    ],
+    "render": {
+      "queue": {
+        "status": "pending",
+        "failure": null,
+        "pendingMs": 10,
+        "lastCompletedPendingMs": 16,
+        "completedFrameIntervalMs": 16,
+        "submittedCount": 5,
+        "completedCount": 4,
+        "skippedCount": 32
+      },
+      "pausedView": {
+        "missionId": 3,
+        "phase": "paused",
+        "tick": 0,
+        "showHUD": true,
+        "layoutRevision": 1,
+        "cssWidth": 393,
+        "cssHeight": 852,
+        "bufferWidth": 393,
+        "bufferHeight": 852,
+        "overlayBufferWidth": 393,
+        "overlayBufferHeight": 852,
+        "submittedCount": 5,
+        "completedCount": 4,
+        "ready": false
+      },
+      "calls": 130,
+      "triangles": 180736,
+      "geometries": 50,
+      "textures": 4,
+      "particles": 0,
+      "navalFlashes": 0,
+      "planes": 10,
+      "ships": 4,
+      "width": 393,
+      "height": 852,
+      "pixelRatio": 1,
+      "aircraftTracers": {
+        "segments": 0,
+        "capacity": 2048,
+        "corePx": 1.5,
+        "outlinePx": 2.5,
+        "tailSeconds": 0.045,
+        "depthTest": true,
+        "resolution": [
+          393,
+          852
+        ]
+      }
+    }
+  },
+  "stationary": true,
+  "image": {
+    "file": "kaisen-393x852-pause-100.png",
+    "bytes": 108557,
+    "sha256": "8ae668400a3929d84dc79b4a2a04efbc919513c2e9926ae00075af7a76d05e7d"
+  }
+}

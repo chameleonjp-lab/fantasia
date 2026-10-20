@@ -1,0 +1,3 @@
+import {defineConfig} from '@playwright/test';
+import original from '../playwright.ui-only.config';
+export default defineConfig({...original,testDir:'../browser-ui-only',use:{...original.use,baseURL:'http://127.0.0.1:4185',launchOptions:{executablePath:'/usr/bin/chromium',args:['--no-sandbox']}},webServer:{command:'npm run dev:ui-only -- --port 4185',url:'http://127.0.0.1:4185/__ui-only',reuseExistingServer:false}});

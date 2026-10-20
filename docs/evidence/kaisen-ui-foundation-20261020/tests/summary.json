@@ -1,0 +1,1337 @@
+{
+  "acceptance34-attempt1": {
+    "stats": {
+      "startTime": "2026-10-20T10:51:37.620Z",
+      "duration": 442401.17,
+      "expected": 13,
+      "skipped": 0,
+      "unexpected": 21,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "acceptance.spec.ts / [start] Start preparation, cancellation, selected modes and tick-zero commit",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 14069,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [controls-normal] Normal continuous keyboard and drag controls release",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 16473,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [controls-easy] Easy steering and prohibited manual controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 6874,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [edges-normal] Normal single-action bomb and loop edges with cancellation",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 9026,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [edges-easy] Easy single-action bomb and loop edges with cancellation",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 8544,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [lifecycle] Pause Resume Home Restart freeze and clear stale input",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 8211,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [settings] Settings tabs Save Discard duplicate keys and focus",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 7096,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [storage-failure] Explicit storage failure preserves active bindings",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 5793,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [storage-session] Storage failure session-only approval and reload loss",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 10527,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [storage-future-rollback] Future-version protection and partial-write rollback",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 5011,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [resize-context] Actual resize and native WebGL context loss recovery",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 9493,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [frame-gap] Explicit controlled frame gap stops safely without catch-up",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 6596,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [render-fault] Explicit render fault injection stops safely without paused draws",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 6586,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [native-capability] Ordinary-wall-clock renderer capability with explicit safety recovery",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 16779,
+            "firstErrorLines": [
+              "Error: Second native stop after the single explicit recovery"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / desktop-dpr1 / [hud-desktop-dpr1-normal] Live full-size HUD desktop-dpr1 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8269,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / desktop-dpr1 / [hud-desktop-dpr1-easy] Live full-size HUD desktop-dpr1 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 14790,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / portrait-dpr3 / [hud-portrait-dpr3-normal] Live full-size HUD portrait-dpr3 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 16472,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / portrait-dpr3 / [hud-portrait-dpr3-easy] Live full-size HUD portrait-dpr3 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 12839,
+            "firstErrorLines": [
+              "Error: Driver operation timed out: load real app"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / landscape-dpr3 / [hud-landscape-dpr3-normal] Live full-size HUD landscape-dpr3 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 12305,
+            "firstErrorLines": [
+              "Error: Driver operation timed out: load real app"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / landscape-dpr3 / [hud-landscape-dpr3-easy] Live full-size HUD landscape-dpr3 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 11605,
+            "firstErrorLines": [
+              "Error: Driver operation timed out: load real app"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / small-portrait-dpr2 / [hud-small-portrait-dpr2-normal] Live full-size HUD small-portrait-dpr2 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 13213,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / small-portrait-dpr2 / [hud-small-portrait-dpr2-easy] Live full-size HUD small-portrait-dpr2 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 13085,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / small-landscape-dpr2 / [hud-small-landscape-dpr2-normal] Live full-size HUD small-landscape-dpr2 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 15751,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / small-landscape-dpr2 / [hud-small-landscape-dpr2-easy] Live full-size HUD small-landscape-dpr2 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 14226,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-desktop-dpr1 / [text-200-desktop-dpr1-normal] Actual 200 percent text desktop-dpr1 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 14986,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-desktop-dpr1 / [text-200-desktop-dpr1-easy] Actual 200 percent text desktop-dpr1 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 18212,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-portrait-dpr3 / [text-200-portrait-dpr3-normal] Actual 200 percent text portrait-dpr3 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 15643,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-portrait-dpr3 / [text-200-portrait-dpr3-easy] Actual 200 percent text portrait-dpr3 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 15322,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-landscape-dpr3 / [text-200-landscape-dpr3-normal] Actual 200 percent text landscape-dpr3 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 18254,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-landscape-dpr3 / [text-200-landscape-dpr3-easy] Actual 200 percent text landscape-dpr3 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 11035,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-small-portrait-dpr2 / [text-200-small-portrait-dpr2-normal] Actual 200 percent text small-portrait-dpr2 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 17174,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-small-portrait-dpr2 / [text-200-small-portrait-dpr2-easy] Actual 200 percent text small-portrait-dpr2 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 12591,
+            "firstErrorLines": [
+              "Error: Driver operation timed out: load real app"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-small-landscape-dpr2 / [text-200-small-landscape-dpr2-normal] Actual 200 percent text small-landscape-dpr2 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 13012,
+            "firstErrorLines": [
+              "Error: Driver operation timed out: load real app"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-small-landscape-dpr2 / [text-200-small-landscape-dpr2-easy] Actual 200 percent text small-landscape-dpr2 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 19696,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "acceptance34-final": {
+    "stats": {
+      "startTime": "2026-10-20T11:08:20.435Z",
+      "duration": 302552.378,
+      "expected": 14,
+      "skipped": 0,
+      "unexpected": 20,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "acceptance.spec.ts / [start] Start preparation, cancellation, selected modes and tick-zero commit",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 8680,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [controls-normal] Normal continuous keyboard and drag controls release",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 12486,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [controls-easy] Easy steering and prohibited manual controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 6591,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [edges-normal] Normal single-action bomb and loop edges with cancellation",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 8693,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [edges-easy] Easy single-action bomb and loop edges with cancellation",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 8912,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [lifecycle] Pause Resume Home Restart freeze and clear stale input",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 7188,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [settings] Settings tabs Save Discard duplicate keys and focus",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 6799,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [storage-failure] Explicit storage failure preserves active bindings",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 5910,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [storage-session] Storage failure session-only approval and reload loss",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 10872,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [storage-future-rollback] Future-version protection and partial-write rollback",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 5722,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [resize-context] Actual resize and native WebGL context loss recovery",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 10473,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [frame-gap] Explicit controlled frame gap stops safely without catch-up",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 6770,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [render-fault] Explicit render fault injection stops safely without paused draws",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 6261,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [native-capability] Ordinary-wall-clock renderer capability with explicit safety recovery",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 7861,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / desktop-dpr1 / [hud-desktop-dpr1-normal] Live full-size HUD desktop-dpr1 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 7971,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / desktop-dpr1 / [hud-desktop-dpr1-easy] Live full-size HUD desktop-dpr1 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 9159,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / portrait-dpr3 / [hud-portrait-dpr3-normal] Live full-size HUD portrait-dpr3 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8033,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / portrait-dpr3 / [hud-portrait-dpr3-easy] Live full-size HUD portrait-dpr3 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 7298,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / landscape-dpr3 / [hud-landscape-dpr3-normal] Live full-size HUD landscape-dpr3 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8986,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / landscape-dpr3 / [hud-landscape-dpr3-easy] Live full-size HUD landscape-dpr3 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8980,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / small-portrait-dpr2 / [hud-small-portrait-dpr2-normal] Live full-size HUD small-portrait-dpr2 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8072,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / small-portrait-dpr2 / [hud-small-portrait-dpr2-easy] Live full-size HUD small-portrait-dpr2 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 7044,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / small-landscape-dpr2 / [hud-small-landscape-dpr2-normal] Live full-size HUD small-landscape-dpr2 normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 7973,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / small-landscape-dpr2 / [hud-small-landscape-dpr2-easy] Live full-size HUD small-landscape-dpr2 easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 7746,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-desktop-dpr1 / [text-200-desktop-dpr1-normal] Actual 200 percent text desktop-dpr1 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 9635,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-desktop-dpr1 / [text-200-desktop-dpr1-easy] Actual 200 percent text desktop-dpr1 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 9430,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-portrait-dpr3 / [text-200-portrait-dpr3-normal] Actual 200 percent text portrait-dpr3 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8402,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-portrait-dpr3 / [text-200-portrait-dpr3-easy] Actual 200 percent text portrait-dpr3 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8540,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-landscape-dpr3 / [text-200-landscape-dpr3-normal] Actual 200 percent text landscape-dpr3 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 10906,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-landscape-dpr3 / [text-200-landscape-dpr3-easy] Actual 200 percent text landscape-dpr3 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 10212,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-small-portrait-dpr2 / [text-200-small-portrait-dpr2-normal] Actual 200 percent text small-portrait-dpr2 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8102,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-small-portrait-dpr2 / [text-200-small-portrait-dpr2-easy] Actual 200 percent text small-portrait-dpr2 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8023,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-small-landscape-dpr2 / [text-200-small-landscape-dpr2-normal] Actual 200 percent text small-landscape-dpr2 normal, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 9609,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / text-200-small-landscape-dpr2 / [text-200-small-landscape-dpr2-easy] Actual 200 percent text small-landscape-dpr2 easy, fresh geometry and reachable controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 8665,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "camera2-attempt1": {
+    "stats": {
+      "startTime": "2026-10-20T11:00:38.130Z",
+      "duration": 34242.05,
+      "expected": 1,
+      "skipped": 0,
+      "unexpected": 1,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "acceptance.spec.ts / [camera-contract] easy real rendered optical-axis trace and pause release",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 22675,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [camera-contract] normal real rendered optical-axis trace and pause release",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 10515,
+            "firstErrorLines": [
+              "Error: Driver operation timed out: load real app"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "camera2-final": {
+    "stats": {
+      "startTime": "2026-10-20T11:14:09.360Z",
+      "duration": 19618.072,
+      "expected": 2,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "acceptance.spec.ts / [camera-contract] easy real rendered optical-axis trace and pause release",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 9852,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "acceptance.spec.ts / [camera-contract] normal real rendered optical-axis trace and pause release",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 8847,
+            "firstErrorLines": []
+          }
+        ]
+      }
+    ]
+  },
+  "controls4": {
+    "stats": {
+      "startTime": "2026-10-20T10:53:44.021Z",
+      "duration": 66018.354,
+      "expected": 4,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "kaisen-ui-parity.spec.ts / normal saved Kaisen control centres and sizes survive enlarged text at 320x568",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 16452,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "kaisen-ui-parity.spec.ts / normal saved Kaisen control centres and sizes survive enlarged text at 568x320",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 17207,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "kaisen-ui-parity.spec.ts / easy saved Kaisen control centres and sizes survive enlarged text at 320x568",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 15196,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "kaisen-ui-parity.spec.ts / easy saved Kaisen control centres and sizes survive enlarged text at 568x320",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 16039,
+            "firstErrorLines": []
+          }
+        ]
+      }
+    ]
+  },
+  "critical12": {
+    "stats": {
+      "startTime": "2026-10-20T11:00:38.741Z",
+      "duration": 302048.176,
+      "expected": 0,
+      "skipped": 0,
+      "unexpected": 12,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "active-critical.spec.ts / active-critical-small-portrait / descent-lifecycle-normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 29962,
+            "firstErrorLines": [
+              "Error: expect(received).toBe(expected) // Object.is equality"
+            ],
+            "failureStage": "display:low-altitude",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-small-portrait / flight-warning-sequence-normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 34419,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:enemy-targeting",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-small-portrait / descent-lifecycle-easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 13698,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:low-altitude",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-small-portrait / flight-warning-sequence-easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 22915,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:enemy-targeting",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-small-landscape / descent-lifecycle-normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 17068,
+            "firstErrorLines": [
+              "Error: expect(received).toBe(expected) // Object.is equality"
+            ],
+            "failureStage": "display:low-altitude",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-small-landscape / flight-warning-sequence-normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 32289,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:enemy-targeting",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-small-landscape / descent-lifecycle-easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 15972,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:low-altitude",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-small-landscape / flight-warning-sequence-easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 30353,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:enemy-targeting",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-portrait-text-200 / descent-lifecycle-normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 18055,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:low-altitude",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-portrait-text-200 / flight-warning-sequence-normal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 29322,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:enemy-targeting",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-portrait-text-200 / descent-lifecycle-easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 16968,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:low-altitude",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      },
+      {
+        "title": "active-critical.spec.ts / active-critical-portrait-text-200 / flight-warning-sequence-easy",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 31039,
+            "firstErrorLines": [
+              "Error: expect(received).toEqual(expected) // deep equality"
+            ],
+            "failureStage": "display:enemy-targeting",
+            "failureClass": "active-display-or-scroll-proof-failed"
+          }
+        ]
+      }
+    ]
+  },
+  "throttle4": {
+    "stats": {
+      "startTime": "2026-10-20T11:00:41.500Z",
+      "duration": 61295.328,
+      "expected": 2,
+      "skipped": 0,
+      "unexpected": 2,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "throttle-integration.spec.ts / [throttle-normal] Native multi-pointer lever, focused pulse and interruption reach the campaign",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 13865,
+            "firstErrorLines": [
+              "Error: Full visible text must be complete, unclipped and unobscured"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "throttle-integration.spec.ts / [throttle-easy] Easy preserves cruise and omits the lever from play and settings",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "failed",
+            "durationMs": 12049,
+            "firstErrorLines": [
+              "Error: Driver operation timed out: load real app"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "throttle-integration.spec.ts / [throttle-save] Explicit v2 Save preserves legacy bytes and reloads the lever layout",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 19489,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "throttle-integration.spec.ts / [throttle-recovery] Failed real storage rollback remains visible and unchanged Save restores the journal",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 12101,
+            "firstErrorLines": []
+          }
+        ]
+      }
+    ]
+  },
+  "ui8": {
+    "stats": {
+      "startTime": "2026-10-20T10:51:39.139Z",
+      "duration": 25841.075999999997,
+      "expected": 7,
+      "skipped": 0,
+      "unexpected": 1,
+      "flaky": 0
+    },
+    "cases": [
+      {
+        "title": "ui-only.spec.ts / historical PR #10 area replay remains an isolated regression fixture",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 15,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "ui-only.spec.ts / Home, Rules, touch and keyboard settings save through product dialogs",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 2448,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "ui-only.spec.ts / Settings cancel discards touch and key drafts without storage writes",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1120,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "ui-only.spec.ts / Storage failure offers session-only settings and expires after reload",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1517,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "ui-only.spec.ts / Easy and Normal HUD, seven sites, aim geometry and alerts fit small portrait and landscape",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "timedOut",
+            "durationMs": 12163,
+            "firstErrorLines": [
+              "Test timeout of 12000ms exceeded.",
+              "Error: fresh-page and original rotation-stress cases completed independently; full HUD geometry, Canvas pixels, text and 44px checks pass"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "ui-only.spec.ts / Pause screen details, Rules and settings remain usable without advancing a run",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 1743,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "ui-only.spec.ts / Every victory and defeat result reason displays details and reaches the final controls",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 2596,
+            "firstErrorLines": []
+          }
+        ]
+      },
+      {
+        "title": "ui-only.spec.ts / Startup error is the real preparation failure UI",
+        "expectedStatus": "passed",
+        "results": [
+          {
+            "status": "passed",
+            "durationMs": 870,
+            "firstErrorLines": []
+          }
+        ]
+      }
+    ]
+  }
+}
