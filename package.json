@@ -13,7 +13,6 @@
     "test:browser:legacy-acceptance": "playwright test --config=playwright.acceptance.config.ts",
     "test:browser:throttle": "playwright test --config=playwright.throttle.config.ts",
     "test:browser:active-critical": "playwright test --config=playwright.active-critical.config.ts",
-    "test:browser:kaisen-ui": "playwright test --config=playwright.kaisen-ui.config.ts",
     "test:legacy": "node --import tsx --test tests/*.test.ts"
   },
   "dependencies": {

@@ -503,15 +503,13 @@ export function createCampaignHudLayout(canvas: HTMLCanvasElement): CampaignHudL
       }
       const obstacles: HudObstacle[] = [];
       for (const node of app.querySelectorAll<HTMLElement>(selectors)) {
-        if (compact && ((!['fire', 'loop', 'bomb', 'throttle'].includes(node.id) && node.tagName === 'BUTTON') || details.contains(node))) continue;
+        if (compact && ((node.tagName === 'BUTTON' || node.getAttribute('role') === 'slider') || details.contains(node))) continue;
         const r = visibleRect(node); if (r) obstacles.push({ ...toCanvasRect(r, canvasRect), id: node.id || node.className });
       }
       const panels: HudObstacle[] = [], movableControls: HudObstacle[] = [];
       natural.clear();
       for (const node of panelNodes) {
         if (details.contains(node) && node !== details.viewport) continue;
-        // Kaisen flight targets are owned by ControlSettings, never HUD packing.
-        if (['fire', 'loop', 'bomb', 'throttle'].includes(node.id)) continue;
         if (!compact && ((node.tagName === 'BUTTON' || node.getAttribute('role') === 'slider') || node === details.lives || node.id === 'bomb-hint')) continue;
         if (node === time && !compactTime && !compact) continue;
         const r = visibleRect(node); if (!r) continue;
