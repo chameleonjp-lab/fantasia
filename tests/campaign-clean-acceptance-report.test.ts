@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CASES, titleFor } from '../browser-acceptance/acceptance-cases';
 import { buildAcceptanceReport } from '../scripts/clean-acceptance-report';
+const pngBody=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1sAAAAASUVORK5CYII=','base64').toString('base64');
 function fixture() {
   return {suites:[{specs:CASES.map(([id,category])=>{
     const native=id==='native-capability';
@@ -17,7 +18,8 @@ function fixture() {
         ...([8,9].includes(Number(category))?[{label:'full-text-geometry-before-assertions',issues:[],reservations:[],textGeometry:{viewport:{width:200,height:200},regions:[{key:'label',kind:'panel',rect:{x:10,y:10,width:50,height:20}}],styles:[{key:'s',overflowX:'visible',overflowY:'visible',lineClamp:'none',maxLines:'none',contain:'none',unsupported:[]}],runs:[{text:'Visible',owner:'label',ancestorRegions:['label'],fragments:[{x:10,y:10,width:40,height:15}],styleKeys:['s']}]}}]:[]),
         ...(category===8?[{label:'actual-live-dom-geometry',dom:{sites:Array(7).fill({})},layout:{status:'placed'}}]:[]),
         ...(category===9?[{label:'actual-200-percent-text',beforeMeasurements:1,afterMeasurements:2,enlargement:Array(21).fill({})}]:[])]};
-    return {title:titleFor(String(id)),tests:[{projectName:'clean-browser-acceptance',expectedStatus:'passed',status:'expected',results:[{status:'passed',errors:[],attachments:[{name:'clean-acceptance-evidence',contentType:'application/json',body:Buffer.from(JSON.stringify(evidence)).toString('base64')}]}]}]};
+    return {title:titleFor(String(id)),tests:[{projectName:'clean-browser-acceptance',expectedStatus:'passed',status:'expected',results:[{status:'passed',errors:[],attachments:[{name:'clean-acceptance-evidence',contentType:'application/json',body:Buffer.from(JSON.stringify(evidence)).toString('base64')},
+      ...[native?'native-case-final.png':'case-final.png',...([8,9].includes(Number(category))?['live-hud-0.png']:[]),...(category===8?['explicit-live-hud.png']:[])].map(name=>({name,contentType:'image/png',body:pngBody}))]}]}]};
   })}]};
 }
 const report=(raw:unknown)=>buildAcceptanceReport(raw,async()=>{throw new Error('missing file');});
@@ -161,7 +163,7 @@ test('unavailable evidence storage fails closed and retries retain every attachm
  const raw=fixture();raw.suites[0].specs[0].tests[0].results.push(raw.suites[0].specs[0].tests[0].results[0]);
  const r=await report(raw);assert.equal(r.browserAcceptance,'not-passed');
  assert.equal(r.cases[0].attempts.length,2);
- assert.equal(r.cases[0].attempts[1].attachments.length,1);
+ assert.equal(r.cases[0].attempts[1].attachments.length,raw.suites[0].specs[0].tests[0].results[0].attachments.length);
  const failed=await buildAcceptanceReport(fixture(),async()=>'',async()=>{throw new Error('storage failed');});
  assert.equal(failed.browserAcceptance,'not-passed');assert.equal(failed.counts.validated,0);
  assert.ok(failed.cases.every(c=>c.errors.some((e:string)=>e.includes('storage failed'))));
@@ -249,8 +251,8 @@ test('all 34 file-backed cases survive artifact relocation with exact byte/hash 
  const root=await mkdtemp('/tmp/fantasia-report-paths-');await mkdir(join(root,'cases'));
  const raw=fixture(),expected=new Map<string,Buffer>();
  for(const [i,spec] of raw.suites[0].specs.entries())for(const a of spec.tests[0].results[0].attachments){
-  const bytes=Buffer.from(a.body,'base64'),path=`/home/runner/work/fantasia/fantasia/test-results/cases/${i}.json`;
-  await writeFile(join(root,'cases',`${i}.json`),bytes,{flag:'wx'});expected.set(path,bytes);delete (a as any).body;(a as any).path=path;
+  const bytes=Buffer.from(a.body,'base64'),name=a.name==='clean-acceptance-evidence'?`${i}.json`:`${i}-${a.name}`,path=`/home/runner/work/fantasia/fantasia/test-results/cases/${name}`;
+  await writeFile(join(root,'cases',name),bytes,{flag:'wx'});expected.set(path,bytes);delete (a as any).body;(a as any).path=path;
  }
  const source=join(root,'clean-browser-acceptance-results.json');await writeFile(source,JSON.stringify(raw),{flag:'wx'});
  const storage=await createReportStorage(root),original=await storage.preserveRaw(source);
@@ -259,8 +261,11 @@ test('all 34 file-backed cases survive artifact relocation with exact byte/hash 
   return storage.indexAttachment(bytes,{...context,sourcePath:await resolveSourceAttachment(source,context.sourcePath!)},original);
  });
  assert.equal(report.counts.validated,34);assert.equal(report.browserAcceptance,'passed');
- for(const c of report.cases){const a=c.attempts[0].attachments[0],bytes=expected.get(a.sourcePath)!;
-  assert.equal(a.sha256,byteReference(bytes).sha256);assert.equal(a.bytes,bytes.length);assert((await readVerifiedReference(root,c.evidence)).equals(bytes));
+ for(const c of report.cases){
+  for(const a of c.attempts[0].attachments){const bytes=expected.get(a.sourcePath)!;
+   assert.equal(a.sha256,byteReference(bytes).sha256);assert.equal(a.bytes,bytes.length);assert((await readVerifiedReference(root,a)).equals(bytes));
+  }
+  assert((await readVerifiedReference(root,c.evidence)).equals(expected.get(c.attempts[0].attachments[0].sourcePath)!));
  }
  const missing=await buildAcceptanceReport(raw,async path=>{if(path.endsWith('/7.json'))throw new Error('missing artifact');return readSourceAttachment(source,path);});
  assert.equal(missing.browserAcceptance,'not-passed');assert.equal(missing.counts.validated,33);
@@ -303,4 +308,40 @@ test('all acceptance entry points use complete file-backed evidence without inli
  assert(preserved.includes("attachAcceptanceImage(d,info,'explicit-live-hud.png',true)"));
  assert(preserved.includes("label:'case-body-error'"));
  assert(preserved.includes("label:'case-image-error'"));
+});
+
+// These stages are emitted by runCase, liveGeometry and the native capability case.
+for(const [id,name] of [
+  ['start','case-final.png'],['native-capability','native-case-final.png'],
+  ['hud-desktop-dpr1-normal','live-hud-0.png'],['hud-desktop-dpr1-normal','explicit-live-hud.png'],
+  ['text-200-desktop-dpr1-normal','live-hud-0.png'],
+]) for(const corruption of ['missing','duplicate','wrong-type','empty','missing-body','unreadable-path']) {
+  test(`${id} requires available, nonempty, unique PNG stage ${name}: ${corruption}`,async()=>{
+    const raw=fixture(),index=CASES.findIndex(row=>row[0]===id);
+    const attempt=raw.suites[0].specs[index].tests[0].results[0];
+    const image=attempt.attachments.find(a=>a.name===name)!;
+    if(corruption==='missing') attempt.attachments=attempt.attachments.filter(a=>a!==image);
+    if(corruption==='duplicate') attempt.attachments.push({...image});
+    if(corruption==='wrong-type') image.contentType='text/plain';
+    if(corruption==='empty') image.body='';
+    if(corruption==='missing-body'||corruption==='unreadable-path') {
+      delete (image as any).body;
+      if(corruption==='unreadable-path') (image as any).path='/missing.png';
+    }
+    const r=await report(raw);
+    assert.equal(r.browserAcceptance,'not-passed');assert.equal(r.counts.validated,CASES.length-1);
+    assert.equal(r.cases[index].validated,false);
+    assert.equal(r.cases[index].attempts[0].attachments.length,attempt.attachments.length,'keep every attachment indexed');
+  });
+}
+test('path-backed PNG stages pass and retain complete byte references',async()=>{
+  const raw=fixture();
+  for(const spec of raw.suites[0].specs) for(const image of spec.tests[0].results[0].attachments.filter(a=>a.contentType==='image/png')) {
+    (image as any).path=`/images/${image.name}`;delete (image as any).body;
+  }
+  const r=await buildAcceptanceReport(raw,async()=>Buffer.from(pngBody,'base64'));
+  assert.equal(r.browserAcceptance,'passed');assert.equal(r.counts.validated,CASES.length);
+  const image=r.cases[0].attempts[0].attachments[1];
+  assert.equal(image.bytes,Buffer.from(pngBody,'base64').length);assert.equal(image.sha256.length,64);
+  assert.equal(image.sourcePath,'/images/case-final.png');
 });

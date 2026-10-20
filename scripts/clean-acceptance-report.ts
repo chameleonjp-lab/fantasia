@@ -57,6 +57,18 @@ export async function buildAcceptanceReport(raw: unknown, readAttachment: (path:
         }
         const attempt = attempts[0]; let evidence: Json | undefined;
         const attachments = isObject(attempt) && Array.isArray(attempt.attachments) ? attempt.attachments : [];
+        // Match the image stages emitted by runCase, liveGeometry and acceptance.spec.
+        // Validate only the first attempt; retry images must never rescue missing evidence.
+        const requiredImages = id === 'native-capability' ? ['native-case-final.png'] : ['case-final.png'];
+        if (row?.[1] === 8 || row?.[1] === 9) requiredImages.push('live-hud-0.png');
+        if (row?.[1] === 8) requiredImages.push('explicit-live-hud.png');
+        for (const name of requiredImages) {
+          const images = (attemptIndex[0]?.attachments ?? []).filter((a: Json) => a.name === name);
+          if (images.length !== 1) errors.push(`Exactly one image attachment required: ${name}`);
+          else if (images[0].contentType !== 'image/png' || images[0].unavailable || !(images[0].bytes > 0)) {
+            errors.push(`Unavailable/empty/wrong-type image attachment: ${name}`);
+          }
+        }
         const matching = attachments.filter((a: any) => isObject(a) && a.name === 'clean-acceptance-evidence');
         if (matching.length !== 1) errors.push('Exactly one evidence attachment required');
         else {
