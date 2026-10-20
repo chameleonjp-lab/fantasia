@@ -35,7 +35,7 @@ export class CampaignScene {
   setOverlayVisible(value) { this.overlayVisible = value; if (!value) this.ctx?.clearRect(0, 0, this.width, this.height); }
   setUiOnlyThreat(actor) { this.testThreat = actor; }
   render(state, player, mode) {
-    this.resize();
+    // Match the product: sizing belongs to initialization and explicit resize events.
     getFlightCameraPose(player, mode, this.camera.position, this.camera.quaternion);
     this.camera.updateMatrixWorld(true);
     if (this.testThreat) {

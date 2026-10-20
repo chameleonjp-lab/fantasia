@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
+import { runInNewContext } from 'node:vm';
 import { transformWithEsbuild } from 'vite';
 import { assertExactUiOnlyPath, verifyUiOnlySources, UI_ONLY_SOURCE_BASELINE } from '../scripts/ui-only-integrity.mjs';
 import { uiOnlyTestPlugin } from '../scripts/vite.ui-only-plugin.mjs';
@@ -136,4 +137,45 @@ test('the Vite test transform suppresses frames, uses the UI adapter, and preser
   const productSceneSource = await readFile(productScenePath, 'utf8');
   assert.equal(plugin.transform(productSceneSource, productScenePath), null, 'the original campaign scene is hash checked and served unchanged');
   assert.equal(plugin.transform(original, resolve(repo, 'src/other.ts')), null);
+});
+
+
+test('UI-only scene matches product initialization and explicit resize lifecycle without resizing on render', async () => {
+  const plugin = uiOnlyTestPlugin(); await plugin.configResolved({ root: repo });
+  const stub = plugin.load('\0fantasia-ui-only:campaign-scene');
+  let bounds = { width: 393, height: 852 }, invalidations = 0, projections = 0, paints = 0;
+  const canvas = { getBoundingClientRect: () => bounds };
+  const overlay = { width: 0, height: 0, getContext: () => ({}) };
+  const layout = { invalidate() { invalidations++; } };
+  class Camera { position = {}; quaternion = {}; constructor(_fov, aspect) { this.aspect = aspect; }
+    updateProjectionMatrix() { projections++; } updateMatrixWorld() {} }
+  const context = { PerspectiveCamera: Camera, Vector3: class {}, FLIGHT_FOV: 60,
+    getFlightCameraPose() {}, createCampaignHudLayout(value) { assert.equal(value, canvas); return layout; },
+    ProductCampaignScene: class { drawOverlay() { paints++; } } };
+  // Evaluate the actual virtual scene, replacing only its imported dependencies.
+  runInNewContext(stub.replace(/^import .*;\n/gm, '').replace('export class CampaignScene', 'globalThis.CampaignScene = class CampaignScene'), context);
+  const scene = new context.CampaignScene(canvas, overlay);
+  assert.equal(invalidations, 1); assert.equal(projections, 1);
+  assert.equal(scene.width, 393); assert.equal(scene.height, 852);
+  assert.equal(scene.camera.aspect, 393 / 852); assert.equal(overlay.width, 393); assert.equal(overlay.height, 852);
+  for (let i = 0; i < 3; i++) assert.equal(scene.render({}, {}, 'normal'), true);
+  assert.equal(paints, 3); assert.equal(invalidations, 1, 'drawing alone must not force HUD remeasurement');
+  assert.equal(projections, 1, 'drawing alone must not repeat size-dependent camera setup');
+
+  const main = await readFile(resolve(repo, 'src/main.ts'), 'utf8');
+  const transformed = plugin.transform(main, resolve(repo, 'src/main.ts'));
+  const start = transformed.indexOf('function resize() {'), end = transformed.indexOf("window.addEventListener('pageshow'", start);
+  assert.ok(start >= 0 && end > start);
+  const handlers = {}, pauses = [];
+  runInNewContext(transformed.slice(start, end), { scene, pause: reason => pauses.push(reason),
+    window: { addEventListener: (name, handler) => { handlers[name] = handler; },
+      visualViewport: { addEventListener: (name, handler) => { handlers[`visual-${name}`] = handler; } } } });
+  for (const [event, width, height] of [['resize', 568, 320], ['visual-resize', 320, 568]]) {
+    bounds = { width, height }; handlers[event]();
+    assert.equal(scene.width, width); assert.equal(scene.height, height);
+    assert.equal(scene.camera.aspect, width / height); assert.equal(overlay.width, width); assert.equal(overlay.height, height);
+  }
+  assert.deepEqual(pauses, ['resize', 'resize']); assert.equal(invalidations, 3); assert.equal(projections, 3);
+  bounds = { width: 0, height: 0 }; scene.resize();
+  assert.equal(invalidations, 3); assert.equal(scene.width, 320); assert.equal(scene.height, 568);
 });
