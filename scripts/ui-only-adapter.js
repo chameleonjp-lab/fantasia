@@ -209,11 +209,41 @@ if (import.meta.env.DEV && location.pathname === '/__ui-only') {
       throw new Error('Native detail sampling requires the original running product layout');
     const focus = document.activeElement;
     const before = { tick: state.simTick, activeTicks: state.activeTicks, screen, status: state.status, input: controls.peek() };
-    const sample = controls.sample(false);
-    updateHUD(); uiOnlyPaint();
-    return { purpose: 'fixed fixture real-control sampling; no campaign tick', before,
-      after: { tick: state.simTick, activeTicks: state.activeTicks, screen, status: state.status, input: controls.peek() },
-      sample, pendingLoop, pendingBomb, focusSame: document.activeElement === focus };
+    // Observes only the existing synchronous calls. Does not focus, scroll,
+    // advance time, change layout, or infer a cause from a mutation count.
+    const observer = new MutationObserver(() => {});
+    const observation = { scope: 'synchronous sampling only; not scrollend or causation proof', stages: [] };
+    const read = () => {
+      const viewport = document.getElementById('campaign-hud-details');
+      return { present: !!viewport, connected: viewport?.isConnected ?? false,
+        scrollTop: viewport?.scrollTop ?? null, scrollHeight: viewport?.scrollHeight ?? null,
+        clientHeight: viewport?.clientHeight ?? null, focusId: document.activeElement?.id ?? null };
+    };
+    const stage = (name, action) => {
+      const before = read();
+      const value = action();
+      const records = observer.takeRecords();
+      const mutations = { total: records.length, childList: 0, attributes: 0, characterData: 0,
+        addedNodes: 0, removedNodes: 0, targets: [] };
+      for (const record of records) {
+        if (record.type in mutations && typeof mutations[record.type] === 'number') mutations[record.type]++;
+        mutations.addedNodes += record.addedNodes?.length ?? 0;
+        mutations.removedNodes += record.removedNodes?.length ?? 0;
+        const target = record.target?.id || record.target?.parentElement?.id || '(no-id)';
+        if (!mutations.targets.includes(target) && mutations.targets.length < 24) mutations.targets.push(target);
+      }
+      observation.stages.push({ name, before, after: read(), mutations });
+      return value;
+    };
+    try {
+      observer.observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+      const sample = stage('controls.sample(false)', () => controls.sample(false));
+      stage('updateHUD()', () => updateHUD());
+      stage('uiOnlyPaint()', () => uiOnlyPaint());
+      return { purpose: 'fixed fixture real-control sampling; no campaign tick', before,
+        after: { tick: state.simTick, activeTicks: state.activeTicks, screen, status: state.status, input: controls.peek() },
+        sample, pendingLoop, pendingBomb, focusSame: document.activeElement === focus, observation };
+    } finally { observer.disconnect(); }
   }
 
   function uiOnlyPause() {

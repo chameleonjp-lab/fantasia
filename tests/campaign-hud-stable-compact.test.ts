@@ -348,3 +348,31 @@ test('fixed-fixture native proof rejects capture, focus, pending edge and synthe
  }
  assert.ok(check(state,null,state).length);
 });
+
+function detailObservationHarness(fault='') {
+ const source=readFileSync('scripts/ui-only-adapter.js','utf8');
+ const body=source.slice(source.indexOf('  function uiOnlySampleDetailInput()'),source.indexOf('  function uiOnlyPause()'));
+ const calls:string[]=[], records:any[]=[];let disconnected=false,scroll=40;
+ const viewport:any={id:'campaign-hud-details',isConnected:true,scrollHeight:500,clientHeight:100,get scrollTop(){if(fault==='read')throw Error('read failed');return scroll;}};
+ const focus={id:'focused-detail'};
+ class Observer {constructor(_fn:any){}observe(){calls.push('observe');}takeRecords(){return records.splice(0);}disconnect(){disconnected=true;}}
+ const stage=(name:string)=>{calls.push(name);if(fault===name)throw Error(name);records.push({type:'childList',target:viewport,addedNodes:[{}],removedNodes:[]});if(name==='hud')scroll=0;};
+ const sample={turn:0};const c:any={screen:'playing',state:{status:'running',simTick:240,activeTicks:240},uiOnlyPlacementRestore:null,
+  document:{body:{},activeElement:focus,getElementById:()=>viewport},MutationObserver:Observer,
+  controls:{peek:()=>({}),sample:(advance:boolean)=>{assert.equal(advance,false);stage('sample');return sample;}},
+  updateHUD:()=>stage('hud'),uiOnlyPaint:()=>stage('paint'),pendingLoop:false,pendingBomb:false};
+ runInNewContext(body,c);return {run:()=>c.uiOnlySampleDetailInput(),calls,disconnected:()=>disconnected,sample};
+}
+test('native detail diagnostics attribute synchronous mutations and scroll to each unchanged call',()=>{
+ const h=detailObservationHarness(),r=h.run();
+ assert.deepEqual(h.calls,['observe','sample','hud','paint']);assert.equal(r.sample,h.sample);assert(h.disconnected());
+ assert.equal(r.observation.scope,'synchronous sampling only; not scrollend or causation proof');
+ assert.deepEqual(Array.from(r.observation.stages,(s:any)=>s.name),['controls.sample(false)','updateHUD()','uiOnlyPaint()']);
+ assert.equal(r.observation.stages[0].before.scrollTop,40);assert.equal(r.observation.stages[0].after.scrollTop,40);
+ assert.equal(r.observation.stages[1].after.scrollTop,0);assert.equal(r.observation.stages[1].mutations.childList,1);
+ assert.equal(r.before.tick,r.after.tick);assert.equal(r.focusSame,true);
+});
+test('native detail diagnostics disconnect on initial read or original stage failure without swallowing it',()=>{
+ for(const fault of ['read','sample','hud','paint']){const h=detailObservationHarness(fault);assert.throws(h.run,new RegExp(fault));assert(h.disconnected());
+  if(fault!=='read')assert.equal(h.calls.at(-1),fault,'no later original stage runs after failure');}
+});
