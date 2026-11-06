@@ -33,3 +33,14 @@ test('three pointer owners preserve micro-steering through fire/lever release an
   surface.dispatchEvent(pointer('pointerdown',5));controls.clear();assert.equal(controls.sample().turn,0);
  } finally {controls.dispose();for(const [key,d] of originals)if(d)Object.defineProperty(globalThis,key,d);else Reflect.deleteProperty(globalThis,key);}
 });
+for(const mode of ['easy','normal'] as const)test(`${mode}: height-only square crossing retains and rebases the same steering owner`,()=>{
+ const originals=['window','document','HTMLElement','Element'].map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)] as const);
+ const win=Object.assign(new EventTarget(),{innerWidth:402,innerHeight:420,visualViewport:new EventTarget()}),doc=Object.assign(new EventTarget(),{hidden:false,getElementById:()=>new ElementStub()});
+ for(const [key,value] of Object.entries({window:win,document:doc,HTMLElement:ElementStub,Element:ElementStub}))Object.defineProperty(globalThis,key,{configurable:true,value});
+ const surface=new ElementStub(),buttons={fire:new ElementStub('button'),loop:new ElementStub('button'),throttle:new ElementStub('button')},controls=new FlightControls(surface as any,buttons as any,()=>true);controls.setMode(mode);
+ try{surface.dispatchEvent(pointer('pointerdown',7));win.dispatchEvent(pointer('pointermove',7,112,194));const before=controls.sample();
+  for(const height of [390,420]){win.innerHeight=height;win.dispatchEvent(new Event('resize'));assert.equal(controls.peek().steerPointer,7);assert.equal(controls.sample().turn,before.turn);assert.equal(controls.sample().climb,before.climb);
+   win.dispatchEvent(pointer('pointermove',7,112,height===390?164:194));assert.equal(controls.sample().turn,before.turn);assert.equal(controls.sample().climb,before.climb);}
+  win.dispatchEvent(pointer('pointermove',7,118,194));assert.ok(controls.sample().turn>before.turn);win.dispatchEvent(new Event('orientationchange'));assert.equal(controls.peek().steerPointer,null);
+ }finally{controls.dispose();for(const [key,d]of originals)if(d)Object.defineProperty(globalThis,key,d);else Reflect.deleteProperty(globalThis,key);}
+});

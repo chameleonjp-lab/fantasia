@@ -432,7 +432,7 @@ canvas.addEventListener('webglcontextrestored', () => {
 let viewportWidth = window.innerWidth, viewportHeight = window.innerHeight;
 function resize() {
   const width = window.innerWidth, height = window.innerHeight;
-  if (screen === 'preparing' || width !== viewportWidth || (width > height) !== (viewportWidth > viewportHeight)) pause('resize');
+  if (screen === 'preparing' || width !== viewportWidth) pause('resize');
   viewportWidth = width; viewportHeight = height; scene?.resize();
 }
 window.addEventListener('orientationchange', () => { pause('resize'); scene?.resize(); });

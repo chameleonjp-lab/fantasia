@@ -17,11 +17,15 @@
 
 - 修正前の新しい回帰で敵配置依存、通常弾補正、中央保持、height-only入力を再現して失敗を確認。表示回帰は120Hz相当48枚で24回の同一視線を再現。
 - 更新後の重点検査: 操縦・発射・保持・height-only・共通補間・120Hzは6/6合格。別途、旧追尾条件を更新した既存関連29件と、開始準備・記録・出典・レバー63件が合格。
-- `npm test`: 492/492合格、失敗0・skip0（約97秒）。その後追加した照準色のentry/exit回帰を含む `campaign-manual-camera.test.ts` 6/6合格。照準色回帰は修正前 clear/clear/clear を再現し、修正後のexitは enemy/enemy/clear、entryは逆順（alpha0/.5/1）。追加後の全件検査はCIで照合します。
-- 停止と再開が同じ描画間隔内で起きる回帰を追加。実main経路の同期resetと、alpha0でも直前姿勢へ戻らない実scene表示を含む重点44/44合格。製品コードの追加変更はありません。
+- `npm test`: 499/499合格、失敗0・skip0（約71秒）。照準色と停止再開、height-onlyの四角い画面を跨ぐ回帰も全件に含みます。照準色回帰は修正前 clear/clear/clear を再現し、修正後のexitは enemy/enemy/clear、entryは逆順（alpha0/.5/1）。正式CIでも照合します。
+- 停止と再開が同じ描画間隔内で起きる回帰を追加。実main経路の同期resetと、alpha0でも直前姿勢へ戻らない実scene表示を含む重点44/44合格。当該resetの製品経路は既に同期解除しており、回帰を追加しました。
+- 独立レビューの高さ変更判定をRED→GREENで修正。両モードで402×420→402×390→402×420でも実入力の同じ指・操作量を保持して次の座標をrebase。実main経路も高さだけでは停止/解除せず、幅変更と明示orientationchangeは停止/解除します。関連42/42合格。
+- `tests/ui-only-integrity.test.mjs`: 3/3合格。main/scene/rulesの変更済み3ファイルだけを正確なhashへ更新し、UI固定state用sceneへ新しいcapture/resetのAPIを揃えました。hash・anchor・regular-file・変換経路のfail-closed検査は維持します。
 - `npm run build`: 型検査と本番build合格。既存のbundle-size注意は継続。
 - `scripts/prepare-pages.mjs`: 公開ファイルの種類・source-map不在・HTML入口・hash生成の既存検査を使用。最終commitのmanifestと配信バイトの照合はマージ後です。
-- ブラウザの既存camera-contractを両モード402×874/874×402へ拡張。補間時点から独立再構成した実camera位置・姿勢、通常出撃、停止・解放を確認する設計です。既存UI-only、camera-contract、任意の全受入・レバー・active-criticalの**実行結果は未確認**。共有4CPU環境で別作品のブラウザ検査が実行中のため、新しいブラウザ起動を待機中です。テストのlist表示は実行合格と扱いません。
+- ブラウザの既存camera-contractを両モード402×874/874×402へ拡張。補間時点から独立再構成した実camera位置・姿勢、通常出撃、停止・解放を確認する設計です。
+- 旧候補の正式CIはUI-onlyの旧source hashで失敗。上記の正確なpin更新後、ローカル短いUI-only実DOM受入は7/8合格、HUD一括巡回の1件が既存12秒timeout（13.1秒）で未完了。閾値やworkflowは変更していません。別実行は共有port4177使用中として起動前に停止。共有4CPUとブラウザ枠は他担当が使用中のため、これ以上のローカル起動は停止して最終commitのCIへ引き継ぎます。
+- camera-contract、任意の全受入・レバー・active-criticalの実行結果は未確認。テストのlist表示や固定state UI-only結果を実3D受入の合格とは扱いません。
 
 ## 残る確認
 

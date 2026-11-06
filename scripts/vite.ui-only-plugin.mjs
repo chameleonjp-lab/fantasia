@@ -62,6 +62,8 @@ export class CampaignScene {
   drawBombGuide(state) { return ProductCampaignScene.prototype.drawBombGuide.call(this, state); }
   drawThreats(state) { return ProductCampaignScene.prototype.drawThreats.call(this, state); }
   drawRadar(state, player) { return ProductCampaignScene.prototype.drawRadar.call(this, state, player); }
+  capturePresentation() {}
+  resetPresentation() {}
   resetRenderQueue() {}
   dispose() { this.hudLayout.dispose(); this.ctx?.clearRect(0, 0, this.width, this.height); }
 }

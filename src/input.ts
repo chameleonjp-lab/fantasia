@@ -227,7 +227,7 @@ export class FlightControls {
 
   private resizeViewport(): void {
     const width = window.innerWidth, height = window.innerHeight;
-    const rotated = width !== this.viewportWidth || (width > height) !== (this.viewportWidth > this.viewportHeight);
+    const rotated = width !== this.viewportWidth;
     this.viewportWidth = width; this.viewportHeight = height;
     if (rotated) this.clear(); else if (this.steerPointer !== null) this.rebaseSteering = true;
   }

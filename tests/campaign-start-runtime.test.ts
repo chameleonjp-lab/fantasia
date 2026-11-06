@@ -253,6 +253,13 @@ async function playingPending() {
   assert.equal(h.read().render.queue.status, 'pending');
   return h;
 }
+for(const mode of ['easy','normal'])test(`${mode}: main height-only square crossing keeps active input and flight running`,async()=>{
+ const h=await selectedPending(mode);h.signal();h.frame();h.frame();assert.equal(h.read().phase,'playing');
+ h.controls.pending=true;h.win.innerHeight=380;h.win.fire('resize');
+ assert.equal(h.read().phase,'playing');assert.equal(h.controls.pending,true);
+ h.win.innerHeight=852;h.win.fire('resize');assert.equal(h.read().phase,'playing');assert.equal(h.controls.pending,true);
+ h.win.fire('orientationchange');assert.equal(h.read().phase,'paused');assert.equal(h.controls.pending,false);
+});
 test('pause and resume clear presentation synchronously before any intervening display frame', async () => {
   const h = await playingPending();
   h.signal(); h.frame();
