@@ -1,11 +1,11 @@
-import { clearFlightAssistance, smoothFlightAssistance } from './flight-target';
+import { clearFlightAssistance } from './flight-target';
 import { Euler, Quaternion, Vector3 } from 'three';
 import { CAMPAIGN_DT } from './campaign-config';
 import { distanceSquared, segmentTerrainBlocked } from './campaign-terrain';
 import type { CampaignActor, CampaignInput, CampaignPlayer, CampaignState, Vec } from './campaign-types';
 import { makeAircraft } from './mission';
-import { advanceThrottle, clamp, createFlightController, CRUISE_SPEED, forwardOf, MAX_SPEED, updatePlayerLoop, updateQuaternion } from './flight';
-import { applyEasyShotCorrection, autoFireTarget, getFlightAssist, PLAYER_MAX_PITCH, predictedShotDirection } from './flight-assist';
+import { advanceThrottle, createFlightController, CRUISE_SPEED, forwardOf, MAX_SPEED, updatePlayerLoop, updateQuaternion } from './flight';
+import { autoFireTarget } from './flight-assist';
 import { FLIGHT_VISIBILITY_RANGE } from './flight-view';
 import type { Aircraft, FlightInput } from './types';
 
@@ -47,40 +47,23 @@ export class CampaignFlightController {
   }
   private aimTargets(state: CampaignState) {
     const targets: (Aircraft & { trackingStrength: number; identityGeneration: number })[] = [], live = new Set<number>();
-    let distantFallback: CampaignActor | null = null;
     for (const actor of state.actors) {
       if (actor.hp <= 0 || actor.team !== 'enemy') continue;
       live.add(actor.id);
-      if (distanceSquared(actor.position, this.player.position) > FLIGHT_VISIBILITY_RANGE ** 2) {
-        distantFallback ??= actor;
-        continue;
-      }
+      if (distanceSquared(actor.position, this.player.position) > FLIGHT_VISIBILITY_RANGE ** 2) continue;
       let target = this.targets.get(actor.id);
       if (!target) {
-        // Campaign soldiers and dragons remain fire/lock targets but do not
-        // pull the camera. Fixed turrets keep their gentle aim-point pull.
-        target = Object.assign(makeAircraft(actor.id, 'enemy', new Vector3()), { trackingStrength: actor.kind === 'turret' ? .25 : 0, identityGeneration: actor.generation });
+        // Actors are trigger/display candidates only; none steer the player.
+        target = Object.assign(makeAircraft(actor.id, 'enemy', new Vector3()), { trackingStrength: 0, identityGeneration: actor.generation });
         this.targets.set(actor.id, target);
       }
       target.position.set(actor.position.x, actor.position.y, actor.position.z);
-      target.trackingStrength = actor.kind === 'turret' ? .25 : 0;
+      target.trackingStrength = 0;
       target.identityGeneration = actor.generation; target.health = actor.hp; target.maxHealth = actor.maxHp;
       target.speed = Math.hypot(actor.velocity.x, actor.velocity.y, actor.velocity.z);
       target.yaw = target.speed > 0 ? Math.atan2(-actor.velocity.x, -actor.velocity.z) : 0;
       target.pitch = target.speed > 0 ? Math.atan2(actor.velocity.y, Math.hypot(actor.velocity.x, actor.velocity.z)) : 0;
       target.bank = 0; updateQuaternion(target); targets.push(target);
-    }
-    // K increases turn response whenever enemies exist but none are visible.
-    // One distant target preserves that condition without projecting every far actor.
-    if (targets.length === 0 && distantFallback) {
-      let target = this.targets.get(distantFallback.id);
-      if (!target) {
-        target = Object.assign(makeAircraft(distantFallback.id, 'enemy', new Vector3()), { trackingStrength: 0, identityGeneration: distantFallback.generation });
-        this.targets.set(distantFallback.id, target);
-      }
-      target.position.set(distantFallback.position.x, distantFallback.position.y, distantFallback.position.z);
-      target.identityGeneration = distantFallback.generation; target.health = distantFallback.hp;
-      targets.push(target);
     }
     for (const id of this.targets.keys()) if (!live.has(id)) this.targets.delete(id);
     return targets;
@@ -88,30 +71,23 @@ export class CampaignFlightController {
   /** Advance only the K aircraft. The caller commits this input once with campaign.step(), then syncs. */
   step(state: CampaignState, input: FlightInput): CampaignInput {
     if (state.status !== 'running') throw new Error('Flight can only advance during a running campaign');
-    const player = this.player, flight = this.flight, targets = this.aimTargets(state);
+    const player = this.player, flight = this.flight;
     const previousQuaternion = plainQuaternion(player.quaternion);
     player.previous.copy(player.position); player.age += CAMPAIGN_DT;
-    const unobstructed = (target: { position: Vector3 }) => !segmentTerrainBlocked(player.position, target.position);
-    const assist = getFlightAssist(player, targets, input, state.mode, flight.targetLock, unobstructed);
-    const automaticPitch = state.mode === 'easy' && !input.steeringActive
-      && Math.max(Math.abs(input.turn), Math.abs(input.climb)) <= 1e-8;
-    const pitchOrigin = automaticPitch ? clamp(player.pitch / PLAYER_MAX_PITCH, -1, 1) : undefined;
-    const adjusted = { ...input, ...smoothFlightAssistance(flight, input, assist, CAMPAIGN_DT, pitchOrigin) };
+    // Clear prior selections and correction history before manual flight.
+    clearFlightAssistance(flight);
     const loopPressed = input.loop && !flight.loopHeld; flight.loopHeld = input.loop;
-    this.lastLoopCompleted = updatePlayerLoop(player, flight, adjusted, input, loopPressed, CAMPAIGN_DT,
+    this.lastLoopCompleted = updatePlayerLoop(player, flight, input, input, loopPressed, CAMPAIGN_DT,
       advanceThrottle(flight, input, state.mode, CAMPAIGN_DT), MAX_SPEED, flight.responseMultiplier, state.mode);
     const forward = forwardOf(player), velocity = forward.clone().multiplyScalar(player.speed);
+    const targets = this.aimTargets(state);
+    const unobstructed = (target: { position: Vector3 }) => !segmentTerrainBlocked(player.position, target.position);
     const autoTarget = autoFireTarget(player, targets, state.mode, input.viewAspect, flight.targetLock, unobstructed);
     const gunMuzzles = {
       mg: [-1, 1].map(side => player.position.clone().add(new Vector3(side * .3, .52, -4.25).applyQuaternion(player.quaternion))),
       cannon: [-1, 1].map(side => player.position.clone().add(new Vector3(side * 2.5, 0, -2.4).applyQuaternion(player.quaternion))),
     };
-    const shotDirections = {
-      mg: gunMuzzles.mg.map(origin => autoTarget && state.mode === 'easy'
-        ? applyEasyShotCorrection(forward, predictedShotDirection(origin, forward, autoTarget, player.speed + 820, 1.5)) : forward.clone()),
-      cannon: gunMuzzles.cannon.map(origin => autoTarget && state.mode === 'easy'
-        ? applyEasyShotCorrection(forward, predictedShotDirection(origin, forward, autoTarget, player.speed + 700, 1.5)) : forward.clone()),
-    };
+    const shotDirections = { mg: gunMuzzles.mg.map(() => forward.clone()), cannon: gunMuzzles.cannon.map(() => forward.clone()) };
     return {
       playerPosition: plain(player.position), playerVelocity: plain(velocity), playerQuaternion: plainQuaternion(player.quaternion),
       previousQuaternion, forward: plain(forward), fire: state.mode === 'easy' ? autoTarget !== null : input.fire, bomb: !!input.bomb,

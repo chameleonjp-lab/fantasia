@@ -105,7 +105,7 @@ function opticalAxis(player: CampaignFlightController['player'], mode: GameMode)
 }
 const angle = (a: Vector3, b: Vector3) => Math.atan2(new Vector3().crossVectors(a, b).length(), a.dot(b));
 
-test('campaign adapter forwards the camera mode and only multiplies off-screen horizontal response', () => {
+test('campaign adapter forwards the camera mode with identical response regardless of off-screen enemies', () => {
   for (const mode of ['easy', 'normal'] as const) for (const pitch of [-.9, 0, .9]) for (const axis of ['turn', 'climb'] as const)
     for (const distant of [false, true]) {
       const campaign = new Campaign(mode), adapter = new CampaignFlightController(campaign.state);
@@ -115,7 +115,7 @@ test('campaign adapter forwards the camera mode and only multiplies off-screen h
       const before = opticalAxis(adapter.player, mode);
       adapter.step(campaign.state, { ...neutral, [axis]: .6, steeringActive: true });
       const actual = angle(before, opticalAxis(adapter.player, mode));
-      const expected = .82 / 60 * .6 * (axis === 'turn' && distant ? 1 + 2.5 / 60 : 1);
+      const expected = .82 / 60 * .6;
       assert.ok(Math.abs(actual - expected) <= 1e-12, JSON.stringify({ mode, pitch, axis, distant, actual, expected }));
     }
 });
@@ -162,20 +162,11 @@ test('actual CampaignScene render uses the bank-independent optical axis and the
 });
 
 
-test('campaign turret acquisition starts absolute pitch from current pose', () => {
+test('campaign turret acquisition cannot change a held pitch or turn-only manual command', () => {
   for (const pitch of [-.05, .05]) {
     const campaign = new Campaign('easy'), adapter = new CampaignFlightController(campaign.state);
-    adapter.player.position.set(0, 2400, 0); adapter.player.pitch = pitch; adapter.player.yaw = 0; updateQuaternion(adapter.player);
-    const position = new Vector3(), rotation = new Quaternion();
-    getFlightCameraPose(adapter.player, 'easy', position, rotation);
-    const point = new Vector3(0, Math.sign(pitch)*.6*500*Math.tan(FLIGHT_FOV*Math.PI/360), -500).applyQuaternion(rotation).add(position);
-    const turret = campaign.state.actors.find(a => a.team === 'enemy' && a.kind === 'turret')!;
-    turret.position = {x:point.x,y:point.y,z:point.z}; turret.previous = {...turret.position};
-    campaign.state.actors = [turret];
-    adapter.step(campaign.state, neutral);
-    assert.ok((adapter.player.pitch - pitch)*pitch > 0, 'must approach the turret without a horizontal dip');
-    const before = adapter.player.pitch;
-    adapter.step(campaign.state, {...neutral, turn:.1});
-    assert.ok(Math.abs(adapter.player.pitch-before) < .0005, 'turn-only optional steering must not reuse absolute history');
+    adapter.player.position.set(0,2400,0); adapter.player.pitch=pitch; updateQuaternion(adapter.player);
+    adapter.step(campaign.state,{...neutral,steeringActive:true}); assert.equal(adapter.player.pitch,pitch);
+    adapter.step(campaign.state,{...neutral,turn:.1}); assert.equal(adapter.player.pitch,pitch);
   }
 });

@@ -43,7 +43,7 @@ async function appHarness() {
   for (const match of readFileSync('index.html', 'utf8').matchAll(/<[^>]+\bid="([^"]+)"[^>]*>/g)) node(match[1]).hidden = /\bhidden\b/.test(match[0]);
   node('control-settings'); nodes.get('home').hidden = false;
   const radios = ['easy', 'normal'].map(value => Object.assign(new Target(), { value, checked: value === 'easy' }));
-  const win = Object.assign(new Target(), { visualViewport: new Target() }) as any;
+  const win = Object.assign(new Target(), { innerWidth:393, innerHeight:852, visualViewport: new Target() }) as any;
   let scene: Scene, controls: Controls, audio: Audio;
   const gl: RenderQueueContext = {
     SYNC_GPU_COMMANDS_COMPLETE: 1, ALREADY_SIGNALED: 2, CONDITION_SATISFIED: 3, TIMEOUT_EXPIRED: 4, WAIT_FAILED: 5,
@@ -58,6 +58,7 @@ async function appHarness() {
     async prepare() { this.prepared = true; }
     setOverlayVisible(visible: boolean) { this.overlayVisible = visible; } resize() { this.resizes++; } gunSight() { return { x: 0, y: 0 }; }
     pollRender() { return this.queue.poll(now); }
+    presentationResets = 0; capturePresentation() {} resetPresentation() { this.presentationResets++; }
     resetRenderQueue() { this.resets++; this.queue.reset(); }
     render(state: any, _player: unknown, mode: string) {
       this.renderAttempts++; this.lastState = state;
@@ -252,6 +253,15 @@ async function playingPending() {
   assert.equal(h.read().render.queue.status, 'pending');
   return h;
 }
+test('pause and resume clear presentation synchronously before any intervening display frame', async () => {
+  const h = await playingPending();
+  h.signal(); h.frame();
+  const resets = h.scene.presentationResets, tick = h.read().tick;
+  h.click('pause'); assert.ok(h.scene.presentationResets > resets);
+  const pausedResets = h.scene.presentationResets;
+  h.click('resume'); assert.equal(h.read().phase, 'playing');
+  assert.ok(h.scene.presentationResets > pausedResets); assert.equal(h.read().tick, tick);
+});
 
 test('frame safety pause does not submit even on the same frame that acknowledges the preceding fence', async () => {
   const h = await playingPending();
@@ -294,7 +304,7 @@ for (const target of ['window', 'visualViewport'] as const) {
   test(`${target} resize pauses and updates dimensions without a paused redraw, then explicit resume draws`, async () => {
     const h = await playingPending(); const submitted = h.scene.submissions.length, resizes = h.scene.resizes;
     const eventTarget = target === 'window' ? h.win : h.win.visualViewport;
-    eventTarget.fire('resize'); assert.equal(h.read().phase, 'paused');
+    h.win.innerWidth=852;h.win.innerHeight=393;eventTarget.fire('resize'); assert.equal(h.read().phase, 'paused');
     assert.equal(h.scene.resizes, resizes + 1); assert.deepEqual(h.read().pauseReasons, ['resize']);
     h.signal(); h.frame(); h.frame();
     assert.equal(h.scene.submissions.length, submitted); assert.equal(h.nodes.get('resume').disabled, false);

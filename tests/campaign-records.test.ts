@@ -98,14 +98,14 @@ test('denied storage keeps play possible and session saving requires an explicit
   assert.equal(records.best(result())?.score, 20000);
 });
 
-test('stationary campaign targets use a gentle pull while manual opposite steering wins', () => {
+test('stationary campaign targets never pull either mode away from manual input', () => {
   const player = makeAircraft(1, 'friendly', new Vector3(0, 300, 0), 0, 'player');
   const target = makeAircraft(2, 'enemy', new Vector3(100, 300, -400));
   const input = { turn: 0, climb: 0, fire: false, loop: false, viewAspect: 1 };
   const air = getFlightAssist(player, [{ ...target, trackingStrength: 1 }], input, 'easy');
   const ground = getFlightAssist(player, [{ ...target, trackingStrength: .25 }], input, 'easy');
-  assert.ok(air.turn > 0);
-  assert.ok(Math.abs(ground.turn / air.turn - .25) < 1e-9);
+  assert.equal(air.turn, 0);
+  assert.equal(ground.turn, 0);
   assert.equal(getFlightAssist(player, [{ ...target, trackingStrength: .25 }], { ...input, turn: -.2 }, 'easy').turn, -.2);
   assert.equal(getFlightAssist(player, [{ ...target, trackingStrength: .25 }], input, 'normal').turn, 0);
 });

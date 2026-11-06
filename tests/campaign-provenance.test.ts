@@ -13,13 +13,13 @@ test('K import provenance and explicit camera migration remain pinned', () => {
     const bytes = readFileSync(path);
     // The immutable original import manifest still describes Kaisen 3d75105.
     // These two files intentionally diverge for the camera-rate rollout based
-    // on Kaisen 67ac107 and the reviewed horizontal-pitch-hold correction.
+    // on Kaisen 67ac107 and the reviewed held-owner pitch correction of 2026-11-07.
     // Pin both provenance and migrated bytes; behavioral coverage lives in
     // flight.test.ts and campaign-flight.test.ts, not in a relaxed hash check.
     const cameraMigration: Record<string, { imported: string; migrated: string }> = {
       'src/flight.ts': {
         imported: '8fe62d521bc2cfa11b0ab8cb3c0609c54a3d80355eff15a72257eea1aa4770a5',
-        migrated: '516ed2327166e65f37ff1559356b93da5885d9acecbe483390c5281e36dc60ac',
+        migrated: 'a212d747c51ec925ce98c0c5cece9632bded21e8ea7d450b183fbda3d2af0dc7',
       },
       'src/flight-view.ts': {
         imported: '1f9b7e040c2270de5838f24bad93c7ac1c75c7827ba3c1b58591ef6271a20363',

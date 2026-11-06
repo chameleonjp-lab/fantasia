@@ -62,76 +62,12 @@ function closestVisibleTarget(player: Aircraft, enemies: readonly FlightAssistTa
  * circle. The returned climb is still an absolute pitch command, matching the
  * aircraft controller's existing input contract.
  */
+/** Steering never reads targets. This compatibility result is manual in both modes. */
 export function getFlightAssist(
-  player: Aircraft,
-  enemies: readonly FlightAssistTarget[],
-  input: FlightInput,
-  mode: GameMode,
-  lock?: FlightTargetLock,
-  unobstructed?: (target: FlightAssistTarget) => boolean,
+  _player: Aircraft, _enemies: readonly FlightAssistTarget[], input: FlightInput, _mode: GameMode,
+  _lock?: FlightTargetLock, _unobstructed?: (target: FlightAssistTarget) => boolean,
 ): FlightAssistResult {
-  const manualTurn = clamp(input.turn, -1, 1);
-  const manualClimb = clamp(input.climb, -1, 1);
-  const aspect = normalizedAspect(input.viewAspect);
-  const target = closestVisibleTarget(player, enemies, aspect, mode, lock, !!input.steeringActive || Math.max(Math.abs(manualTurn), Math.abs(manualClimb)) > 1e-4, false, unobstructed);
-  const hasVisibleTarget = target !== null;
-  const responseMultiplier = enemies.some((enemy) => enemy.health > 0) && !hasVisibleTarget
-    ? OFFSCREEN_RESPONSE_MULTIPLIER
-    : 1;
-
-  if (mode !== 'easy' || input.steeringActive) {
-    return { turn: manualTurn, climb: manualClimb, responseMultiplier, hasVisibleTarget };
-  }
-
-  if (!target) {
-    return {
-      turn: manualTurn,
-      climb: manualClimb,
-      responseMultiplier,
-      hasVisibleTarget: false,
-    };
-  }
-
-  const { projection } = target;
-  const shortEdgeX = projection.x * Math.max(1, aspect);
-  const shortEdgeY = projection.y * Math.max(1, 1 / aspect);
-  const screenRadius = Math.hypot(shortEdgeX, shortEdgeY) / 2;
-  const manualWeight = clamp(Math.max(Math.abs(manualTurn), Math.abs(manualClimb)) / 0.35, 0, 1);
-  const targetStrength = Number.isFinite(target.enemy.trackingStrength)
-    ? clamp(target.enemy.trackingStrength!, 0, 1)
-    : target.enemy.kind === 'ship' ? EASY_SHIP_TRACKING_STRENGTH : 1;
-  const assistFade = clamp((screenRadius - EASY_AIM_RADIUS) / (EASY_AIM_RADIUS * 2), 0, 1) * (1 - manualWeight) * targetStrength;
-  if (assistFade <= 0) {
-    return { turn: manualTurn, climb: manualClimb, responseMultiplier, hasVisibleTarget: true };
-  }
-
-  const tanVerticalHalf = Math.tan((FLIGHT_FOV * Math.PI) / 360);
-  const horizontalHalfFov = Math.atan(aspect * tanVerticalHalf);
-  const screenHorizontal = projection.x * Math.tan(horizontalHalfFov);
-  const screenVertical = projection.y * tanVerticalHalf;
-  const bankCos = Math.cos(player.bank * FLIGHT_CAMERA_BANK_FACTOR);
-  const bankSin = Math.sin(player.bank * FLIGHT_CAMERA_BANK_FACTOR);
-  const viewYaw = Math.atan(screenHorizontal * bankCos + screenVertical * bankSin);
-  const viewPitch = Math.atan(-screenHorizontal * bankSin + screenVertical * bankCos);
-  const requestedTurn = clamp(viewYaw / 0.18, -1, 1) * assistFade;
-  // Stick input opposes a screen-space correction only when it asks for a
-  // different direction. In that case the pilot's requested turn wins intact.
-  const turnOpposes = manualTurn * requestedTurn < 0;
-  const turn = turnOpposes ? manualTurn : clamp(manualTurn + requestedTurn, -1, 1);
-
-  const manualAbsolutePitch = manualClimb * PLAYER_MAX_PITCH;
-  const assistedAbsolutePitch = player.pitch + viewPitch;
-  const pitchOpposes = Math.abs(manualClimb) > 0.05 && manualClimb * viewPitch < 0;
-  const absolutePitch = pitchOpposes
-    ? manualAbsolutePitch
-    : manualAbsolutePitch + (assistedAbsolutePitch - manualAbsolutePitch) * assistFade;
-
-  return {
-    turn,
-    climb: clamp(absolutePitch / PLAYER_MAX_PITCH, -1, 1),
-    responseMultiplier,
-    hasVisibleTarget: true,
-  };
+  return { turn: clamp(input.turn, -1, 1), climb: clamp(input.climb, -1, 1), responseMultiplier: 1, hasVisibleTarget: false };
 }
 
 /** Re-checks the live world immediately before firing; it does not use render state. */
@@ -147,8 +83,11 @@ export function shouldAutoFire(
 export function autoFireTarget(player: Aircraft, enemies: readonly CombatTarget[], mode: GameMode, aspect: number | undefined, lock?: FlightTargetLock, unobstructed?: (target: FlightAssistTarget) => boolean): CombatTarget | null {
   if (mode !== 'easy') return null;
   const safeAspect = normalizedAspect(aspect);
-  const selected = closestVisibleTarget(player, enemies, safeAspect, mode, lock, lock?.manual, true, unobstructed);
-  return selected?.projection.inCircle && selected.projection.distance <= EASY_AUTO_FIRE_RANGE ? selected.enemy : null;
+  const candidates = enemies.filter(enemy => enemy.health > 0 && enemy.team === 'enemy').map(enemy => ({
+    enemy, key: flightTargetKey(enemy), projection: projectFlightTarget(player, targetAimPoint(enemy), safeAspect, mode),
+  })).filter(candidate => candidate.projection.visible && candidate.projection.inCircle
+    && candidate.projection.distance <= EASY_AUTO_FIRE_RANGE && (!unobstructed || unobstructed(candidate.enemy)));
+  return selectProjectedTarget(candidates, safeAspect, EASY_AUTO_FIRE_RANGE, lock)?.enemy ?? null;
 }
 
 /** Straight flight prediction; maneuvers after launch can still evade the shot. */

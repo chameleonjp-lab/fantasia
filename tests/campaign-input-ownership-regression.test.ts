@@ -13,7 +13,7 @@ class ElementStub extends EventTarget {
 function pointer(type:string,id:number,x=100,y=200){const e=new Event(type,{cancelable:true});Object.assign(e,{pointerId:id,clientX:x,clientY:y,pointerType:'touch',button:0,buttons:1,isPrimary:false});return e;}
 test('three pointer owners preserve micro-steering through fire/lever release and cancel, then clear on recovery',()=>{
  const originals=['window','document','HTMLElement','Element'].map(k=>[k,Object.getOwnPropertyDescriptor(globalThis,k)] as const);
- const win=Object.assign(new EventTarget(),{visualViewport:new EventTarget()}),doc=Object.assign(new EventTarget(),{hidden:false,getElementById:()=>new ElementStub()});
+ const win=Object.assign(new EventTarget(),{innerWidth:402,innerHeight:874,visualViewport:new EventTarget()}),doc=Object.assign(new EventTarget(),{hidden:false,getElementById:()=>new ElementStub()});
  Object.defineProperty(globalThis,'window',{configurable:true,value:win});Object.defineProperty(globalThis,'document',{configurable:true,value:doc});Object.defineProperty(globalThis,'HTMLElement',{configurable:true,value:ElementStub});Object.defineProperty(globalThis,'Element',{configurable:true,value:ElementStub});
  const surface=new ElementStub(),buttons={fire:new ElementStub('button'),loop:new ElementStub('button'),throttle:new ElementStub('button')},controls=new FlightControls(surface as any,buttons as any,()=>true);controls.setMode('normal');
  try {
@@ -24,7 +24,12 @@ test('three pointer owners preserve micro-steering through fire/lever release an
   buttons.fire.dispatchEvent(pointer('lostpointercapture',2));assert.equal(controls.sample().fire,false);assert.equal(controls.sample().turn,held.turn);assert.equal(controls.sample().throttle,1);
   win.dispatchEvent(pointer('pointercancel',3));assert.equal(controls.sample().throttle,0);assert.equal(controls.sample().climb,held.climb);
   win.dispatchEvent(pointer('pointerup',1));assert.equal(controls.sample().turn,0);assert.equal(controls.sample().climb,0);assert.equal(controls.sample().steeringActive,undefined);
-  for(const name of ['blur','resize','pagehide']){surface.dispatchEvent(pointer('pointerdown',4));win.dispatchEvent(new Event(name));assert.equal(controls.peek().steerPointer,null);assert.equal(controls.sample().steeringActive,undefined);}
+  surface.dispatchEvent(pointer('pointerdown',4));win.dispatchEvent(pointer('pointermove',4,112,194));const before=controls.sample();
+  buttons.fire.dispatchEvent(pointer('pointerdown',2));win.innerHeight=820;win.dispatchEvent(new Event('resize'));
+  assert.equal(controls.peek().steerPointer,4);assert.equal(controls.sample().fire,true);assert.equal(controls.sample().turn,before.turn);
+  win.dispatchEvent(pointer('pointermove',4,112,140));assert.equal(controls.sample().climb,before.climb,'first shifted coordinate rebases without jump');
+  win.dispatchEvent(pointer('pointermove',4,118,140));assert.ok(controls.sample().turn>before.turn,'same finger continues');
+  for(const name of ['blur','orientationchange','pagehide']){surface.dispatchEvent(pointer('pointerdown',4));win.dispatchEvent(new Event(name));assert.equal(controls.peek().steerPointer,null);assert.equal(controls.sample().steeringActive,undefined);}
   surface.dispatchEvent(pointer('pointerdown',5));controls.clear();assert.equal(controls.sample().turn,0);
  } finally {controls.dispose();for(const [key,d] of originals)if(d)Object.defineProperty(globalThis,key,d);else Reflect.deleteProperty(globalThis,key);}
 });

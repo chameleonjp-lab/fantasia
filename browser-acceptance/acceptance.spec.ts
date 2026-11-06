@@ -291,7 +291,8 @@ test(titleFor('native-capability'),async({page},info)=>{
 // retains its configured evidence behavior. Worker options must be top-level.
 if (process.env.FANTASIA_CAMERA_CONTRACT === '1') {
   test.use({ screenshot: 'off', trace: 'off', video: 'off' });
-  for (const mode of ['easy', 'normal'] as const) test(`[camera-contract] ${mode} real rendered optical-axis trace and pause release`, async ({ page }) => {
+  for (const mode of ['easy', 'normal'] as const) for (const viewport of [{width:402,height:874},{width:874,height:402}]) test(`[camera-contract] ${mode} ${viewport.width}x${viewport.height} real rendered optical-axis trace and pause release`, async ({ page }) => {
+    await page.setViewportSize(viewport);
     const d = new RealRendererDriver(page);
     let outcome = 'failed', backend: unknown;
     try {
@@ -300,12 +301,29 @@ if (process.env.FANTASIA_CAMERA_CONTRACT === '1') {
       // Do not replace the renderer, advance the campaign, or modify its GPU queue.
       await page.evaluate(async () => {
         const { CampaignScene } = await import('/src/campaign-scene.ts');
+        let previous: any;
+        const capture = CampaignScene.prototype.capturePresentation;
+        CampaignScene.prototype.capturePresentation = function (state, player) {
+          previous = { tick:state.simTick, generation:state.player.generation, position:player.position.clone(), quaternion:player.quaternion.clone(), bank:player.bank };
+          return capture.call(this,state,player);
+        };
         const original = CampaignScene.prototype.render;
         CampaignScene.prototype.render = function (...args: Parameters<typeof original>) {
           const rendered = original.apply(this, args);
           if (rendered) {
-            const [state, player] = args;
+            const [state, player, mode] = args;
+            const t=Math.max(0,Math.min(1,args[5]??1));
+            let pose=player;
+            if(previous&&previous.tick===state.simTick-1&&previous.generation===state.player.generation&&state.status==='running'){
+              pose={...player,position:previous.position.clone().lerp(player.position,t),quaternion:previous.quaternion.clone().slerp(player.quaternion,t),bank:previous.bank+Math.atan2(Math.sin(player.bank-previous.bank),Math.cos(player.bank-previous.bank))*t};
+            }
+            const axis=player.position.clone().set(0,0,1),offsetRotation=pose.quaternion.clone().multiply(player.quaternion.clone().identity().setFromAxisAngle(axis,pose.bank*.55));
+            const expectedPosition=player.position.clone().set(0,11,29).applyQuaternion(offsetRotation).add(pose.position);
+            const expectedRotation=pose.quaternion.clone().multiply(player.quaternion.clone().identity().setFromAxisAngle(axis,pose.bank))
+              .multiply(player.quaternion.clone().identity().setFromAxisAngle(player.position.clone().set(1,0,0),mode==='easy'?-Math.atan2(11,479):-.19))
+              .multiply(player.quaternion.clone().identity().setFromAxisAngle(axis,-pose.bank*.45));
             (window as any).__cameraContractFrame = {
+              positionError:this.camera.position.distanceTo(expectedPosition),rotationError:1-Math.abs(this.camera.quaternion.dot(expectedRotation)),alpha:t,
               tick: state.simTick, pitch: player.pitch, bank: player.bank, speed: player.speed,
               position: this.camera.position.toArray(), rotation: this.camera.quaternion.toArray(),
               forward: this.camera.getWorldDirection(this.camera.position.clone()).toArray(),
@@ -332,11 +350,7 @@ if (process.env.FANTASIA_CAMERA_CONTRACT === '1') {
           * Math.max(.78, Math.min(1, 1 - Math.max(0, speed - 115) * .008));
         const step = .82 * authority / 60, measured = angularDistance(before.forward, after.forward);
         expect(sample.turn).toBe(tick < 4 ? 0 : 1); expect(sample.climb).toBe(tick >= 4 && tick < 8 ? 0 : 1);
-        if (tick < 4) expect(Math.abs(measured - step)).toBeLessThanOrEqual(1e-12);
-        else {
-          expect(measured).toBeGreaterThanOrEqual(step - 1e-12);
-          expect(measured).toBeLessThanOrEqual(step * (tick < 8 ? 1.65 : Math.hypot(1, 1.65) / Math.SQRT2) + 1e-12);
-        }
+        expect(after.positionError).toBeLessThanOrEqual(.001); expect(Math.abs(after.rotationError)).toBeLessThanOrEqual(1e-12);
         const expectedPitch = tick < 4 ? step : tick < 8 ? 0 : step / Math.SQRT2;
         expect(Math.abs(after.pitch - before.pitch - expectedPitch)).toBeLessThanOrEqual(1e-12);
         d.evidence.push({ label: 'actual-camera-tick', mode, before, after, sample, measured, step }); before = after;
