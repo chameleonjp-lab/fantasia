@@ -16,6 +16,7 @@ import { aimRadius, AIM_COLORS } from './aim-indicator';
 import { FLIGHT_FOV, getFlightCameraPose, projectFlightTarget } from './flight-view';
 import { projectGunSight } from './gun-sight';
 import { RenderQueue } from './render-queue';
+import { CampaignPresentation } from './campaign-presentation';
 import { createCampaignHudLayout, layoutCampaignCanvasLabel, type CampaignHudLayout } from './campaign-hud-layout';
 import type { Aircraft, Bullet, Team } from './types';
 import type { CampaignActor, CampaignState, Vec } from './campaign-types';
@@ -338,6 +339,7 @@ export class CampaignScene {
   private lastEvent = 0;
   private lastTick = -1;
   private visualTime = 0;
+  private presentation?: CampaignPresentation;
   private width = 1;
   private height = 1;
   private disposed = false;
@@ -497,7 +499,9 @@ export class CampaignScene {
   setOverlayVisible(visible: boolean) { this.overlayVisible = visible; if (!visible) this.ctx?.clearRect(0, 0, this.width, this.height); }
   gunSight(player: Aircraft) { return projectGunSight(player, [], this.width, this.height); }
 
-  render(state: CampaignState, player: Aircraft, mode: 'normal' | 'easy', presentationDt = 0, selectedTargetId?: number | null): boolean {
+  capturePresentation(state: CampaignState, player: Aircraft) { (this.presentation ??= new CampaignPresentation()).capture(state, player); }
+  resetPresentation() { this.presentation?.reset(); }
+  render(state: CampaignState, player: Aircraft, mode: 'normal' | 'easy', presentationDt = 0, selectedTargetId?: number | null, alpha = 1): boolean {
     if (this.disposed) return false;
     // Bind event ownership before checking the previous frame's GPU fence.
     if (this.runId !== state.runId || state.simTick < this.lastTick) {
@@ -505,6 +509,7 @@ export class CampaignScene {
       this.particles = []; this.visualTime = state.simTick / 60;
     }
     if (this.pollRender() !== 'ready') return false;
+    if (this.presentation) ({ state, player } = this.presentation.sample(state, player, alpha));
     const dt = this.lastTick < 0 ? 0 : Math.max(0, Math.min(.1, (state.simTick - this.lastTick) / 60));
     this.lastTick = state.simTick;
     if (state.status === 'victory' || state.status === 'defeat') this.visualTime += Math.max(0, Math.min(.1, presentationDt));
@@ -693,7 +698,6 @@ export class CampaignScene {
     let indicator: keyof typeof AIM_COLORS = 'clear';
     for (const actor of state.actors) {
       if (actor.hp <= 0) continue;
-      if (mode === 'easy' && actor.team === 'enemy' && selectedTargetId !== undefined && actor.id !== selectedTargetId) continue;
       const world = new Vector3(actor.position.x, actor.position.y, actor.position.z);
       const p = projectFlightTarget(player, world, w / h, mode);
       if (p.depth <= 0 || p.distance > (mode === 'easy' ? 1200 : 1500) || Math.hypot((p.x * .5 + .5) * w - sight.x, (.5 - p.y * .5) * h - sight.y) > radius) continue;

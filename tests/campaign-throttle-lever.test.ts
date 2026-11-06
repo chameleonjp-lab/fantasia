@@ -68,7 +68,7 @@ test('focused short commands survive zero-tick frames, consume once, cancel safe
     f.throttle.dispatchEvent(key('keydown','ArrowUp',{isComposing:true}));assert.equal(f.controls.sampleThrottle(),0);
     f.win.dispatchEvent(key('keydown','ArrowUp'));assert.equal(f.controls.sample().climb,1);f.throttle.dispatchEvent(new Event('focusin'));assert.equal(f.controls.sample().climb,0);
     f.win.dispatchEvent(key('keydown','KeyS'));f.throttle.dispatchEvent(pointer('pointerdown',5,145));close(f.controls.sample().throttle!,-.5);
-    for(const event of ['resize','blur','pagehide']){f.win.dispatchEvent(new Event(event));assert.equal(f.controls.sample().throttle,0);f.throttle.dispatchEvent(pointer('pointerdown',6));}
+    for(const event of ['orientationchange','blur','pagehide']){f.win.dispatchEvent(new Event(event));assert.equal(f.controls.sample().throttle,0);f.throttle.dispatchEvent(pointer('pointerdown',6));}
     f.controls.setMode('easy');assert.equal(f.controls.sample().throttle,0);f.throttle.dispatchEvent(pointer('pointerdown',7));assert.equal(f.controls.peek().throttlePointer,null);
   }finally{f.cleanup();}
 });
@@ -253,7 +253,7 @@ test('speed-key pulses cancel on interruptions and opposing short keys combine w
   const f=controlsFixture();try {
     f.win.dispatchEvent(key('keydown','KeyW'));f.win.dispatchEvent(key('keydown','KeyS'));
     f.win.dispatchEvent(key('keyup','KeyW'));f.win.dispatchEvent(key('keyup','KeyS'));assert.equal(f.controls.sampleThrottle(),0);
-    for(const terminal of ['blur','resize','pagehide','clear','mode','inactive']) {
+    for(const terminal of ['blur','orientationchange','pagehide','clear','mode','inactive']) {
       f.win.dispatchEvent(key('keydown','KeyW'));f.win.dispatchEvent(key('keyup','KeyW'));
       if(terminal==='clear')f.controls.clear();else if(terminal==='mode')f.controls.setMode('easy');else if(terminal==='inactive'){f.setActive(false);f.controls.sampleThrottle();f.setActive(true);}else f.win.dispatchEvent(new Event(terminal));
       assert.equal(f.controls.sampleThrottle(),0);f.controls.setMode('normal');

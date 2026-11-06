@@ -35,14 +35,14 @@ function assistance(adapter: CampaignFlightController) {
   return (adapter as unknown as { flight: { assistTurn: number; assistClimb: number } }).flight;
 }
 
-test('visible moving enemy soldiers and dragons stay selectable without steering pull, including small manual input', () => {
+test('visible off-circle enemy soldiers and dragons never steer or acquire a firing lock', () => {
   for (const actorClass of ['sword', 'bow', 'mage', 'cavalry', 'dragon'] as const) {
     for (const controls of [neutral, { ...neutral, turn: .1, climb: .05 }]) {
       const expected = fixture();
       const actual = fixture(actorClass, .8, .15, 400);
       const expectedInput = expected.adapter.step(expected.campaign.state, controls);
       const actualInput = actual.adapter.step(actual.campaign.state, controls);
-      assert.equal(actual.adapter.selectedTargetId, actual.actor!.id, `${actorClass} retains the shared target lock`);
+      assert.equal(actual.adapter.selectedTargetId, null, `${actorClass} is outside the firing circle`);
       assert.equal(assistance(actual.adapter).assistTurn, 0, `${actorClass} does not pull turn`);
       assert.equal(assistance(actual.adapter).assistClimb, 0, `${actorClass} does not pull climb`);
       assert.deepEqual(actualInput.playerQuaternion, expectedInput.playerQuaternion, `${actorClass} leaves the camera trajectory alone`);
@@ -60,7 +60,7 @@ test('friendly NPCs never become camera-assist targets', () => {
   assert.deepEqual(actualInput.playerPosition, expectedInput.playerPosition);
 });
 
-test('Easy automatic fire and moving-target shot correction remain active for enemy NPCs', () => {
+test('Easy automatic fire remains active and moving-target shots leave every muzzle straight', () => {
   for (const actorClass of ['sword', 'bow', 'mage', 'cavalry', 'dragon'] as const) {
     const actual = fixture(actorClass, 0, 0, 450);
     const output = actual.adapter.step(actual.campaign.state, neutral);
@@ -68,16 +68,16 @@ test('Easy automatic fire and moving-target shot correction remain active for en
     assert.equal(output.fire, true, `${actorClass} remains eligible for Easy automatic fire`);
     const forward = new Vector3(0, 0, -1).applyQuaternion(actual.adapter.player.quaternion);
     const corrected = new Vector3(...Object.values(output.shotDirections!.mg[0]) as [number, number, number]);
-    assert.ok(corrected.angleTo(forward) > 1e-7, `${actorClass} retains moving-target shot correction`);
+    assert.ok(corrected.angleTo(forward) < .001*Math.PI/180, `${actorClass} cannot bend a player shot`);
   }
 });
 
-test('fixed turrets retain their gentle camera pull', () => {
+test('fixed turrets outside the circle never steer the camera or acquire a firing lock', () => {
   const actual = fixture('turret', .8, 0, 400);
   const output = actual.adapter.step(actual.campaign.state, neutral);
-  assert.equal(actual.adapter.selectedTargetId, actual.actor!.id);
+  assert.equal(actual.adapter.selectedTargetId, null);
   assert.equal(output.fire, false, 'an off-circle target does not pass the firing gate');
-  assert.ok(Math.abs(assistance(actual.adapter).assistTurn) > 0, 'a turret still contributes camera steering');
+  assert.equal(assistance(actual.adapter).assistTurn, 0, 'turrets cannot contribute steering');
 });
 
 test('all five enemy NPC kinds leave the actual camera forward unchanged over twelve controller ticks', () => {
@@ -92,17 +92,17 @@ test('all five enemy NPC kinds leave the actual camera forward unchanged over tw
         return { position, rotation, forward: new Vector3(0, 0, -1).applyQuaternion(rotation) };
       });
       assert.deepEqual(poses[0], poses[1], `${actorClass} cannot attract the camera at tick ${tick}`);
-      assert.equal(actual.adapter.selectedTargetId, actual.actor!.id);
+      assert.equal(actual.adapter.selectedTargetId, null);
     }
   }
 });
 
-test('turret tracking strength remains exactly one quarter and clearPending releases the lock', () => {
+test('turret tracking is zero and clearPending discards all correction history', () => {
   const actual = fixture('turret', .8, .15, 400);
   actual.adapter.step(actual.campaign.state, neutral);
   const internal = actual.adapter as unknown as { targets: Map<number, { trackingStrength: number }>; flight: { assistTurn: number; assistClimb: number; responseMultiplier: number } };
-  assert.equal(internal.targets.get(actual.actor!.id)?.trackingStrength, .25);
-  assert.ok(Math.abs(internal.flight.assistTurn) > 0);
+  assert.equal(internal.targets.get(actual.actor!.id)?.trackingStrength, 0);
+  assert.equal(internal.flight.assistTurn, 0);
   actual.adapter.clearPending();
   assert.equal(actual.adapter.selectedTargetId, null); assert.equal(internal.flight.assistTurn, 0);
   assert.equal(internal.flight.assistClimb, 0); assert.equal(internal.flight.responseMultiplier, 1);

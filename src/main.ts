@@ -121,14 +121,14 @@ function leavePreparation() {
 }
 
 function clearInput() {
-  controls.clear(); pendingLoop = false; pendingBomb = false; flight.clearPending(); accumulator = 0; lastFrame = 0;
+  controls.clear(); pendingLoop = false; pendingBomb = false; flight.clearPending(); accumulator = 0; lastFrame = 0; scene?.resetPresentation();
 }
 function keyboardDescription() { return keyboardSettings.describe(state.mode); }
 function syncInstructions() {
   const touch = inputPresentation.value === 'touch'; app.dataset.input = inputPresentation.value;
   el('flight-tip').textContent = touch ? 'ドラッグで操縦' : 'キーで操縦';
   el('input-guide').textContent = touch ? '画面をドラッグして操縦' : 'キーボードで操縦';
-  el('mode-guide').textContent = state.mode === 'easy' ? '照準円内・1.2km以内へ自動射撃 · 7方面の地上軍を支援'
+  el('mode-guide').textContent = state.mode === 'easy' ? '自分で狙い、円内・1.2km以内へ自動射撃 · 弾は機首正面へ'
     : touch ? '照準補助なし・手動射撃 · 射撃は長押し・速度はレバーで調整' : '照準補助なし・手動射撃 · 射撃・加減速はキーを長押し';
   el('keyboard-guide').hidden = touch; el('keyboard-guide').textContent = keyboardDescription();
 }
@@ -299,6 +299,7 @@ function consumeTick(input: FlightInput) {
       inputAuditSignature = signature;
     }
   }
+  scene?.capturePresentation(state, player);
   campaign.step(flight.step(state, input)); flight.sync(state);
   if (flight.lastLoopCompleted) audio.event({ id: 10000000 + state.simTick, tick: state.simTick, type: 'loop', owner: player.id, position: player.position.clone() }, true);
   handleEvents(state.events);
@@ -395,7 +396,7 @@ function frame() {
   // may clear the canvas, but drawing waits for deliberate Resume/Home/Restart.
   if (scene && !contextLost && screen !== 'paused') {
     try {
-      scene.setOverlayVisible(screen === 'playing'); scene.render(state, player, state.mode, screen === 'playing' ? dt : 0, flight.selectedTargetId);
+      scene.setOverlayVisible(screen === 'playing'); scene.render(state, player, state.mode, screen === 'playing' ? dt : 0, flight.selectedTargetId, accumulator / CAMPAIGN_DT);
       if (scene.diagnostics().queue.status === 'failed') {
         renderStatus = 'failed'; if (screen === 'home') preparationFailed(new Error('GPU frame completion unavailable')); else if (screen === 'playing') { performanceInterrupted = true; pause('render-failed'); }
       }
@@ -428,7 +429,13 @@ canvas.addEventListener('webglcontextrestored', () => {
   contextLost = false; clearInput(); scene?.resetRenderQueue(); renderStatus = 'ready'; el<HTMLButtonElement>('resume').disabled = !!fatalLogicError; el('pause-reason').textContent = '描画が復帰しました。操作して再開できます';
   if (graphicsReady && (screen === 'preparing' || screen === 'home')) syncStartPreparation();
 });
-function resize() { pause('resize'); scene?.resize(); }
+let viewportWidth = window.innerWidth, viewportHeight = window.innerHeight;
+function resize() {
+  const width = window.innerWidth, height = window.innerHeight;
+  if (screen === 'preparing' || width !== viewportWidth) pause('resize');
+  viewportWidth = width; viewportHeight = height; scene?.resize();
+}
+window.addEventListener('orientationchange', () => { pause('resize'); scene?.resize(); });
 window.addEventListener('resize', resize); window.visualViewport?.addEventListener('resize', resize);
 window.addEventListener('pageshow', event => { clearInput(); if (event.persisted) pause('restored'); });
 let preparationGeneration = 0;
